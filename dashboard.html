@@ -1,0 +1,1759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chasing Dashboard — DME Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
+
+// ══════════════════════════════════════════════════════════════
+// HISTORY / ARCHIVE
+// ══════════════════════════════════════════════════════════════
+let archiveCache   = null;   // raw rows from archive sheet
+let archiveFetched = null;   // Date object of last fetch
+let histView       = "month";
+let histRange      = { from: null, to: null };
+
+const CHASER_COLORS = {
+  Alex:"#00C2A8", Hope:"#4CAF8A", Rose:"#E8B84B", Frank:"#9B7FE8", Nova:"#E05C6A"
+};
+
+async function refreshArchive() {
+  setCacheStatus("Fetching...", false);
+  try {
+    let rows;
+    if (API_BASE === "https://script.google.com/macros/s/AKfycbzl9wrN5Ys-fz6H61G07c7Ot7daNp8JWDGh9xeuQ6fhTTkC58CJASLN8gdPaifuLuok/exec") {
+      rows = mockArchiveData();
+    } else {
+      const res = await fetch(`${API_BASE}?mode=archive`);
+      if (!res.ok) throw new Error("API " + res.status);
+      const data = await res.json();
+      rows = data.rows || [];
+    }
+    archiveCache   = rows;
+    archiveFetched = new Date();
+    setCacheStatus("Last updated " + archiveFetched.toLocaleTimeString(), true);
+    renderHistView();
+  } catch(err) {
+    setCacheStatus("Error: " + err.message, false);
+  }
+}
+
+function setCacheStatus(msg, fresh) {
+  document.getElementById("cacheStatus").textContent = msg;
+  document.getElementById("cacheDot").className = "cache-dot" + (fresh ? " fresh" : "");
+}
+
+function setHistView(v) {
+  histView = v;
+  document.querySelectorAll(".hist-sub-btn").forEach(b => {
+    b.classList.toggle("active", b.getAttribute("onclick").includes("'" + v + "'"));
+  });
+  document.getElementById("histCustomRange").classList.toggle("hidden", v !== "custom");
+  if (v !== "custom") renderHistView();
+}
+
+function applyCustomRange() {
+  histRange.from = document.getElementById("histFrom").value;
+  histRange.to   = document.getElementById("histTo").value;
+  if (!histRange.from || !histRange.to) { alert("Select both dates."); return; }
+  renderHistView();
+}
+
+function renderHistView() {
+  if (!archiveCache) {
+    // Auto-load mock data for demo
+    refreshArchive();
+    return;
+  }
+  const rows = filterArchiveRows(archiveCache, histView, histRange);
+  if (!rows.length) {
+    setEl("histContent", `<div class="no-archive">No data found for this period.</div>`);
+    return;
+  }
+  const summary  = aggregateArchiveRows(rows);
+  const byDate   = groupByDate(rows);
+  const byChaserAgg = groupByChaser(rows);
+  const dates    = Object.keys(byDate).sort();
+  setEl("histContent", `
+    ${renderHistSummaryCards(summary)}
+    <div class="charts-row">
+      <div class="chart-wrap"><div class="chart-title">Cases by Chaser</div><div id="barChart"></div></div>
+      <div class="chart-wrap"><div class="chart-title">Approvals by Chaser</div><div id="barChartApprovals"></div></div>
+    </div>
+    <div class="chart-wrap"><div class="chart-title">Daily Cases Trend</div><div id="lineChart"></div></div>
+    <div class="chart-wrap"><div class="chart-title">Daily Approvals Trend</div><div id="lineChartApprovals"></div></div>
+    ${renderHistLeaderboard(byChaserAgg)}
+  `);
+  requestAnimationFrame(() => {
+    drawBarChart("barChart",       byChaserAgg, "cases",     "Cases");
+    drawBarChart("barChartApprovals", byChaserAgg, "approvals", "Approvals");
+    drawLineChart("lineChart",          byDate, dates, "cases",     "Cases");
+    drawLineChart("lineChartApprovals", byDate, dates, "approvals", "Approvals");
+  });
+}
+
+// ── FILTER ────────────────────────────────────────────────────
+function filterArchiveRows(rows, view, range) {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth();
+  const q     = Math.floor(month / 3);
+
+  return rows.filter(r => {
+    const d = parseArchiveDate(r.Date);
+    if (!d) return false;
+    if (view === "month")   return d.getFullYear()===year && d.getMonth()===month;
+    if (view === "quarter") return d.getFullYear()===year && Math.floor(d.getMonth()/3)===q;
+    if (view === "year")    return d.getFullYear()===year;
+    if (view === "custom") {
+      const from = new Date(range.from), to = new Date(range.to);
+      to.setHours(23,59,59);
+      return d >= from && d <= to;
+    }
+    return true;
+  });
+}
+
+function parseArchiveDate(str) {
+  if (!str) return null;
+  // supports "6/25", "6/25/2026", "2026-06-25"
+  if (str.includes("-")) return new Date(str);
+  const parts = str.split("/");
+  if (parts.length >= 2) {
+    const yr = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
+    return new Date(yr, parseInt(parts[0])-1, parseInt(parts[1]));
+  }
+  return null;
+}
+
+// ── AGGREGATE ────────────────────────────────────────────────
+function aggregateArchiveRows(rows) {
+  const daySet = new Set(rows.map(r=>r.Date));
+  return rows.reduce((s, r) => ({
+    cases:          s.cases          + (Number(r.Cases)||0),
+    positive:       s.positive       + (Number(r.Positive)||0),
+    faxes:          s.faxes          + (Number(r.Faxes)||0),
+    approvals:      s.approvals      + (Number(r.Approvals)||0),
+    denials:        s.denials        + (Number(r.Denials)||0),
+    timeMins:       s.timeMins       + (Number(r.TimeMins)||0),
+    calls:          s.calls          + (Number(r.TotalCalls)||0),
+    durationMins:   s.durationMins   + (Number(r.TotalDurationMins)||0),
+    productiveTime: s.productiveTime + (Number(r.ProductiveTime)||0),
+    days: s.days,
+  }), { cases:0, positive:0, faxes:0, approvals:0, denials:0, timeMins:0,
+        calls:0, durationMins:0, productiveTime:0,
+        days: daySet.size });
+}
+
+function groupByDate(rows) {
+  const map = {};
+  for (const r of rows) {
+    if (!map[r.Date]) map[r.Date] = { cases:0, positive:0, faxes:0, approvals:0, denials:0 };
+    map[r.Date].cases     += Number(r.Cases)||0;
+    map[r.Date].positive  += Number(r.Positive)||0;
+    map[r.Date].faxes     += Number(r.Faxes)||0;
+    map[r.Date].approvals += Number(r.Approvals)||0;
+    map[r.Date].denials   += Number(r.Denials)||0;
+  }
+  return map;
+}
+
+function groupByChaser(rows) {
+  const map = {};
+  for (const r of rows) {
+    const n = r.Chaser;
+    if (!n) continue;
+    if (!map[n]) map[n] = { cases:0, positive:0, faxes:0, approvals:0, denials:0,
+                             timeMins:0, calls:0, durationMins:0, productiveTime:0, days:new Set() };
+    map[n].cases          += Number(r.Cases)||0;
+    map[n].positive       += Number(r.Positive)||0;
+    map[n].faxes          += Number(r.Faxes)||0;
+    map[n].approvals      += Number(r.Approvals)||0;
+    map[n].denials        += Number(r.Denials)||0;
+    map[n].timeMins       += Number(r.TimeMins)||0;
+    map[n].calls          += Number(r.TotalCalls)||0;
+    map[n].durationMins   += Number(r.TotalDurationMins)||0;
+    map[n].productiveTime += Number(r.ProductiveTime)||0;
+    map[n].days.add(r.Date);
+  }
+  Object.values(map).forEach(v => v.days = v.days.size);
+  return map;
+}
+
+// ── SUMMARY CARDS ────────────────────────────────────────────
+function renderHistSummaryCards(s) {
+  const label   = { month:"Month", quarter:"Quarter", year:"Year", custom:"Period" }[histView]||"";
+  const appPct  = s.faxes    ? (s.approvals/s.faxes*100).toFixed(1) : "--";
+  const eff     = s.positive ? (s.cases/s.positive).toFixed(2)       : "--";
+  const avgTime = s.cases    ? (s.timeMins/s.cases).toFixed(1)        : "--";
+  const avgDay  = s.days     ? (s.cases/s.days).toFixed(1)            : "--";
+  const avgProd = s.days     ? (s.productiveTime/s.days).toFixed(1)   : "--";
+  const totalH  = s.durationMins ? (s.durationMins/60).toFixed(1)     : "--";
+  return `<div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
+    ${mc("Cases ("+label+")",    s.cases,     "", "teal")}
+    ${mc("Approvals",            s.approvals, "", "green")}
+    ${mc("Denials",              s.denials,   "", "red")}
+    ${mc("Faxes Sent",           s.faxes,     "", "")}
+    ${mc("Approval Rate",        appPct,      "%","green")}
+    ${mc("Efficiency",           eff,         "", "")}
+    ${mc("Avg Time/Case",        avgTime,     "m","")}
+    ${mc("Avg Cases/Day",        avgDay,      "", "teal")}
+    ${mc("Total Calls",          s.calls,     "", "")}
+    ${mc("Call Hours",           totalH,      "h","")}
+    ${mc("Avg Productive Time",  avgProd,     "m","")}
+    ${mc("Active Days",          s.days,      "", "amber")}
+  </div>`;
+}
+
+// ── HISTORY LEADERBOARD ───────────────────────────────────────
+function renderHistLeaderboard(byChaserAgg) {
+  const rows = Object.entries(byChaserAgg).map(([name, d]) => ({
+    name, ...d,
+    approvalPct:  d.faxes    ? (d.approvals/d.faxes*100).toFixed(1) : "--",
+    efficiency:   d.positive ? (d.cases/d.positive).toFixed(2)       : "--",
+    avgCasesDay:  d.days     ? (d.cases/d.days).toFixed(1)           : "--",
+    avgProd:      d.days     ? (d.productiveTime/d.days).toFixed(1)  : "--",
+    callHours:    d.durationMins ? (d.durationMins/60).toFixed(1)    : "--",
+  })).sort((a,b) => b.cases - a.cases);
+
+  return `<div class="chart-wrap">
+    <div class="chart-title">Chaser Totals for Period</div>
+    <div style="overflow:auto"><table class="lb-table" style="min-width:900px"><thead><tr>
+      <th>#</th><th>Chaser</th><th>Cases</th><th>Positive</th><th>Faxes</th>
+      <th>Approvals</th><th>Denials</th><th>Approv.%</th><th>Efficiency</th>
+      <th>Calls</th><th>Call Hrs</th><th>Avg Prod.Time</th><th>Avg Cases/Day</th><th>Days</th>
+    </tr></thead><tbody>
+      ${rows.map((r,i)=>`<tr>
+        <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
+        <td><span class="chaser-name" style="color:${CHASER_COLORS[r.name]||"var(--text)"}">${r.name}</span></td>
+        <td>${r.cases}</td><td>${r.positive}</td><td>${r.faxes}</td>
+        <td><span class="pill pill-green">${r.approvals}</span></td>
+        <td><span class="pill pill-red">${r.denials}</span></td>
+        <td>${r.approvalPct==="--"?"--":`<span class="pill pill-teal">${r.approvalPct}%</span>`}</td>
+        <td>${r.efficiency}</td>
+        <td>${r.calls}</td>
+        <td>${r.callHours==="--"?"--":r.callHours+"h"}</td>
+        <td>${r.avgProd==="--"?"--":r.avgProd+"m"}</td>
+        <td>${r.avgCasesDay}</td><td>${r.days}</td>
+      </tr>`).join("")}
+    </tbody></table></div></div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// CHARTS (vanilla SVG — no library)
+// ══════════════════════════════════════════════════════════════
+const TOOLTIP = () => document.getElementById("chartTooltip");
+
+function showTooltip(e, html) {
+  const t = TOOLTIP();
+  t.innerHTML = html;
+  t.style.display = "block";
+  t.style.left = (e.clientX + 12) + "px";
+  t.style.top  = (e.clientY - 10) + "px";
+}
+function hideTooltip() { TOOLTIP().style.display = "none"; }
+
+// ── BAR CHART ─────────────────────────────────────────────────
+function drawBarChart(containerId, byChaserAgg, field, label) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const entries = Object.entries(byChaserAgg).sort((a,b)=>b[1][field]-a[1][field]);
+  if (!entries.length) { container.innerHTML = `<div style="color:var(--text-3);font-size:12px;padding:12px">No data</div>`; return; }
+
+  const W=560, H=200, PAD={t:10,r:20,b:50,l:50};
+  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
+  const maxVal = Math.max(...entries.map(([,d])=>d[field]),1);
+  const barW   = Math.min(iW/entries.length - 8, 60);
+  const xStep  = iW / entries.length;
+
+  let bars = "", labels = "", yLines = "";
+  const ticks = 4;
+  for (let i=0; i<=ticks; i++) {
+    const v = Math.round(maxVal/ticks*i);
+    const y = PAD.t + iH - (v/maxVal*iH);
+    yLines += `<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    yLines += `<text x="${PAD.l-6}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
+  }
+
+  entries.forEach(([name,d],i) => {
+    const val = d[field]||0;
+    const bH  = val/maxVal*iH;
+    const x   = PAD.l + xStep*i + (xStep-barW)/2;
+    const y   = PAD.t + iH - bH;
+    const col = CHASER_COLORS[name]||"var(--teal)";
+    bars   += `<rect class="chart-bar" x="${x}" y="${y}" width="${barW}" height="${bH}" rx="4" fill="${col}"
+      onmouseenter="showTooltip(event,'<b>${name}</b>: ${val} ${label}')" onmouseleave="hideTooltip()"/>`;
+    labels += `<text x="${x+barW/2}" y="${H-PAD.b+16}" text-anchor="middle" font-size="11" fill="var(--text-2)">${name}</text>`;
+    labels += `<text x="${x+barW/2}" y="${y-5}" text-anchor="middle" font-size="10" fill="${col}" font-weight="600">${val}</text>`;
+  });
+
+  container.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}">
+    ${yLines}${bars}${labels}
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
+  </svg>`;
+}
+
+// ── LINE CHART ─────────────────────────────────────────────────
+function drawLineChart(containerId, byDate, dates, field, label) {
+  const container = document.getElementById(containerId);
+  if (!container || !dates.length) { if(container)container.innerHTML=`<div style="color:var(--text-3);font-size:12px;padding:12px">No data</div>`; return; }
+
+  const W=900, H=200, PAD={t:14,r:20,b:46,l:50};
+  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
+  const vals   = dates.map(d=>(byDate[d]||{})[field]||0);
+  const maxVal = Math.max(...vals,1);
+  const xStep  = iW/(dates.length-1||1);
+
+  let yLines="", points=[], dots="", xLabels="";
+  for (let i=0; i<=4; i++) {
+    const v = Math.round(maxVal/4*i);
+    const y = PAD.t + iH - (v/maxVal*iH);
+    yLines += `<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    yLines += `<text x="${PAD.l-6}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
+  }
+
+  // Thin out x labels if too many dates
+  const step = Math.ceil(dates.length / 20);
+  dates.forEach((date,i) => {
+    const x = PAD.l + xStep*i;
+    const y = PAD.t + iH - (vals[i]/maxVal*iH);
+    points.push(`${x},${y}`);
+    dots += `<circle cx="${x}" cy="${y}" r="3" fill="var(--teal)"
+      onmouseenter="showTooltip(event,'<b>${date}</b>: ${vals[i]} ${label}')" onmouseleave="hideTooltip()"/>`;
+    if (i%step===0||i===dates.length-1) {
+      // Show short date
+      const parts=date.split("/"); const lbl=parts.slice(0,2).join("/");
+      xLabels+=`<text x="${x}" y="${H-PAD.b+16}" text-anchor="middle" font-size="10" fill="var(--text-3)">${lbl}</text>`;
+    }
+  });
+
+  const polyline = points.length > 1
+    ? `<polyline points="${points.join(" ")}" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linejoin="round"/>`
+    : `<circle cx="${points[0].split(",")[0]}" cy="${points[0].split(",")[1]}" r="4" fill="var(--teal)"/>`;
+
+  // Gradient fill under line
+  const fillPts = [`${PAD.l},${PAD.t+iH}`, ...points, `${PAD.l+xStep*(dates.length-1)},${PAD.t+iH}`];
+  const fill = points.length > 1
+    ? `<polygon points="${fillPts.join(" ")}" fill="url(#lineGrad)" opacity=".25"/>`
+    : "";
+
+  container.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}">
+    <defs><linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--teal)"/><stop offset="100%" stop-color="transparent"/>
+    </linearGradient></defs>
+    ${yLines}${fill}${polyline}${dots}${xLabels}
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
+  </svg>`;
+}
+
+// ── MOCK ARCHIVE DATA ─────────────────────────────────────────
+function mockArchiveData() {
+  const rows = [];
+  const now  = new Date();
+  const names = CHASERS;
+  // Generate 60 weekdays of data
+  for (let daysBack=90; daysBack>=0; daysBack--) {
+    const d = new Date(now); d.setDate(now.getDate()-daysBack);
+    if (d.getDay()===0||d.getDay()===6) continue;
+    const dateStr = `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
+    names.forEach(name => {
+      const base = { Alex:18, Hope:14, Rose:22, Frank:11, Nova:16 }[name]||15;
+      const rand = n => Math.max(0, n + Math.floor((Math.random()-.4)*n*.6));
+      const cases = rand(base);
+      const pos   = Math.min(cases, rand(Math.round(cases*.65)));
+      const fax   = Math.min(cases, rand(Math.round(cases*.75)));
+      const app   = Math.min(fax, rand(Math.round(fax*.55)));
+      const den   = Math.min(fax-app, rand(Math.round(fax*.2)));
+      rows.push({ Date:dateStr, Chaser:name, Cases:cases, Positive:pos, Faxes:fax,
+                  Approvals:app, Denials:den, TimeMins:cases*11 });
+    });
+  }
+  return rows;
+}
+
+// ── AUTO-LOAD when switching to History tab ───────────────────
+// (handled inside setTab directly — no override needed)
+
+</script>
+<style>
+:root{--bg:#0B1622;--surface:#152032;--card:#1A2C42;--card-hover:#1F3450;--border:#243A54;--teal:#00C2A8;--teal-dim:rgba(0,194,168,.12);--green:#4CAF8A;--green-dim:rgba(76,175,138,.12);--amber:#E8B84B;--amber-dim:rgba(232,184,75,.12);--red:#E05C6A;--red-dim:rgba(224,92,106,.12);--purple:#9B7FE8;--purple-dim:rgba(155,127,232,.12);--blue:#5B9BD5;--blue-dim:rgba(91,155,213,.12);--text:#E8F0F8;--text-2:#7A9BB8;--text-3:#4A6A88;--radius:10px;--font:'Inter',system-ui,sans-serif}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:14px}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-variant-numeric:tabular-nums}
+.header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;gap:10px}
+.logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;letter-spacing:.02em;white-space:nowrap}
+.logo-dot{width:8px;height:8px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);animation:pulse-dot 2s ease-in-out infinite}
+@keyframes pulse-dot{0%,100%{opacity:1;box-shadow:0 0 8px var(--teal)}50%{opacity:.5;box-shadow:0 0 3px var(--teal)}}
+.header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.date-input{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px}
+.btn{background:var(--teal);color:#0B1622;border:none;border-radius:6px;padding:6px 14px;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;transition:opacity .15s;white-space:nowrap}
+.btn:hover{opacity:.85}
+.btn-ghost{background:var(--card);color:var(--text-2);border:1px solid var(--border)}
+.btn-ghost:hover{color:var(--text);background:var(--card-hover)}
+.status-badge{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:20px;background:var(--teal-dim);color:var(--teal);border:1px solid rgba(0,194,168,.25);white-space:nowrap}
+.pulse-bar{padding:8px 24px 0;display:flex;gap:4px}
+.pulse-segment{height:3px;border-radius:2px;flex:1;transition:opacity .3s}
+.main{padding:18px 24px 40px}
+.tab-nav{display:flex;gap:2px;margin-bottom:20px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:4px;width:fit-content}
+.tab-btn{padding:6px 18px;border-radius:6px;border:none;background:transparent;color:var(--text-3);font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.04em;text-transform:uppercase;transition:all .15s}
+.tab-btn:hover{color:var(--text-2)}
+.tab-btn.active{background:var(--card);color:var(--teal)}
+.panels{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:22px}
+@media(max-width:900px){.panels{grid-template-columns:1fr}}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.panel-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-2)}
+.panel-date{font-size:12px;color:var(--teal);font-weight:600}
+.panel-body{padding:16px}
+.metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.metric{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px}
+.metric-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:5px}
+.metric-value{font-size:22px;font-weight:700;line-height:1;color:var(--text)}
+.metric-value.teal{color:var(--teal)}.metric-value.green{color:var(--green)}.metric-value.amber{color:var(--amber)}.metric-value.red{color:var(--red)}.metric-value.purple{color:var(--purple)}
+.metric-sub{font-size:11px;color:var(--text-3);margin-top:3px}
+.response-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.resp-card{border-radius:8px;padding:12px;display:flex;align-items:center;gap:12px}
+.resp-card.approved{background:var(--green-dim);border:1px solid rgba(76,175,138,.25)}
+.resp-card.denied{background:var(--red-dim);border:1px solid rgba(224,92,106,.25)}
+.resp-icon{font-size:20px;line-height:1}
+.resp-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2)}
+.resp-value{font-size:26px;font-weight:700;line-height:1.1}
+.approved .resp-value{color:var(--green)}.denied .resp-value{color:var(--red)}
+.resp-pct{font-size:11px;color:var(--text-3);margin-top:2px}
+.campaign-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+.campaign-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px}
+.campaign-name{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.campaign-stats{display:flex;gap:16px}
+.cstat{text-align:center}
+.cstat-val{font-size:18px;font-weight:700}
+.cstat-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-top:2px}
+.ctag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:4px}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
+.section-title{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text-2)}
+.sort-btns{display:flex;gap:5px;flex-wrap:wrap}
+.sort-btn{font-size:11px;padding:3px 9px;border-radius:4px;background:var(--card);border:1px solid var(--border);color:var(--text-3);cursor:pointer;font-family:var(--font);transition:all .15s}
+.sort-btn:hover{color:var(--text-2)}
+.sort-btn.active{background:var(--teal-dim);color:var(--teal);border-color:rgba(0,194,168,.4)}
+.leaderboard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:auto;margin-bottom:22px}
+.lb-table{width:100%;border-collapse:collapse;min-width:900px}
+.lb-table th{padding:9px 12px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);text-align:left;border-bottom:1px solid var(--border);background:var(--surface);white-space:nowrap;cursor:pointer;user-select:none}
+.lb-table th:hover{color:var(--text-2)}
+.lb-table th.sort-asc::after{content:" \u2191";color:var(--teal)}
+.lb-table th.sort-desc::after{content:" \u2193";color:var(--teal)}
+.lb-table td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px}
+.lb-table tr:last-child td{border-bottom:none}
+.lb-table tr:hover td{background:var(--card-hover)}
+.rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:700;background:var(--card);color:var(--text-3)}
+.rank-badge.r1{background:rgba(232,184,75,.15);color:var(--amber)}
+.rank-badge.r2{background:rgba(0,194,168,.1);color:var(--teal)}
+.rank-badge.r3{background:rgba(76,175,138,.1);color:var(--green)}
+.chaser-name{font-weight:600;font-size:13px}
+.pill{display:inline-block;font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;letter-spacing:.04em}
+.pill-green{background:var(--green-dim);color:var(--green)}
+.pill-red{background:var(--red-dim);color:var(--red)}
+.pill-amber{background:var(--amber-dim);color:var(--amber)}
+.pill-teal{background:var(--teal-dim);color:var(--teal)}
+.pill-stub{background:rgba(74,106,136,.12);color:var(--text-3);font-style:italic}
+.mini-bar-bg{height:4px;background:var(--card);border-radius:3px;overflow:hidden;margin-top:3px;min-width:60px}
+.mini-bar-fill{height:100%;border-radius:3px;transition:width .4s ease}
+.controls-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:20px;overflow:hidden}
+.controls-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:none;border:none;cursor:pointer;color:var(--text)}
+.controls-toggle:hover{background:var(--card)}
+.controls-body{padding:16px;border-top:1px solid var(--border)}
+.controls-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:14px}
+.ctrl-group label{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:5px}
+.ctrl-select,.ctrl-input{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--font);font-size:13px;width:100%}
+.ctrl-select:focus,.ctrl-input:focus{outline:1px solid var(--teal)}
+.global-controls{border-top:1px solid var(--border);padding-top:14px;display:flex;gap:20px;align-items:flex-end;flex-wrap:wrap}
+.range-group label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);display:block;margin-bottom:5px}
+.range-row{display:flex;align-items:center;gap:8px}
+input[type=range]{-webkit-appearance:none;appearance:none;width:130px;height:4px;background:var(--border);border-radius:2px;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:13px;height:13px;border-radius:50%;background:var(--teal);cursor:pointer}
+.range-val{min-width:38px;text-align:center;font-weight:600;font-size:13px;color:var(--teal);background:var(--teal-dim);border-radius:4px;padding:2px 6px}
+.upload-zone{border:2px dashed var(--border);border-radius:8px;padding:18px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:12px}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--teal);background:var(--teal-dim)}
+.upload-zone input{display:none}
+.upload-label{color:var(--text-2);font-size:13px}
+.upload-label span{color:var(--teal);font-weight:600}
+.upload-status{font-size:12px;margin-top:5px;color:var(--text-3)}
+.upload-status.ok{color:var(--green)}.upload-status.err{color:var(--red)}
+.agent-map-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:10px}
+.agent-map-row{display:flex;align-items:center;gap:6px;font-size:12px}
+.agent-map-row label{color:var(--text-3);min-width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.custom-metrics-section{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:22px;overflow:hidden}
+.custom-metric-cards{display:flex;gap:12px;flex-wrap:wrap;padding:16px;min-height:60px}
+.custom-metric-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px;min-width:150px;position:relative}
+.delete-btn{position:absolute;top:6px;right:8px;background:none;border:none;color:var(--text-3);cursor:pointer;font-size:14px;line-height:1}
+.delete-btn:hover{color:var(--red)}
+.state-block{text-align:center;padding:40px 20px;color:var(--text-3)}
+.spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--teal);border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.error-msg{color:var(--red);font-size:13px}
+.view-toggle{display:flex;gap:3px}
+.view-btn{font-size:11px;padding:4px 11px;border-radius:4px;background:var(--card);border:1px solid var(--border);color:var(--text-3);cursor:pointer;font-family:var(--font)}
+.view-btn.active{background:var(--teal);color:#0B1622;border-color:var(--teal);font-weight:600}
+.chevron{transition:transform .2s;display:inline-block}
+.chevron.open{transform:rotate(180deg)}
+.hidden{display:none!important}
+.divider{height:1px;background:var(--border);margin:12px 0}
+.sub-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:8px}
+
+/* HISTORY */
+.hist-subnav{display:flex;gap:2px;margin-bottom:18px;flex-wrap:wrap}
+.hist-sub-btn{padding:5px 14px;border-radius:6px;border:none;background:var(--card);color:var(--text-3);font-family:var(--font);font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.05em;text-transform:uppercase;border:1px solid var(--border);transition:all .15s}
+.hist-sub-btn:hover{color:var(--text-2)}
+.hist-sub-btn.active{background:var(--teal-dim);color:var(--teal);border-color:rgba(0,194,168,.4)}
+.range-inputs{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.range-inputs label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+.chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:18px}
+.chart-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-2);margin-bottom:14px}
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+@media(max-width:800px){.charts-row{grid-template-columns:1fr}}
+svg.chart{width:100%;overflow:visible}
+.chart-bar{transition:opacity .2s}
+.chart-bar:hover{opacity:.75}
+.chart-tooltip{position:fixed;background:#0B1622;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--text);pointer-events:none;z-index:999;display:none}
+.hist-cache-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;font-size:12px;color:var(--text-3)}
+.cache-dot{width:7px;height:7px;border-radius:50%;background:var(--text-3)}
+.cache-dot.fresh{background:var(--green)}
+.no-archive{text-align:center;padding:40px;color:var(--text-3);font-size:13px}
+.no-archive a{color:var(--teal);text-decoration:none}
+
+/* LIGHT MODE */
+body.light {
+  --bg:#F0F4F8;--surface:#FFFFFF;--card:#E8EEF5;--card-hover:#DDE5F0;
+  --border:#C8D5E8;--text:#1A2C42;--text-2:#3A5A7A;--text-3:#7A9BB8;
+  --teal:#008F7A;--teal-dim:rgba(0,143,122,.1);
+  --green:#2E8B5A;--green-dim:rgba(46,139,90,.1);
+  --amber:#B8860B;--amber-dim:rgba(184,134,11,.1);
+  --red:#C0392B;--red-dim:rgba(192,57,43,.1);
+  --purple:#6A4FAF;--purple-dim:rgba(106,79,175,.1);
+  --blue:#2A6DB5;--blue-dim:rgba(42,109,181,.1);
+}
+body.light .lb-table th { background:var(--surface); }
+body.light .status-badge { border-color:rgba(0,143,122,.3); }
+body.light .rank-badge { background:var(--border); }
+
+/* THEME TOGGLE BTN */
+.theme-btn {
+  background:var(--card);border:1px solid var(--border);color:var(--text-2);
+  border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600;
+  cursor:pointer;font-family:var(--font);transition:all .2s;white-space:nowrap;
+  display:flex;align-items:center;gap:5px;
+}
+.theme-btn:hover{color:var(--text);background:var(--card-hover)}
+
+
+/* LB CUSTOM RANGE */
+.lb-range-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.lb-range-bar label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
+
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo"><span class="logo-dot"></span>Chasing Dashboard</div>
+  <div class="header-right">
+    <span class="status-badge" id="statusBadge">Live</span>
+    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">&#9790; Dark</button>
+    <input type="date" class="date-input" id="datePicker" onchange="refreshDay()">
+    <button class="btn" onclick="refreshDay()">&#8635; Refresh</button>
+    <button class="btn btn-ghost" onclick="toggleControls()">&#9881; Controls</button>
+    <button class="btn btn-ghost" onclick="downloadCSV()">&#8595; CSV</button>
+  </div>
+</header>
+
+<div class="pulse-bar" id="pulseBar"></div>
+
+<main class="main">
+
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="setTab('overview')">Overview</button>
+    <button class="tab-btn" onclick="setTab('campaigns')">Campaigns</button>
+    <button class="tab-btn" onclick="setTab('leaderboard')">Leaderboard</button>
+    <button class="tab-btn" onclick="setTab('custom')">Custom Metrics</button>
+    <button class="tab-btn" onclick="setTab('history')">History</button>
+  </div>
+
+  <!-- OVERVIEW TAB -->
+  <div id="tab-overview">
+    <div class="controls-panel">
+      <button class="controls-toggle" onclick="toggleControls()">
+        <span class="section-title">&#9881; Shift, Formula &amp; Utlatel Controls</span>
+        <span class="chevron" id="ctrlChevron">&#9662;</span>
+      </button>
+      <div class="controls-body hidden" id="ctrlBody">
+        <div class="sub-label">Utlatel Data Upload (CSV or Excel)</div>
+        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('utlatelFile').click()"
+             ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragleave="this.classList.remove('drag')">
+          <input type="file" id="utlatelFile" accept=".csv,.xlsx,.xls" onchange="handleFileUpload(event)">
+          <div class="upload-label">Drop Utlatel export here or <span>browse</span></div>
+          <div class="upload-status" id="uploadStatus">No file loaded &mdash; productivity shows as stub until uploaded</div>
+        </div>
+        <div id="agentMapSection" class="hidden">
+          <div class="sub-label">Map Agent Names to Chasers</div>
+          <div class="agent-map-grid" id="agentMapGrid"></div>
+        </div>
+        <div class="divider"></div>
+        <div class="sub-label">Shift Type per Chaser</div>
+        <div class="controls-grid" id="shiftGrid"></div>
+        <div class="global-controls">
+          <div class="range-group">
+            <label>Full Shift (mins)</label>
+            <div class="range-row">
+              <input type="range" id="shiftMins" min="60" max="600" value="400" step="10" oninput="updateRangeVal('shiftMins','shiftMinsVal');recalc()">
+              <span class="range-val" id="shiftMinsVal">400</span>
+            </div>
+          </div>
+          <div class="range-group">
+            <label>ACW Multiplier (mins per case)</label>
+            <div class="range-row">
+              <input type="range" id="acwMult" min="0.5" max="10" value="2" step="0.5" oninput="updateRangeVal('acwMult','acwMultVal');recalc()">
+              <span class="range-val" id="acwMultVal">2</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panels">
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">Today</span><span class="panel-date" id="todayLabel">-</span></div>
+        <div class="panel-body" id="todayPanel"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header"><span class="panel-title">This Week</span><span class="panel-date">Mon - Fri</span></div>
+        <div class="panel-body" id="weekPanel"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CAMPAIGNS TAB -->
+  <div id="tab-campaigns" class="hidden">
+
+    <!-- Campaign controls bar -->
+    <div class="lb-range-bar" style="margin-bottom:18px">
+      <label>Day</label>
+      <input type="date" class="date-input" id="campDayPicker">
+      <button class="btn" style="padding:5px 12px;font-size:11px" onclick="loadCampaignDay()">Load Day</button>
+      <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+      <label>Week of</label>
+      <input type="date" class="date-input" id="campWeekPicker">
+      <button class="btn" style="padding:5px 12px;font-size:11px" onclick="loadCampaignWeek()">Load Week</button>
+      <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px" onclick="refreshCampaigns()">&#8635; Refresh</button>
+    </div>
+
+    <div class="panels">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Campaigns</span>
+          <span class="panel-date" id="campDayLabel">-</span>
+        </div>
+        <div class="panel-body" id="campaignTodayPanel"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Campaigns - Week</span>
+          <span class="panel-date" id="campWeekLabel">-</span>
+        </div>
+        <div class="panel-body" id="campaignWeekPanel"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LEADERBOARD TAB -->
+  <div id="tab-leaderboard" class="hidden">
+    <div class="section-header">
+      <span class="section-title">Chaser Leaderboard</span>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div class="view-toggle">
+          <button class="view-btn active" id="lbDayBtn"    onclick="setLbView('day')">Today</button>
+          <button class="view-btn"        id="lbWeekBtn"   onclick="setLbView('week')">Week</button>
+          <button class="view-btn"        id="lbCustomBtn" onclick="setLbView('custom')">Custom</button>
+        </div>
+        <div class="sort-btns" id="sortBtns"></div>
+      </div>
+    </div>
+    <div class="lb-range-bar hidden" id="lbRangeBar">
+      <label>From</label>
+      <input type="date" class="date-input" id="lbFrom">
+      <label>To</label>
+      <input type="date" class="date-input" id="lbTo">
+      <button class="btn" onclick="applyLbCustomRange()">Apply</button>
+      <span style="font-size:11px;color:var(--text-3)" id="lbRangeLabel"></span>
+    </div>
+    <div class="leaderboard" id="leaderboardEl"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
+  </div>
+
+  <!-- CUSTOM METRICS TAB -->
+  <div id="tab-custom" class="hidden">
+    <div class="custom-metrics-section">
+      <div class="panel-header">
+        <span class="panel-title">Custom Metrics</span>
+        <span style="font-size:11px;color:var(--text-3)">Build your own calculated metrics from existing fields</span>
+      </div>
+      <div class="custom-metric-cards" id="customMetricCards">
+        <div style="color:var(--text-3);font-size:13px;padding:8px">No custom metrics yet. Build one below.</div>
+      </div>
+      <div class="panel-header" style="border-top:1px solid var(--border)"><span class="panel-title">Add Custom Metric</span></div>
+      <div style="padding:16px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div class="ctrl-group"><label>Metric Name</label><input class="ctrl-input" id="cmName" placeholder="e.g. Fax Yield"></div>
+          <div class="ctrl-group"><label>Display Color</label>
+            <select class="ctrl-select" id="cmColor">
+              <option value="teal">Teal</option><option value="green">Green</option>
+              <option value="amber">Amber</option><option value="red">Red</option><option value="purple">Purple</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 28px 1fr 28px 1fr;gap:8px;align-items:end;margin-bottom:14px">
+          <div class="ctrl-group" style="margin:0"><label>Numerator</label><select class="ctrl-select" id="cmNumer"></select></div>
+          <div style="color:var(--text-3);font-size:20px;text-align:center;padding-bottom:6px">&divide;</div>
+          <div class="ctrl-group" style="margin:0"><label>Denominator</label><select class="ctrl-select" id="cmDenom"></select></div>
+          <div style="color:var(--text-3);font-size:20px;text-align:center;padding-bottom:6px">&times;</div>
+          <div class="ctrl-group" style="margin:0"><label>Multiply By</label>
+            <select class="ctrl-select" id="cmMultiply">
+              <option value="1">1 (raw ratio)</option><option value="100" selected>100 (percentage)</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn" onclick="addCustomMetric()">Add Metric</button>
+      </div>
+      <div style="padding:0 16px 16px">
+        <div class="sub-label">Results - Today vs Week</div>
+        <div id="customMetricTable"></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- HISTORY TAB -->
+  <div id="tab-history" class="hidden">
+    <div class="hist-cache-bar">
+      <span class="cache-dot" id="cacheDot"></span>
+      <span id="cacheStatus">No data loaded yet</span>
+      <button class="btn btn-ghost" style="padding:4px 12px;font-size:11px" onclick="refreshArchive()">&#8635; Refresh from Archive</button>
+    </div>
+
+    <div class="hist-subnav">
+      <button class="hist-sub-btn active" onclick="setHistView('month')">This Month</button>
+      <button class="hist-sub-btn" onclick="setHistView('quarter')">This Quarter</button>
+      <button class="hist-sub-btn" onclick="setHistView('year')">This Year</button>
+      <button class="hist-sub-btn" onclick="setHistView('custom')">Custom Range</button>
+    </div>
+
+    <div id="histCustomRange" class="range-inputs hidden">
+      <label>From</label>
+      <input type="date" class="date-input" id="histFrom">
+      <label>To</label>
+      <input type="date" class="date-input" id="histTo">
+      <button class="btn" onclick="applyCustomRange()">Apply</button>
+    </div>
+
+    <div id="histContent">
+      <div class="no-archive">
+        <div style="font-size:32px;margin-bottom:12px">&#128196;</div>
+        <div style="font-weight:600;margin-bottom:8px">No archive data yet</div>
+        <div>Data is archived automatically at end of each weekday.<br>
+        Make sure the <code style="color:var(--teal)">archiveDayData()</code> function is set up in your Apps Script,<br>
+        then click <strong>Refresh from Archive</strong> above.</div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const API_BASE = "YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+const CHASERS  = ["Alex","Hope","Rose","Frank","Nova"];
+
+const CAMPAIGNS = [
+  { key:"ort",    label:"ORT",               color:"var(--teal)"   },
+  { key:"cgm",    label:"CGM",               color:"var(--purple)" },
+  { key:"lymphc", label:"Lymph Compression", color:"var(--blue)"   },
+  { key:"lymphw", label:"Lymph Wraps",        color:"var(--amber)"  },
+];
+
+const SHIFT_MULTI = { full:1, half:.5, quarter:.25, off:0 };
+
+const METRIC_FIELDS = [
+  { key:"cases",     label:"Total Cases"   },
+  { key:"positive",  label:"Total Positive"},
+  { key:"faxes",     label:"Faxes Sent"    },
+  { key:"approvals", label:"Approvals"     },
+  { key:"denials",   label:"Denials"       },
+  { key:"timeMins",  label:"Time (mins)"   },
+];
+
+const LB_COLS = [
+  { key:"cases",        label:"Cases",       tip:"Total chased cases"               },
+  { key:"positive",     label:"Positive",    tip:"Total positive outcomes"           },
+  { key:"faxes",        label:"Faxes",       tip:"Faxes sent"                       },
+  { key:"approvals",    label:"Approv.",     tip:"Approvals"                        },
+  { key:"denials",      label:"Denials",     tip:"Denials"                          },
+  { key:"approvalPct",  label:"Approv.%",    tip:"Approvals / faxes x 100"          },
+  { key:"denialPct",    label:"Denial%",     tip:"Denials / faxes x 100"            },
+  { key:"efficiency",   label:"Efficiency",  tip:"Cases / Positive (lower = better)"},
+  { key:"productivity", label:"Productivity",tip:"Productive time / shift x 100"    },
+];
+
+let dayData       = null;
+let weekData      = null;
+let lbView        = "day";
+let lbSort        = { col:"cases", dir:"desc" };
+let shiftMap      = {};
+let controlsOpen  = false;
+let activeTab     = "overview";
+let utlatelData   = {};
+let agentMap      = {};
+let customMetrics = [];
+let lbCustomData  = null;  // aggregated rows for custom lb range
+let campDayData   = null;  // separate campaign day data
+let campWeekData  = null;  // separate campaign week data
+
+window.addEventListener("DOMContentLoaded", () => {
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById("datePicker").value    = today;
+  document.getElementById("campDayPicker").value  = today;
+  document.getElementById("campWeekPicker").value = today;
+  CHASERS.forEach(n => { shiftMap[n]="full"; agentMap[n]=n; });
+  buildShiftGrid();
+  buildSortBtns();
+  populateCustomFieldSelects();
+  loadData();
+});
+
+// ── TABS ──────────────────────────────────────────────────────
+const TABS = ["overview","campaigns","leaderboard","custom","history"];
+function setTab(tab) {
+  activeTab = tab;
+  TABS.forEach(t => document.getElementById("tab-"+t).classList.toggle("hidden", t!==tab));
+  document.querySelectorAll(".tab-btn").forEach(b => {
+    b.classList.toggle("active", b.getAttribute("onclick").includes("'"+tab+"'"));
+  });
+  if (tab === "history" && !archiveCache) refreshArchive();
+}
+
+// ── DATA ──────────────────────────────────────────────────────
+async function loadData() {
+  const d = pickerToTab();
+  document.getElementById("todayLabel").textContent    = d;
+  document.getElementById("campDayLabel").textContent = d;
+  document.getElementById("statusBadge").textContent   = "Loading...";
+  ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"].forEach(id=>setEl(id,spinner()));
+  try {
+    const [dr,wr] = await Promise.all([fetchAPI("day",d),fetchAPI("week",d)]);
+    dayData=dr; weekData=wr;
+    document.getElementById("statusBadge").textContent="Live";
+    renderAll();
+  } catch(err) {
+    ["todayPanel","weekPanel"].forEach(id=>setEl(id,`<div class="state-block error-msg">Error: ${err.message}</div>`));
+    document.getElementById("statusBadge").textContent="Error";
+  }
+}
+
+async function fetchAPI(mode,dateTab) {
+  if (!API_BASE || API_BASE === "YOUR_APPS_SCRIPT_WEB_APP_URL_HERE") {
+    return mockData(mode, dateTab);
+  }
+  const url = `${API_BASE}?mode=${mode}&date=${encodeURIComponent(dateTab)}`;
+  const res = await fetch(url, { method:"GET", redirect:"follow" });
+  if (!res.ok) throw new Error("API error " + res.status);
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch(e) {
+    throw new Error("Bad JSON: " + text.slice(0,200));
+  }
+}
+
+function renderAll() {
+  if (!dayData||!weekData) return;
+  renderPulseBar();
+  renderTodayPanel();
+  renderWeekPanel();
+  renderCampaignPanels();
+  renderLeaderboard();
+  renderCustomMetricCards();
+  renderCustomMetricTable();
+}
+function recalc() { renderAll(); }
+
+// ── PULSE BAR ─────────────────────────────────────────────────
+function renderPulseBar() {
+  const colors=["#00C2A8","#4CAF8A","#E8B84B","#9B7FE8","#E05C6A"];
+  const ch=(dayData.chasers||[]);
+  const tot=ch.reduce((s,c)=>s+(c.totalCases||0),0)||1;
+  document.getElementById("pulseBar").innerHTML=ch.map((c,i)=>`
+    <div class="pulse-segment" style="background:${colors[i%colors.length]};opacity:${c.totalCases?1:.2}"
+         title="${c.name}: ${c.totalCases||0} cases"></div>`).join("");
+}
+
+// ── TODAY / WEEK PANELS ────────────────────────────────────────
+function renderTodayPanel() {
+  const t=dayData.teamTotals||{}, r=dayData.responses||{};
+  const fx=t.totalFaxes||1, avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
+  setEl("todayPanel",`
+    <div class="metric-grid">
+      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Faxes Sent",t.totalFaxes||0,"","")}
+      ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
+    </div>
+    <div class="response-row">
+      <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
+        <div><div class="resp-label">Approved</div><div class="resp-value">${r.approved||0}</div>
+        <div class="resp-pct">${((r.approved||0)/fx*100).toFixed(1)}% of faxes</div></div></div>
+      <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
+        <div><div class="resp-label">Denied</div><div class="resp-value">${r.denied||0}</div>
+        <div class="resp-pct">${((r.denied||0)/fx*100).toFixed(1)}% of faxes</div></div></div>
+    </div>`);
+}
+
+function renderWeekPanel() {
+  const t=weekData.weekTotals||{};
+  const fx=t.totalFaxes||1, avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
+  setEl("weekPanel",`
+    <div class="metric-grid">
+      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Faxes Sent",t.totalFaxes||0,"","")}
+      ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
+    </div>
+    <div class="response-row">
+      <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
+        <div><div class="resp-label">Approved (Week)</div><div class="resp-value">${t.totalApproved||0}</div>
+        <div class="resp-pct">${((t.totalApproved||0)/fx*100).toFixed(1)}% of faxes</div></div></div>
+      <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
+        <div><div class="resp-label">Denied (Week)</div><div class="resp-value">${t.totalDenied||0}</div>
+        <div class="resp-pct">${((t.totalDenied||0)/fx*100).toFixed(1)}% of faxes</div></div></div>
+    </div>`);
+}
+
+// ── CAMPAIGNS ─────────────────────────────────────────────────
+function renderCampaignPanels() {
+  const cd = campDayData  || dayData;
+  const cw = campWeekData || weekData;
+  setEl("campaignTodayPanel", campaignHTML(cd, "day"));
+  setEl("campaignWeekPanel",  campaignHTML(cw, "week"));
+}
+
+async function loadCampaignDay() {
+  const val = document.getElementById("campDayPicker").value;
+  if (!val) return;
+  const [y,m,d] = val.split("-");
+  const dateTab = `${parseInt(m)}/${parseInt(d)}`;
+  document.getElementById("campDayLabel").textContent = dateTab;
+  setEl("campaignTodayPanel", spinner());
+  try {
+    campDayData = await fetchAPI("day", dateTab);
+    setEl("campaignTodayPanel", campaignHTML(campDayData, "day"));
+  } catch(err) {
+    setEl("campaignTodayPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
+  }
+}
+
+async function loadCampaignWeek() {
+  const val = document.getElementById("campWeekPicker").value;
+  if (!val) return;
+  const [y,m,d] = val.split("-");
+  const dateTab = `${parseInt(m)}/${parseInt(d)}`;
+  // Get Mon-Fri of that week for label
+  const ref = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+  const day = ref.getDay();
+  const mon = new Date(ref); mon.setDate(ref.getDate() + (day===0?-6:1-day));
+  const fri = new Date(mon); fri.setDate(mon.getDate()+4);
+  const fmtD = d => `${d.getMonth()+1}/${d.getDate()}`;
+  document.getElementById("campWeekLabel").textContent = `${fmtD(mon)} – ${fmtD(fri)}`;
+  setEl("campaignWeekPanel", spinner());
+  try {
+    campWeekData = await fetchAPI("week", dateTab);
+    setEl("campaignWeekPanel", campaignHTML(campWeekData, "week"));
+  } catch(err) {
+    setEl("campaignWeekPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
+  }
+}
+
+async function refreshCampaigns() {
+  await Promise.all([loadCampaignDay(), loadCampaignWeek()]);
+}
+
+function campaignHTML(data,mode) {
+  const camps = mode==="day"
+    ? (data.responses?.byCampaign||mockCampaignData())
+    : aggWeekCampaigns(data.weekDays||[]);
+  const totApp=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.approved||0),0);
+  const totDen=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.denied||0),0);
+  return `<div class="campaign-grid">${CAMPAIGNS.map(camp=>{
+    const d=camps[camp.key]||{approved:0,denied:0,total:0};
+    const pct=d.total?(d.approved/d.total*100).toFixed(1):"--";
+    return `<div class="campaign-card">
+      <div class="campaign-name" style="color:${camp.color}">${camp.label}</div>
+      <div class="campaign-stats">
+        <div class="cstat"><div class="cstat-val" style="color:var(--green)">${d.approved||0}</div><div class="cstat-lbl">Approved</div></div>
+        <div class="cstat"><div class="cstat-val" style="color:var(--red)">${d.denied||0}</div><div class="cstat-lbl">Denied</div></div>
+        <div class="cstat"><div class="cstat-val" style="color:var(--text-2)">${d.total||0}</div><div class="cstat-lbl">Total</div></div>
+        <div class="cstat"><div class="cstat-val" style="color:${camp.color}">${pct}${pct!=="--"?"%":""}</div><div class="cstat-lbl">Approv%</div></div>
+      </div></div>`;}).join("")}
+  </div><div class="divider"></div>
+  <div class="response-row">
+    <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
+      <div><div class="resp-label">All Campaigns Approved</div><div class="resp-value">${totApp}</div></div></div>
+    <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
+      <div><div class="resp-label">All Campaigns Denied</div><div class="resp-value">${totDen}</div></div></div>
+  </div>`;
+}
+
+function aggWeekCampaigns(weekDays) {
+  const agg={}; CAMPAIGNS.forEach(c=>{agg[c.key]={approved:0,denied:0,total:0};});
+  for (const day of weekDays) {
+    const bc=day.responses?.byCampaign||mockCampaignData();
+    CAMPAIGNS.forEach(c=>{agg[c.key].approved+=bc[c.key]?.approved||0;agg[c.key].denied+=bc[c.key]?.denied||0;agg[c.key].total+=bc[c.key]?.total||0;});
+  }
+  return agg;
+}
+
+// ── LEADERBOARD ───────────────────────────────────────────────
+function buildSortBtns() {
+  document.getElementById("sortBtns").innerHTML=LB_COLS.map(c=>`
+    <button class="sort-btn ${lbSort.col===c.key?"active":""}" onclick="setSortCol('${c.key}')" title="${c.tip}">${c.label}</button>`).join("");
+}
+function setSortCol(col) {
+  lbSort.dir=lbSort.col===col?(lbSort.dir==="desc"?"asc":"desc"):"desc"; lbSort.col=col;
+  buildSortBtns(); renderLeaderboard();
+}
+function setLbView(v) {
+  lbView=v;
+  document.getElementById("lbDayBtn").classList.toggle("active",    v==="day");
+  document.getElementById("lbWeekBtn").classList.toggle("active",   v==="week");
+  document.getElementById("lbCustomBtn").classList.toggle("active", v==="custom");
+  document.getElementById("lbRangeBar").classList.toggle("hidden",  v!=="custom");
+  if (v !== "custom") renderLeaderboard();
+}
+
+function applyLbCustomRange() {
+  const from = document.getElementById("lbFrom").value;
+  const to   = document.getElementById("lbTo").value;
+  if (!from || !to) { alert("Select both dates."); return; }
+
+  // Use archiveCache if available, else fetch
+  if (!archiveCache) {
+    setEl("leaderboardEl", `<div class="state-block error-msg">Load archive data first (History tab &rarr; Refresh).</div>`);
+    return;
+  }
+
+  const fromD = new Date(from), toD = new Date(to);
+  toD.setHours(23,59,59);
+  const rows = archiveCache.filter(r => {
+    const d = parseArchiveDate(r.Date); return d && d >= fromD && d <= toD;
+  });
+
+  if (!rows.length) {
+    setEl("leaderboardEl", `<div class="state-block error-msg">No archived data found for this range.</div>`);
+    return;
+  }
+
+  lbCustomData = groupByChaser(rows);
+  const label  = from + " → " + to;
+  document.getElementById("lbRangeLabel").textContent = rows.length + " rows across " + new Set(rows.map(r=>r.Date)).size + " days";
+  renderLeaderboard();
+}
+
+function renderLeaderboard() {
+  const sfm=Number(document.getElementById("shiftMins").value);
+  const acw=Number(document.getElementById("acwMult").value);
+  let rows;
+
+  if (lbView==="custom") {
+    if (!lbCustomData) { setEl("leaderboardEl",`<div class="state-block" style="color:var(--text-3)">Pick a date range above and click Apply.</div>`); return; }
+    rows = Object.entries(lbCustomData).map(([name,d]) =>
+      buildRow(name, d.cases, d.positive, d.faxes, d.approvals, d.denials, sfm*d.days, acw, 0)
+    );
+  } else {
+    const source=lbView==="week"?weekData:dayData;
+    if(!source)return;
+    if(lbView==="day"){
+      const bc=(dayData.responses||{}).byChaser||{};
+      rows=(dayData.chasers||[]).map(c=>{
+        const rs=bc[c.name]||{approvals:0,denials:0};
+        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name));
+      });
+    } else {
+      const bc=mergeWeekResp(weekData.weekDays||[]);
+      rows=(weekData.chaserWeekTotals||[]).map(c=>{
+        const rs=bc[c.name]||{approvals:0,denials:0};
+        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm*5,acw,getUtlMins(c.name)*5);
+      });
+    }
+  }
+  rows.sort((a,b)=>{
+    const av=a[lbSort.col],bv=b[lbSort.col];
+    if(av==="--"&&bv==="--")return 0; if(av==="--")return 1; if(bv==="--")return -1;
+    return lbSort.dir==="desc"?bv-av:av-bv;
+  });
+  const mxC=Math.max(...rows.map(r=>r.cases),1), mxF=Math.max(...rows.map(r=>r.faxes),1);
+  const thC=col=>col===lbSort.col?"sort-"+lbSort.dir:"";
+  setEl("leaderboardEl",`<table class="lb-table"><thead><tr>
+    <th>#</th><th>Chaser</th>
+    ${LB_COLS.map(c=>`<th class="${thC(c.key)}" onclick="setSortCol('${c.key}')" title="${c.tip}">${c.label}</th>`).join("")}
+    <th>Shift</th></tr></thead><tbody>
+    ${rows.map((r,i)=>`<tr>
+      <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
+      <td><span class="chaser-name">${r.name}</span></td>
+      <td><div>${r.cases}</div><div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${(r.cases/mxC*100).toFixed(0)}%;background:var(--teal)"></div></div></td>
+      <td>${r.positive}</td>
+      <td><div>${r.faxes}</div><div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${(r.faxes/mxF*100).toFixed(0)}%;background:var(--text-2)"></div></div></td>
+      <td><span class="pill pill-green">${r.approvals}</span></td>
+      <td><span class="pill pill-red">${r.denials}</span></td>
+      <td>${r.approvalPct==="--"?"--":`<span class="pill pill-teal">${r.approvalPct}%</span>`}</td>
+      <td>${r.denialPct==="--"?"--":`<span class="pill pill-amber">${r.denialPct}%</span>`}</td>
+      <td>${r.efficiency==="--"?"--":r.efficiency}</td>
+      <td>${r.productivityStub?`<span class="pill pill-stub">Upload Utlatel</span>`:`<span class="pill pill-teal">${r.productivity}%</span>`}</td>
+      <td><select class="ctrl-select" style="width:88px;padding:3px 6px;font-size:11px" onchange="setShift('${r.name}',this.value)">
+        <option value="full"    ${shiftMap[r.name]==="full"   ?"selected":""}>Full</option>
+        <option value="half"    ${shiftMap[r.name]==="half"   ?"selected":""}>Half</option>
+        <option value="quarter" ${shiftMap[r.name]==="quarter"?"selected":""}>Quarter</option>
+        <option value="off"     ${shiftMap[r.name]==="off"    ?"selected":""}>Off</option>
+      </select></td>
+    </tr>`).join("")}</tbody></table>`);
+}
+
+function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMins){
+  cases=cases||0;positive=positive||0;faxes=faxes||0;approvals=approvals||0;denials=denials||0;
+  const shift=shiftMap[name]||"full";
+  const sm=sfm*SHIFT_MULTI[shift];
+  const approvalPct=faxes?(approvals/faxes*100).toFixed(1):"--";
+  const denialPct=faxes?(denials/faxes*100).toFixed(1):"--";
+  const efficiency=positive?(cases/positive).toFixed(2):"--";
+  let productivity="--",productivityStub=false;
+  if(shift==="off"){productivity="--";}
+  else if(!utlMins){productivityStub=true;}
+  else { const acw=acwMult*cases; productivity=sm>0?((utlMins+acw)/sm*100).toFixed(1):"--"; }
+  return {name,cases,positive,faxes,approvals,denials,approvalPct,denialPct,efficiency,productivity,productivityStub,shiftMins:sm};
+}
+
+function mergeWeekResp(weekDays){
+  const m={};
+  for(const day of weekDays) for(const[n,v]of Object.entries((day.responses||{}).byChaser||{})){
+    if(!m[n])m[n]={approvals:0,denials:0}; m[n].approvals+=v.approvals||0; m[n].denials+=v.denials||0;
+  }
+  return m;
+}
+
+// ── UTLATEL ───────────────────────────────────────────────────
+function handleDragOver(e){e.preventDefault();document.getElementById("uploadZone").classList.add("drag");}
+function handleDrop(e){e.preventDefault();document.getElementById("uploadZone").classList.remove("drag");if(e.dataTransfer.files[0])parseUtlatelFile(e.dataTransfer.files[0]);}
+function handleFileUpload(e){if(e.target.files[0])parseUtlatelFile(e.target.files[0]);}
+
+function parseUtlatelFile(file){
+  const setS=(msg,cls)=>{const el=document.getElementById("uploadStatus");el.textContent=msg;el.className="upload-status "+(cls||"");};
+  setS("Reading...");
+  const ext=file.name.split(".").pop().toLowerCase();
+  if(ext==="csv"){
+    const r=new FileReader();
+    r.onload=e=>processUtlatelRows(parseCSV(e.target.result),file.name,setS);
+    r.readAsText(file);
+  } else if(["xlsx","xls"].includes(ext)){
+    const r=new FileReader();
+    r.onload=e=>{
+      try{const wb=XLSX.read(e.target.result,{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];processUtlatelRows(XLSX.utils.sheet_to_json(ws,{defval:""}),file.name,setS);}
+      catch(err){setS("Error: "+err.message,"err");}
+    };
+    r.readAsArrayBuffer(file);
+  } else { setS("Unsupported file type.","err"); }
+}
+
+function parseCSV(text){
+  const lines=text.trim().split("\n");
+  const headers=lines[0].split(",").map(h=>h.trim().replace(/^"|"$/g,""));
+  return lines.slice(1).map(line=>{const vals=line.split(",").map(v=>v.trim().replace(/^"|"$/g,""));const o={};headers.forEach((h,i)=>o[h]=vals[i]||"");return o;});
+}
+
+function processUtlatelRows(rows,fileName,setS){
+  if(!rows.length){setS("File is empty.","err");return;}
+  const keys=Object.keys(rows[0]);
+  const agentCol=keys.find(k=>/agent|name|user/i.test(k));
+  const durCol=keys.find(k=>/duration|total.?dur/i.test(k));
+  const callsCol=keys.find(k=>/total.?calls?/i.test(k));
+  if(!agentCol){setS("Cannot find Agent Name column.","err");return;}
+  if(!durCol){setS("Cannot find Total Duration column.","err");return;}
+  utlatelData={};
+  for(const row of rows){
+    const agent=String(row[agentCol]||"").trim();
+    if(!agent)continue;
+    const dur=parseDuration(String(row[durCol]||""));
+    const calls=parseInt(row[callsCol]||0)||0;
+    if(!utlatelData[agent])utlatelData[agent]={totalDurationMins:0,totalCalls:0};
+    utlatelData[agent].totalDurationMins+=dur;
+    utlatelData[agent].totalCalls+=calls;
+  }
+  const agents=Object.keys(utlatelData);
+  setS("Loaded "+fileName+" - "+agents.length+" agent(s)","ok");
+  buildAgentMapUI(agents);
+  recalc();
+}
+
+// Parse "0 H , 27.13 M" or "1 H , 5.50 M"
+function parseDuration(str){
+  const h=str.match(/(\d+(?:\.\d+)?)\s*H/i);
+  const m=str.match(/(\d+(?:\.\d+)?)\s*M/i);
+  return (h?parseFloat(h[1]):0)*60+(m?parseFloat(m[1]):0);
+}
+
+function buildAgentMapUI(agents){
+  document.getElementById("agentMapSection").classList.remove("hidden");
+  document.getElementById("agentMapGrid").innerHTML=agents.map(agent=>{
+    const auto=CHASERS.find(c=>agent.toLowerCase().includes(c.toLowerCase()))||"";
+    if(auto)agentMap[agent]=auto;
+    return `<div class="agent-map-row">
+      <label title="${agent}">${agent}</label>
+      <span style="color:var(--text-3)">&#8594;</span>
+      <select class="ctrl-select" style="flex:1" onchange="agentMap['${agent}']=this.value;recalc()">
+        <option value="">-- ignore --</option>
+        ${CHASERS.map(c=>`<option value="${c}" ${auto===c?"selected":""}>${c}</option>`).join("")}
+      </select></div>`;}).join("");
+}
+
+function getUtlMins(chaserName){
+  let tot=0;
+  for(const[agent,mapped]of Object.entries(agentMap)){
+    if(mapped===chaserName&&utlatelData[agent])tot+=utlatelData[agent].totalDurationMins||0;
+  }
+  return tot;
+}
+
+// ── CUSTOM METRICS ────────────────────────────────────────────
+function populateCustomFieldSelects(){
+  ["cmNumer","cmDenom"].forEach(id=>{
+    document.getElementById(id).innerHTML=METRIC_FIELDS.map(f=>`<option value="${f.key}">${f.label}</option>`).join("");
+  });
+  document.getElementById("cmDenom").value="faxes";
+}
+
+function addCustomMetric(){
+  const name=document.getElementById("cmName").value.trim();
+  const numer=document.getElementById("cmNumer").value;
+  const denom=document.getElementById("cmDenom").value;
+  const multiply=Number(document.getElementById("cmMultiply").value);
+  const color=document.getElementById("cmColor").value;
+  if(!name){alert("Enter a metric name.");return;}
+  if(numer===denom){alert("Numerator and denominator must differ.");return;}
+  customMetrics.push({name,numer,denom,multiply,color});
+  document.getElementById("cmName").value="";
+  renderCustomMetricCards(); renderCustomMetricTable();
+}
+function removeCustomMetric(i){customMetrics.splice(i,1);renderCustomMetricCards();renderCustomMetricTable();}
+
+function calcCM(m,data,mode){
+  if(!data)return "--";
+  const t=mode==="week"?(data.weekTotals||{}):(data.teamTotals||{});
+  const r=mode==="week"?{approved:data.weekTotals?.totalApproved||0,denied:data.weekTotals?.totalDenied||0}:(data.responses||{});
+  const f={cases:t.totalCases||0,positive:t.totalPositive||0,faxes:t.totalFaxes||0,approvals:r.approved||0,denials:r.denied||0,timeMins:t.totalTimeMins||0};
+  const d=f[m.denom]; if(!d)return "--";
+  return (f[m.numer]/d*m.multiply).toFixed(1);
+}
+
+function renderCustomMetricCards(){
+  const el=document.getElementById("customMetricCards");
+  if(!customMetrics.length){el.innerHTML=`<div style="color:var(--text-3);font-size:13px;padding:8px">No custom metrics yet.</div>`;return;}
+  el.innerHTML=customMetrics.map((m,i)=>`<div class="custom-metric-card">
+    <button class="delete-btn" onclick="removeCustomMetric(${i})">&#10005;</button>
+    <div class="metric-label">${m.name}</div>
+    <div class="metric-value ${m.color}">${calcCM(m,dayData,"day")}${m.multiply===100?"%":""}</div>
+    <div class="metric-sub">Today &nbsp;|&nbsp; Week: ${calcCM(m,weekData,"week")}${m.multiply===100?"%":""}</div>
+  </div>`).join("");
+}
+
+function renderCustomMetricTable(){
+  if(!customMetrics.length){setEl("customMetricTable","");return;}
+  const suf=m=>m.multiply===100?"%":"";
+  setEl("customMetricTable",`<table class="lb-table" style="min-width:unset"><thead><tr>
+    <th>Metric</th><th>Formula</th><th>Today</th><th>This Week</th></tr></thead><tbody>
+    ${customMetrics.map((m,i)=>{
+      const nl=METRIC_FIELDS.find(f=>f.key===m.numer)?.label||m.numer;
+      const dl=METRIC_FIELDS.find(f=>f.key===m.denom)?.label||m.denom;
+      return `<tr>
+        <td><span class="chaser-name">${m.name}</span></td>
+        <td style="color:var(--text-3);font-size:12px">${nl} / ${dl} x ${m.multiply}</td>
+        <td><span class="metric-value ${m.color}" style="font-size:18px">${calcCM(m,dayData,"day")}${suf(m)}</span></td>
+        <td><span class="metric-value ${m.color}" style="font-size:18px">${calcCM(m,weekData,"week")}${suf(m)}</span></td>
+      </tr>`;}).join("")}</tbody></table>`);
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// THEME
+// ══════════════════════════════════════════════════════════════
+let darkMode = true;
+function toggleTheme() {
+  darkMode = !darkMode;
+  document.body.classList.toggle("light", !darkMode);
+  const btn = document.getElementById("themeBtn");
+  btn.innerHTML = darkMode ? "&#9790; Dark" : "&#9788; Light";
+}
+
+// ══════════════════════════════════════════════════════════════
+// REFRESH (today + week)
+// ══════════════════════════════════════════════════════════════
+async function refreshDay() {
+  const d = pickerToTab();
+  document.getElementById("statusBadge").textContent = "Refreshing...";
+  ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"].forEach(id=>setEl(id,spinner()));
+  try {
+    const [dr,wr] = await Promise.all([fetchAPI("day",d), fetchAPI("week",d)]);
+    dayData=dr; weekData=wr;
+    const isLive = API_BASE && API_BASE !== "YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+  document.getElementById("statusBadge").textContent = isLive ? "Live" : "Demo";
+  document.getElementById("statusBadge").style.background = isLive ? "var(--teal-dim)" : "var(--amber-dim)";
+  document.getElementById("statusBadge").style.color = isLive ? "var(--teal)" : "var(--amber)";
+  document.getElementById("statusBadge").style.borderColor = isLive ? "rgba(0,194,168,.25)" : "rgba(232,184,75,.25)";
+    renderAll();
+  } catch(err) {
+    document.getElementById("statusBadge").textContent = "Error";
+    ["todayPanel","weekPanel"].forEach(id=>setEl(id,`<div class="state-block error-msg">Error: ${err.message}</div>`));
+  }
+}
+
+// ── CSV DOWNLOAD ──────────────────────────────────────────────
+function downloadCSV(){
+  if(!dayData){alert("Load data first.");return;}
+  const d=pickerToTab();
+  const sfm=Number(document.getElementById("shiftMins").value);
+  const acw=Number(document.getElementById("acwMult").value);
+  const headers=["Date","Chaser","Cases","Positive","Faxes","Approvals","Denials","Approval%","Denial%","Efficiency","Productivity%","Shift","ShiftMins"];
+  const bc=(dayData.responses||{}).byChaser||{};
+  const rows=(dayData.chasers||[]).map(c=>{
+    const rs=bc[c.name]||{approvals:0,denials:0};
+    const r=buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name));
+    return [d,c.name,r.cases,r.positive,r.faxes,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,shiftMap[c.name]||"full",r.shiftMins].join(",");
+  });
+  const camps=dayData.responses?.byCampaign||mockCampaignData();
+  rows.push("","Campaign,Approved,Denied,Total,Approval%");
+  CAMPAIGNS.forEach(camp=>{const cd=camps[camp.key]||{approved:0,denied:0,total:0};const pct=cd.total?(cd.approved/cd.total*100).toFixed(1):"";rows.push([camp.label,cd.approved,cd.denied,cd.total,pct].join(","));});
+  if(customMetrics.length){rows.push("","Custom Metric,Today,Week");customMetrics.forEach(m=>rows.push([m.name,calcCM(m,dayData,"day"),calcCM(m,weekData,"week")].join(",")));}
+  const blob=new Blob([[headers.join(","),...rows].join("\n")],{type:"text/csv"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");a.href=url;a.download=`chasing_${d.replace("/","-")}.csv`;a.click();URL.revokeObjectURL(url);
+}
+
+// ── SHIFT ─────────────────────────────────────────────────────
+function buildShiftGrid(){
+  document.getElementById("shiftGrid").innerHTML=CHASERS.map(name=>`
+    <div class="ctrl-group"><label>${name}</label>
+    <select class="ctrl-select" onchange="setShift('${name}',this.value)">
+      <option value="full"    ${shiftMap[name]==="full"   ?"selected":""}>Full</option>
+      <option value="half"    ${shiftMap[name]==="half"   ?"selected":""}>Half</option>
+      <option value="quarter" ${shiftMap[name]==="quarter"?"selected":""}>Quarter</option>
+      <option value="off"     ${shiftMap[name]==="off"    ?"selected":""}>Off</option>
+    </select></div>`).join("");
+}
+function setShift(name,val){
+  shiftMap[name]=val;
+  document.querySelectorAll(`select[onchange*="'${name}'"]`).forEach(el=>el.value=val);
+  recalc();
+}
+function toggleControls(){
+  controlsOpen=!controlsOpen;
+  document.getElementById("ctrlBody").classList.toggle("hidden",!controlsOpen);
+  document.getElementById("ctrlChevron").classList.toggle("open",controlsOpen);
+}
+
+// ── UTILS ─────────────────────────────────────────────────────
+function pickerToTab(){const v=document.getElementById("datePicker").value;if(!v)return getTodayTab();const[y,m,d]=v.split("-");return `${parseInt(m)}/${parseInt(d)}`;}
+function getTodayTab(){const n=new Date();return `${n.getMonth()+1}/${n.getDate()}`;}
+function mc(label,value,unit,cls){return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value ${cls}">${value}${unit?`<span style="font-size:12px;color:var(--text-3);margin-left:2px">${unit}</span>`:""}</div></div>`;}
+function setEl(id,html){const el=document.getElementById(id);if(el)el.innerHTML=html;}
+function spinner(){return `<div class="state-block"><div class="spinner"></div>Loading...</div>`;}
+function updateRangeVal(s,v){document.getElementById(v).textContent=document.getElementById(s).value;}
+
+// ── MOCK DATA ─────────────────────────────────────────────────
+function mockCampaignData(){return{ort:{approved:6,denied:2,total:10},cgm:{approved:5,denied:1,total:8},lymphc:{approved:4,denied:2,total:7},lymphw:{approved:4,denied:1,total:6}};}
+
+function mockData(mode,dateTab){
+  const ch=[
+    {name:"Alex", totalCases:18,totalPositive:12,totalTimeMins:190,totalFaxes:14},
+    {name:"Hope", totalCases:14,totalPositive:9, totalTimeMins:155,totalFaxes:11},
+    {name:"Rose", totalCases:22,totalPositive:15,totalTimeMins:210,totalFaxes:18},
+    {name:"Frank",totalCases:11,totalPositive:7, totalTimeMins:130,totalFaxes:9 },
+    {name:"Nova", totalCases:16,totalPositive:10,totalTimeMins:175,totalFaxes:13},
+  ];
+  const tt=ch.reduce((t,c)=>({totalCases:t.totalCases+c.totalCases,totalPositive:t.totalPositive+c.totalPositive,totalTimeMins:t.totalTimeMins+c.totalTimeMins,totalFaxes:t.totalFaxes+c.totalFaxes}),{totalCases:0,totalPositive:0,totalTimeMins:0,totalFaxes:0});
+  const rs={approved:19,denied:6,byChaser:{Alex:{approvals:5,denials:2},Hope:{approvals:3,denials:1},Rose:{approvals:6,denials:1},Frank:{approvals:2,denials:1},Nova:{approvals:3,denials:1}},byCampaign:mockCampaignData()};
+  if(mode==="day")return{mode:"day",date:dateTab,chasers:ch,teamTotals:tt,responses:rs};
+  const wd=[0,1,2,3,4].map(i=>({mode:"day",date:dateTab,chasers:ch.map(c=>({...c,totalCases:Math.max(c.totalCases-i,0)})),teamTotals:tt,responses:rs}));
+  return{mode:"week",weekDays:wd,weekTotals:{...tt,totalCases:tt.totalCases*5,totalPositive:tt.totalPositive*5,totalTimeMins:tt.totalTimeMins*5,totalFaxes:tt.totalFaxes*5,totalApproved:rs.approved*5,totalDenied:rs.denied*5},chaserWeekTotals:ch.map(c=>({...c,totalCases:c.totalCases*5,totalPositive:c.totalPositive*5,totalTimeMins:c.totalTimeMins*5,totalFaxes:c.totalFaxes*5}))};
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// HISTORY / ARCHIVE
+// ══════════════════════════════════════════════════════════════
+let archiveCache   = null;   // raw rows from archive sheet
+let archiveFetched = null;   // Date object of last fetch
+let histView       = "month";
+let histRange      = { from: null, to: null };
+
+const CHASER_COLORS = {
+  Alex:"#00C2A8", Hope:"#4CAF8A", Rose:"#E8B84B", Frank:"#9B7FE8", Nova:"#E05C6A"
+};
+
+async function refreshArchive() {
+  setCacheStatus("Fetching...", false);
+  try {
+    let rows;
+    if (API_BASE === "YOUR_APPS_SCRIPT_WEB_APP_URL_HERE") {
+      rows = mockArchiveData();
+    } else {
+      const res = await fetch(`${API_BASE}?mode=archive`);
+      if (!res.ok) throw new Error("API " + res.status);
+      const data = await res.json();
+      rows = data.rows || [];
+    }
+    archiveCache   = rows;
+    archiveFetched = new Date();
+    setCacheStatus("Last updated " + archiveFetched.toLocaleTimeString(), true);
+    renderHistView();
+  } catch(err) {
+    setCacheStatus("Error: " + err.message, false);
+  }
+}
+
+function setCacheStatus(msg, fresh) {
+  document.getElementById("cacheStatus").textContent = msg;
+  document.getElementById("cacheDot").className = "cache-dot" + (fresh ? " fresh" : "");
+}
+
+function setHistView(v) {
+  histView = v;
+  document.querySelectorAll(".hist-sub-btn").forEach(b => {
+    b.classList.toggle("active", b.getAttribute("onclick").includes("'" + v + "'"));
+  });
+  document.getElementById("histCustomRange").classList.toggle("hidden", v !== "custom");
+  if (v !== "custom") renderHistView();
+}
+
+function applyCustomRange() {
+  histRange.from = document.getElementById("histFrom").value;
+  histRange.to   = document.getElementById("histTo").value;
+  if (!histRange.from || !histRange.to) { alert("Select both dates."); return; }
+  renderHistView();
+}
+
+function renderHistView() {
+  if (!archiveCache) {
+    // Auto-load mock data for demo
+    refreshArchive();
+    return;
+  }
+  const rows = filterArchiveRows(archiveCache, histView, histRange);
+  if (!rows.length) {
+    setEl("histContent", `<div class="no-archive">No data found for this period.</div>`);
+    return;
+  }
+  const summary  = aggregateArchiveRows(rows);
+  const byDate   = groupByDate(rows);
+  const byChaserAgg = groupByChaser(rows);
+  const dates    = Object.keys(byDate).sort();
+  setEl("histContent", `
+    ${renderHistSummaryCards(summary)}
+    <div class="charts-row">
+      <div class="chart-wrap"><div class="chart-title">Cases by Chaser</div><div id="barChart"></div></div>
+      <div class="chart-wrap"><div class="chart-title">Approvals by Chaser</div><div id="barChartApprovals"></div></div>
+    </div>
+    <div class="chart-wrap"><div class="chart-title">Daily Cases Trend</div><div id="lineChart"></div></div>
+    <div class="chart-wrap"><div class="chart-title">Daily Approvals Trend</div><div id="lineChartApprovals"></div></div>
+    ${renderHistLeaderboard(byChaserAgg)}
+  `);
+  requestAnimationFrame(() => {
+    drawBarChart("barChart",       byChaserAgg, "cases",     "Cases");
+    drawBarChart("barChartApprovals", byChaserAgg, "approvals", "Approvals");
+    drawLineChart("lineChart",          byDate, dates, "cases",     "Cases");
+    drawLineChart("lineChartApprovals", byDate, dates, "approvals", "Approvals");
+  });
+}
+
+// ── FILTER ────────────────────────────────────────────────────
+function filterArchiveRows(rows, view, range) {
+  const now   = new Date();
+  const year  = now.getFullYear();
+  const month = now.getMonth();
+  const q     = Math.floor(month / 3);
+
+  return rows.filter(r => {
+    const d = parseArchiveDate(r.Date);
+    if (!d) return false;
+    if (view === "month")   return d.getFullYear()===year && d.getMonth()===month;
+    if (view === "quarter") return d.getFullYear()===year && Math.floor(d.getMonth()/3)===q;
+    if (view === "year")    return d.getFullYear()===year;
+    if (view === "custom") {
+      const from = new Date(range.from), to = new Date(range.to);
+      to.setHours(23,59,59);
+      return d >= from && d <= to;
+    }
+    return true;
+  });
+}
+
+function parseArchiveDate(str) {
+  if (!str) return null;
+  // supports "6/25", "6/25/2026", "2026-06-25"
+  if (str.includes("-")) return new Date(str);
+  const parts = str.split("/");
+  if (parts.length >= 2) {
+    const yr = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
+    return new Date(yr, parseInt(parts[0])-1, parseInt(parts[1]));
+  }
+  return null;
+}
+
+// ── AGGREGATE ────────────────────────────────────────────────
+function aggregateArchiveRows(rows) {
+  const daySet = new Set(rows.map(r=>r.Date));
+  return rows.reduce((s, r) => ({
+    cases:          s.cases          + (Number(r.Cases)||0),
+    positive:       s.positive       + (Number(r.Positive)||0),
+    faxes:          s.faxes          + (Number(r.Faxes)||0),
+    approvals:      s.approvals      + (Number(r.Approvals)||0),
+    denials:        s.denials        + (Number(r.Denials)||0),
+    timeMins:       s.timeMins       + (Number(r.TimeMins)||0),
+    calls:          s.calls          + (Number(r.TotalCalls)||0),
+    durationMins:   s.durationMins   + (Number(r.TotalDurationMins)||0),
+    productiveTime: s.productiveTime + (Number(r.ProductiveTime)||0),
+    days: s.days,
+  }), { cases:0, positive:0, faxes:0, approvals:0, denials:0, timeMins:0,
+        calls:0, durationMins:0, productiveTime:0,
+        days: daySet.size });
+}
+
+function groupByDate(rows) {
+  const map = {};
+  for (const r of rows) {
+    if (!map[r.Date]) map[r.Date] = { cases:0, positive:0, faxes:0, approvals:0, denials:0 };
+    map[r.Date].cases     += Number(r.Cases)||0;
+    map[r.Date].positive  += Number(r.Positive)||0;
+    map[r.Date].faxes     += Number(r.Faxes)||0;
+    map[r.Date].approvals += Number(r.Approvals)||0;
+    map[r.Date].denials   += Number(r.Denials)||0;
+  }
+  return map;
+}
+
+function groupByChaser(rows) {
+  const map = {};
+  for (const r of rows) {
+    const n = r.Chaser;
+    if (!n) continue;
+    if (!map[n]) map[n] = { cases:0, positive:0, faxes:0, approvals:0, denials:0,
+                             timeMins:0, calls:0, durationMins:0, productiveTime:0, days:new Set() };
+    map[n].cases          += Number(r.Cases)||0;
+    map[n].positive       += Number(r.Positive)||0;
+    map[n].faxes          += Number(r.Faxes)||0;
+    map[n].approvals      += Number(r.Approvals)||0;
+    map[n].denials        += Number(r.Denials)||0;
+    map[n].timeMins       += Number(r.TimeMins)||0;
+    map[n].calls          += Number(r.TotalCalls)||0;
+    map[n].durationMins   += Number(r.TotalDurationMins)||0;
+    map[n].productiveTime += Number(r.ProductiveTime)||0;
+    map[n].days.add(r.Date);
+  }
+  Object.values(map).forEach(v => v.days = v.days.size);
+  return map;
+}
+
+// ── SUMMARY CARDS ────────────────────────────────────────────
+function renderHistSummaryCards(s) {
+  const label   = { month:"Month", quarter:"Quarter", year:"Year", custom:"Period" }[histView]||"";
+  const appPct  = s.faxes    ? (s.approvals/s.faxes*100).toFixed(1) : "--";
+  const eff     = s.positive ? (s.cases/s.positive).toFixed(2)       : "--";
+  const avgTime = s.cases    ? (s.timeMins/s.cases).toFixed(1)        : "--";
+  const avgDay  = s.days     ? (s.cases/s.days).toFixed(1)            : "--";
+  const avgProd = s.days     ? (s.productiveTime/s.days).toFixed(1)   : "--";
+  const totalH  = s.durationMins ? (s.durationMins/60).toFixed(1)     : "--";
+  return `<div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
+    ${mc("Cases ("+label+")",    s.cases,     "", "teal")}
+    ${mc("Approvals",            s.approvals, "", "green")}
+    ${mc("Denials",              s.denials,   "", "red")}
+    ${mc("Faxes Sent",           s.faxes,     "", "")}
+    ${mc("Approval Rate",        appPct,      "%","green")}
+    ${mc("Efficiency",           eff,         "", "")}
+    ${mc("Avg Time/Case",        avgTime,     "m","")}
+    ${mc("Avg Cases/Day",        avgDay,      "", "teal")}
+    ${mc("Total Calls",          s.calls,     "", "")}
+    ${mc("Call Hours",           totalH,      "h","")}
+    ${mc("Avg Productive Time",  avgProd,     "m","")}
+    ${mc("Active Days",          s.days,      "", "amber")}
+  </div>`;
+}
+
+// ── HISTORY LEADERBOARD ───────────────────────────────────────
+function renderHistLeaderboard(byChaserAgg) {
+  const rows = Object.entries(byChaserAgg).map(([name, d]) => ({
+    name, ...d,
+    approvalPct:  d.faxes    ? (d.approvals/d.faxes*100).toFixed(1) : "--",
+    efficiency:   d.positive ? (d.cases/d.positive).toFixed(2)       : "--",
+    avgCasesDay:  d.days     ? (d.cases/d.days).toFixed(1)           : "--",
+    avgProd:      d.days     ? (d.productiveTime/d.days).toFixed(1)  : "--",
+    callHours:    d.durationMins ? (d.durationMins/60).toFixed(1)    : "--",
+  })).sort((a,b) => b.cases - a.cases);
+
+  return `<div class="chart-wrap">
+    <div class="chart-title">Chaser Totals for Period</div>
+    <div style="overflow:auto"><table class="lb-table" style="min-width:900px"><thead><tr>
+      <th>#</th><th>Chaser</th><th>Cases</th><th>Positive</th><th>Faxes</th>
+      <th>Approvals</th><th>Denials</th><th>Approv.%</th><th>Efficiency</th>
+      <th>Calls</th><th>Call Hrs</th><th>Avg Prod.Time</th><th>Avg Cases/Day</th><th>Days</th>
+    </tr></thead><tbody>
+      ${rows.map((r,i)=>`<tr>
+        <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
+        <td><span class="chaser-name" style="color:${CHASER_COLORS[r.name]||"var(--text)"}">${r.name}</span></td>
+        <td>${r.cases}</td><td>${r.positive}</td><td>${r.faxes}</td>
+        <td><span class="pill pill-green">${r.approvals}</span></td>
+        <td><span class="pill pill-red">${r.denials}</span></td>
+        <td>${r.approvalPct==="--"?"--":`<span class="pill pill-teal">${r.approvalPct}%</span>`}</td>
+        <td>${r.efficiency}</td>
+        <td>${r.calls}</td>
+        <td>${r.callHours==="--"?"--":r.callHours+"h"}</td>
+        <td>${r.avgProd==="--"?"--":r.avgProd+"m"}</td>
+        <td>${r.avgCasesDay}</td><td>${r.days}</td>
+      </tr>`).join("")}
+    </tbody></table></div></div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// CHARTS (vanilla SVG — no library)
+// ══════════════════════════════════════════════════════════════
+const TOOLTIP = () => document.getElementById("chartTooltip");
+
+function showTooltip(e, html) {
+  const t = TOOLTIP();
+  t.innerHTML = html;
+  t.style.display = "block";
+  t.style.left = (e.clientX + 12) + "px";
+  t.style.top  = (e.clientY - 10) + "px";
+}
+function hideTooltip() { TOOLTIP().style.display = "none"; }
+
+// ── BAR CHART ─────────────────────────────────────────────────
+function drawBarChart(containerId, byChaserAgg, field, label) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const entries = Object.entries(byChaserAgg).sort((a,b)=>b[1][field]-a[1][field]);
+  if (!entries.length) { container.innerHTML = `<div style="color:var(--text-3);font-size:12px;padding:12px">No data</div>`; return; }
+
+  const W=560, H=200, PAD={t:10,r:20,b:50,l:50};
+  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
+  const maxVal = Math.max(...entries.map(([,d])=>d[field]),1);
+  const barW   = Math.min(iW/entries.length - 8, 60);
+  const xStep  = iW / entries.length;
+
+  let bars = "", labels = "", yLines = "";
+  const ticks = 4;
+  for (let i=0; i<=ticks; i++) {
+    const v = Math.round(maxVal/ticks*i);
+    const y = PAD.t + iH - (v/maxVal*iH);
+    yLines += `<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    yLines += `<text x="${PAD.l-6}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
+  }
+
+  entries.forEach(([name,d],i) => {
+    const val = d[field]||0;
+    const bH  = val/maxVal*iH;
+    const x   = PAD.l + xStep*i + (xStep-barW)/2;
+    const y   = PAD.t + iH - bH;
+    const col = CHASER_COLORS[name]||"var(--teal)";
+    bars   += `<rect class="chart-bar" x="${x}" y="${y}" width="${barW}" height="${bH}" rx="4" fill="${col}"
+      onmouseenter="showTooltip(event,'<b>${name}</b>: ${val} ${label}')" onmouseleave="hideTooltip()"/>`;
+    labels += `<text x="${x+barW/2}" y="${H-PAD.b+16}" text-anchor="middle" font-size="11" fill="var(--text-2)">${name}</text>`;
+    labels += `<text x="${x+barW/2}" y="${y-5}" text-anchor="middle" font-size="10" fill="${col}" font-weight="600">${val}</text>`;
+  });
+
+  container.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}">
+    ${yLines}${bars}${labels}
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
+  </svg>`;
+}
+
+// ── LINE CHART ─────────────────────────────────────────────────
+function drawLineChart(containerId, byDate, dates, field, label) {
+  const container = document.getElementById(containerId);
+  if (!container || !dates.length) { if(container)container.innerHTML=`<div style="color:var(--text-3);font-size:12px;padding:12px">No data</div>`; return; }
+
+  const W=900, H=200, PAD={t:14,r:20,b:46,l:50};
+  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
+  const vals   = dates.map(d=>(byDate[d]||{})[field]||0);
+  const maxVal = Math.max(...vals,1);
+  const xStep  = iW/(dates.length-1||1);
+
+  let yLines="", points=[], dots="", xLabels="";
+  for (let i=0; i<=4; i++) {
+    const v = Math.round(maxVal/4*i);
+    const y = PAD.t + iH - (v/maxVal*iH);
+    yLines += `<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    yLines += `<text x="${PAD.l-6}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
+  }
+
+  // Thin out x labels if too many dates
+  const step = Math.ceil(dates.length / 20);
+  dates.forEach((date,i) => {
+    const x = PAD.l + xStep*i;
+    const y = PAD.t + iH - (vals[i]/maxVal*iH);
+    points.push(`${x},${y}`);
+    dots += `<circle cx="${x}" cy="${y}" r="3" fill="var(--teal)"
+      onmouseenter="showTooltip(event,'<b>${date}</b>: ${vals[i]} ${label}')" onmouseleave="hideTooltip()"/>`;
+    if (i%step===0||i===dates.length-1) {
+      // Show short date
+      const parts=date.split("/"); const lbl=parts.slice(0,2).join("/");
+      xLabels+=`<text x="${x}" y="${H-PAD.b+16}" text-anchor="middle" font-size="10" fill="var(--text-3)">${lbl}</text>`;
+    }
+  });
+
+  const polyline = points.length > 1
+    ? `<polyline points="${points.join(" ")}" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linejoin="round"/>`
+    : `<circle cx="${points[0].split(",")[0]}" cy="${points[0].split(",")[1]}" r="4" fill="var(--teal)"/>`;
+
+  // Gradient fill under line
+  const fillPts = [`${PAD.l},${PAD.t+iH}`, ...points, `${PAD.l+xStep*(dates.length-1)},${PAD.t+iH}`];
+  const fill = points.length > 1
+    ? `<polygon points="${fillPts.join(" ")}" fill="url(#lineGrad)" opacity=".25"/>`
+    : "";
+
+  container.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}">
+    <defs><linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="var(--teal)"/><stop offset="100%" stop-color="transparent"/>
+    </linearGradient></defs>
+    ${yLines}${fill}${polyline}${dots}${xLabels}
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
+  </svg>`;
+}
+
+// ── MOCK ARCHIVE DATA ─────────────────────────────────────────
+function mockArchiveData() {
+  const rows = [];
+  const now  = new Date();
+  const names = CHASERS;
+  // Generate 60 weekdays of data
+  for (let daysBack=90; daysBack>=0; daysBack--) {
+    const d = new Date(now); d.setDate(now.getDate()-daysBack);
+    if (d.getDay()===0||d.getDay()===6) continue;
+    const dateStr = `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
+    names.forEach(name => {
+      const base = { Alex:18, Hope:14, Rose:22, Frank:11, Nova:16 }[name]||15;
+      const rand = n => Math.max(0, n + Math.floor((Math.random()-.4)*n*.6));
+      const cases = rand(base);
+      const pos   = Math.min(cases, rand(Math.round(cases*.65)));
+      const fax   = Math.min(cases, rand(Math.round(cases*.75)));
+      const app   = Math.min(fax, rand(Math.round(fax*.55)));
+      const den   = Math.min(fax-app, rand(Math.round(fax*.2)));
+      rows.push({ Date:dateStr, Chaser:name, Cases:cases, Positive:pos, Faxes:fax,
+                  Approvals:app, Denials:den, TimeMins:cases*11 });
+    });
+  }
+  return rows;
+}
+
+// ── AUTO-LOAD when switching to History tab ───────────────────
+// (handled inside setTab directly — no override needed)
+
+</script>
+<div class="chart-tooltip" id="chartTooltip"></div>
+</body>
+</html>
