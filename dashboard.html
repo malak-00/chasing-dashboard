@@ -767,7 +767,13 @@ async function fetchFromArchive() {
 
 // Build day-shaped data from archive rows for a specific date
 function buildDayFromArchive(rows, dateTab) {
-  const dayRows = rows.filter(r => String(r.Date).trim() === dateTab);
+  // Match by M/D ignoring year — dateTab is "6/25", archive may store "6/25/2026"
+  const dayRows = rows.filter(r => {
+    const d = parseArchiveDate(r.Date);
+    if (!d) return false;
+    const rTab = (d.getMonth()+1) + "/" + d.getDate();
+    return rTab === dateTab;
+  });
   const chasers = dayRows.map(r => ({
     name:          String(r.Chaser),
     totalCases:    Number(r.Cases)    || 0,
@@ -1364,8 +1370,35 @@ let histView       = "month";
 let histRange      = { from: null, to: null };
 
 const CHASER_COLORS = {
-  Alex:"#00C2A8", Hope:"#4CAF8A", Rose:"#E8B84B", Frank:"#9B7FE8", Nova:"#E05C6A"
+  // Current chasers
+  Alex:"#00C2A8", Hope:"#4CAF8A", Rose:"#E8B84B", Frank:"#9B7FE8", Nova:"#E05C6A",
+  // Former chasers — shown in history only
+  Nora:"#5B9BD5", Jamie:"#F08080", Rick:"#90EE90", Caroline:"#DDA0DD",
 };
+
+// Full name → display name mapping (mirrors Apps Script CHASER_NAME_MAP)
+const CHASER_NAME_MAP = {
+  "alex woods":       "Alex",
+  "hope smith":       "Hope",
+  "rose simon":       "Rose",
+  "frank clarkson":   "Frank",
+  "nova grace":       "Nova",
+  "nora atkins":      "Nora",
+  "jamie williams":   "Jamie",
+  "rick nelson":      "Rick",
+  "caroline richards":"Caroline",
+};
+
+function normalizeName(name) {
+  return CHASER_NAME_MAP[String(name).trim().toLowerCase()] || String(name).trim();
+}
+
+// All unique chasers found in archive data
+function getAllChasers() {
+  if (!archiveCache || !archiveCache.length) return CHASERS;
+  const names = [...new Set(archiveCache.map(r => r.Chaser).filter(Boolean))].sort();
+  return names;
+}
 
 async function refreshArchive() {
   if (archiveCache && archiveFetched) {
@@ -1468,9 +1501,20 @@ function filterArchiveRows(rows, view, range) {
 
 function parseArchiveDate(str) {
   if (!str) return null;
-  // supports "6/25", "6/25/2026", "2026-06-25"
-  if (str.includes("-")) return new Date(str);
-  const parts = str.split("/");
+  const s = String(str).trim();
+  // ISO format: "2026-01-05T..." — extract date part only
+  if (s.includes("T")) {
+    const iso = s.split("T")[0];
+    const [y,m,d] = iso.split("-");
+    return new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+  }
+  // ISO date only: "2026-01-05"
+  if (s.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    const [y,m,d] = s.split("-");
+    return new Date(parseInt(y), parseInt(m)-1, parseInt(d));
+  }
+  // M/D/YYYY or M/D
+  const parts = s.split("/");
   if (parts.length >= 2) {
     const yr = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
     return new Date(yr, parseInt(parts[0])-1, parseInt(parts[1]));
@@ -1577,7 +1621,7 @@ function renderHistLeaderboard(byChaserAgg) {
     </tr></thead><tbody>
       ${rows.map((r,i)=>`<tr>
         <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
-        <td><span class="chaser-name" style="color:${CHASER_COLORS[r.name]||"var(--text)"}">${r.name}</span></td>
+        <td><span class="chaser-name" style="color:${CHASER_COLORS[r.name]||"var(--text-2)"}">${r.name}</span></td>
         <td>${r.cases}</td><td>${r.positive}</td><td>${r.faxes}</td>
         <td><span class="pill pill-green">${r.approvals}</span></td>
         <td><span class="pill pill-red">${r.denials}</span></td>
@@ -2082,9 +2126,11 @@ const CHASER_BG = {
 function initChaserTab() {
   const btns = document.getElementById("chaserSelectorBtns");
   if (!btns) return;
-  btns.innerHTML = CHASERS.map(n => `
+  const allNames = getAllChasers();
+  btns.innerHTML = allNames.map(n => `
     <button class="chaser-btn ${activeChaserName===n?"active":""}"
-      onclick="selectChaser('${n}')">${n}</button>`).join("");
+      onclick="selectChaser('${n}')">${n}${!CHASERS.includes(n)?'<span style="font-size:9px;opacity:.6;margin-left:3px">(former)</span>':""}</button>`).join("");
+  if (!activeChaserName && allNames.length) activeChaserName = CHASERS[0];
   if (activeChaserName) renderChaserPage();
 }
 
@@ -2106,7 +2152,7 @@ function renderChaserPage() {
   const rows     = getChaserRows(activeChaserName, period);
   const todayRows= archiveCache.filter(r => String(r.Chaser)===activeChaserName &&
                    String(r.Date).trim() === getTodayTab());
-  const color    = CHASER_BG[activeChaserName] || "var(--teal)";
+  const color    = CHASER_COLORS[activeChaserName] || "var(--teal)";
 
   if (!rows.length) {
     setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">No data for ${activeChaserName} in this period.</div>`);
@@ -2133,7 +2179,7 @@ function renderChaserPage() {
   const avgCases = totals.days     ? (totals.cases/totals.days).toFixed(1) : "--";
 
   // Rank in leaderboard
-  const allChaserTotals = CHASERS.map(n => ({
+  const allChaserTotals = getAllChasers().map(n => ({
     name: n,
     cases: archiveCache.filter(r=>String(r.Chaser)===n&&filterByPeriod(r,period))
                        .reduce((s,r)=>s+(Number(r.Cases)||0),0)
@@ -2426,7 +2472,7 @@ function runComparison() {
   }).join("");
 
   // Per-chaser comparison table
-  const chaserRows = CHASERS.map(name => {
+  const chaserRows = getAllChasers().map(name => {
     const cA = rowsA.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r.Cases)||0),0);
     const cB = rowsB.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r.Cases)||0),0);
     const diff= cB-cA;
