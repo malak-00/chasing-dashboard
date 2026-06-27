@@ -467,14 +467,14 @@ function setTab(tab) {
 }
 
 // ── DATA ──────────────────────────────────────────────────────
-async function loadData(noCache=false) {
+async function loadData() {
   const d = pickerToTab();
   document.getElementById("todayLabel").textContent   = d;
   document.getElementById("campDayLabel").textContent = d;
-  document.getElementById("statusBadge").textContent  = noCache ? "Refreshing..." : "Loading...";
+  document.getElementById("statusBadge").textContent = "Loading...";
   ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"].forEach(id=>setEl(id,spinner()));
   try {
-    const [dr,wr] = await Promise.all([fetchAPI("day",d,noCache), fetchAPI("week",d,noCache)]);
+    const [dr,wr] = await Promise.all([fetchAPI("day",d), fetchAPI("week",d)]);
     dayData=dr; weekData=wr;
     const isLive = API_BASE && !API_BASE.includes("YOUR_APPS_SCRIPT");
     const badge  = document.getElementById("statusBadge");
@@ -489,12 +489,8 @@ async function loadData(noCache=false) {
   }
 }
 
-async function fetchAPI(mode, dateTab, noCache=false) {
-  if (!API_BASE || API_BASE === "https://script.google.com/macros/s/AKfycbzl9wrN5Ys-fz6H61G07c7Ot7daNp8JWDGh9xeuQ6fhTTkC58CJASLN8gdPaifuLuok/exec") {
-    return mockData(mode, dateTab);
-  }
-  let url = `${API_BASE}?mode=${mode}&date=${encodeURIComponent(dateTab)}`;
-  if (noCache) url += '&nocache=1';
+async function fetchAPI(mode, dateTab) {
+  const url = `${API_BASE}?mode=${mode}&date=${encodeURIComponent(dateTab)}`;
   const res = await fetch(url, { method:"GET", redirect:"follow" });
   if (!res.ok) throw new Error("API error " + res.status);
   const text = await res.text();
@@ -930,7 +926,7 @@ function toggleTheme() {
 // REFRESH (today + week)
 // ══════════════════════════════════════════════════════════════
 async function refreshDay() {
-  await loadData(true);
+  await loadData();
 }
 
 // ── CSV DOWNLOAD ──────────────────────────────────────────────
