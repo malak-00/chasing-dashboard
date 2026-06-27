@@ -362,6 +362,11 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
         <div class="panel-body" id="campaignWeekPanel"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
       </div>
     </div>
+    <!-- Campaign Trend -->
+    <div class="camp-trend-wrap" style="margin-top:4px">
+      <div class="chart-title">Campaign Approval Rate Trend (Weekly)</div>
+      <div id="campaignTrendChart"><div style="color:var(--text-3);font-size:12px;padding:8px">Load archive data to see trend</div></div>
+    </div>
   </div>
 
   <!-- LEADERBOARD TAB -->
@@ -681,8 +686,11 @@ function setTab(tab) {
   document.querySelectorAll(".tab-btn").forEach(b => {
     b.classList.toggle("active", b.getAttribute("onclick").includes("'"+tab+"'"));
   });
-  if (tab === "history" && !archiveCache) refreshArchive();
-  if (tab === "charts") initChartBuilder();
+  if (tab === "history"  && !archiveCache) refreshArchive();
+  if (tab === "charts")   initChartBuilder();
+  if (tab === "chasers")  initChaserTab();
+  if (tab === "compare")  initCompareDefaults();
+  if (tab === "campaigns") setTimeout(renderCampaignTrend, 200);
 }
 
 // ── DATA ──────────────────────────────────────────────────────
@@ -1313,6 +1321,11 @@ function toggleControls(){
   controlsOpen=!controlsOpen;
   document.getElementById("ctrlBody").classList.toggle("hidden",!controlsOpen);
   document.getElementById("ctrlChevron").classList.toggle("open",controlsOpen);
+  // Inject goals controls once
+  const body = document.getElementById("ctrlBody");
+  if (controlsOpen && body && !body.querySelector("#goalProd")) {
+    body.insertAdjacentHTML("beforeend", renderGoalsControls());
+  }
 }
 
 // ── UTILS ─────────────────────────────────────────────────────
@@ -1994,6 +2007,662 @@ function renderPieChart(labels, vals, yKey) {
     <svg viewBox="0 0 ${W/1.8} ${H}" style="width:280px;flex-shrink:0">${svgSlices}</svg>
     <div class="cb-legend" style="flex-direction:column;gap:8px">${legendItems}</div>
   </div>`;
+}
+
+
+
+// ══════════════════════════════════════════════════════════════
+// GOALS / TARGET TRACKING
+// ══════════════════════════════════════════════════════════════
+let goals = {
+  productivity: 70,   // % target
+  efficiency:   1.5,  // ratio target (cases/positive, lower = better)
+};
+
+function getGoalStatus(metric, actual) {
+  if (actual === "--" || actual === "" || isNaN(actual)) return "flat";
+  const target = goals[metric];
+  if (metric === "efficiency") {
+    // Lower is better for efficiency
+    if (actual <= target)               return "met";
+    if (actual <= target * 1.2)         return "close";
+    return "miss";
+  }
+  if (actual >= target)                 return "met";
+  if (actual >= target * 0.85)          return "close";
+  return "miss";
+}
+
+function goalBar(metric, actual, label) {
+  const target = goals[metric];
+  if (!target || actual === "--") return "";
+  const pct    = metric === "efficiency"
+    ? Math.min(100, (target / Math.max(actual, 0.01)) * 100)
+    : Math.min(100, (actual / target) * 100);
+  const status = getGoalStatus(metric, actual);
+  const cls    = status === "met" ? "goal-met" : status === "close" ? "goal-close" : "goal-miss";
+  return `<div class="goal-bar-bg"><div class="goal-bar-fill ${cls}" style="width:${pct.toFixed(0)}%"></div></div>
+    <div class="goal-label"><span>${label}</span><span>Target: ${target}${metric==="productivity"?"%":""}</span></div>`;
+}
+
+// Goals settings panel — injected into Controls drawer
+function renderGoalsControls() {
+  return `
+    <div class="divider"></div>
+    <div class="sub-label">Productivity &amp; Efficiency Targets</div>
+    <div class="controls-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+      <div class="ctrl-group">
+        <label>Productivity Target (%)</label>
+        <div class="range-row">
+          <input type="range" id="goalProd" min="30" max="100" value="${goals.productivity}" step="5"
+            oninput="goals.productivity=Number(this.value);document.getElementById('goalProdVal').textContent=this.value+'%';recalc()">
+          <span class="range-val" id="goalProdVal">${goals.productivity}%</span>
+        </div>
+      </div>
+      <div class="ctrl-group">
+        <label>Efficiency Target (cases ÷ positive)</label>
+        <div class="range-row">
+          <input type="range" id="goalEff" min="1" max="5" value="${goals.efficiency}" step="0.1"
+            oninput="goals.efficiency=Number(this.value);document.getElementById('goalEffVal').textContent=this.value;recalc()">
+          <span class="range-val" id="goalEffVal">${goals.efficiency}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// CHASER PAGES
+// ══════════════════════════════════════════════════════════════
+let activeChaserName = null;
+
+const CHASER_BG = {
+  Alex:"#00C2A8", Hope:"#4CAF8A", Rose:"#E8B84B", Frank:"#9B7FE8", Nova:"#E05C6A"
+};
+
+function initChaserTab() {
+  const btns = document.getElementById("chaserSelectorBtns");
+  if (!btns) return;
+  btns.innerHTML = CHASERS.map(n => `
+    <button class="chaser-btn ${activeChaserName===n?"active":""}"
+      onclick="selectChaser('${n}')">${n}</button>`).join("");
+  if (activeChaserName) renderChaserPage();
+}
+
+function selectChaser(name) {
+  activeChaserName = name;
+  document.querySelectorAll(".chaser-btn").forEach(b =>
+    b.classList.toggle("active", b.textContent === name));
+  renderChaserPage();
+}
+
+function renderChaserPage() {
+  if (!activeChaserName) return;
+  if (!archiveCache || !archiveCache.length) {
+    setEl("chaserPageContent", `<div class="state-block error-msg">Load archive data first (go to Overview tab).</div>`);
+    return;
+  }
+
+  const period   = document.getElementById("chaserPeriod").value;
+  const rows     = getChaserRows(activeChaserName, period);
+  const todayRows= archiveCache.filter(r => String(r.Chaser)===activeChaserName &&
+                   String(r.Date).trim() === getTodayTab());
+  const color    = CHASER_BG[activeChaserName] || "var(--teal)";
+
+  if (!rows.length) {
+    setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">No data for ${activeChaserName} in this period.</div>`);
+    return;
+  }
+
+  const totals = rows.reduce((t,r) => ({
+    cases:    t.cases    + (Number(r.Cases)||0),
+    positive: t.positive + (Number(r.Positive)||0),
+    faxes:    t.faxes    + (Number(r.Faxes)||0),
+    approvals:t.approvals+ (Number(r.Approvals)||0),
+    denials:  t.denials  + (Number(r.Denials)||0),
+    timeMins: t.timeMins + (Number(r.TimeMins)||0),
+    prodTime: t.prodTime + (Number(r.ProductiveTime)||0),
+    calls:    t.calls    + (Number(r.TotalCalls)||0),
+    days:     t.days,
+  }), {cases:0,positive:0,faxes:0,approvals:0,denials:0,timeMins:0,prodTime:0,calls:0,
+       days: new Set(rows.map(r=>r.Date)).size});
+
+  const eff      = totals.positive ? (totals.cases/totals.positive).toFixed(2) : "--";
+  const appPct   = totals.faxes    ? (totals.approvals/totals.faxes*100).toFixed(1) : "--";
+  const avgTime  = totals.cases    ? (totals.timeMins/totals.cases).toFixed(1) : "--";
+  const avgProd  = totals.days     ? (totals.prodTime/totals.days).toFixed(1) : "--";
+  const avgCases = totals.days     ? (totals.cases/totals.days).toFixed(1) : "--";
+
+  // Rank in leaderboard
+  const allChaserTotals = CHASERS.map(n => ({
+    name: n,
+    cases: archiveCache.filter(r=>String(r.Chaser)===n&&filterByPeriod(r,period))
+                       .reduce((s,r)=>s+(Number(r.Cases)||0),0)
+  })).sort((a,b)=>b.cases-a.cases);
+  const rank = allChaserTotals.findIndex(c=>c.name===activeChaserName)+1;
+
+  // By-date for trend
+  const byDate = {};
+  rows.forEach(r => {
+    if (!byDate[r.Date]) byDate[r.Date]={cases:0,approvals:0,faxes:0};
+    byDate[r.Date].cases     += Number(r.Cases)||0;
+    byDate[r.Date].approvals += Number(r.Approvals)||0;
+    byDate[r.Date].faxes     += Number(r.Faxes)||0;
+  });
+  const dates = Object.keys(byDate).sort((a,b)=>parseArchiveDate(a)-parseArchiveDate(b));
+  const caseVals = dates.map(d=>byDate[d].cases);
+  const appVals  = dates.map(d=>byDate[d].approvals);
+
+  // Rolling averages
+  const roll7cases = rollingAvg(caseVals, 7);
+  const roll7app   = rollingAvg(appVals,  7);
+
+  setEl("chaserPageContent", `
+    <!-- Hero -->
+    <div class="panel" style="margin-bottom:18px;padding:20px">
+      <div class="chaser-hero">
+        <div class="chaser-avatar" style="background:${color}">${activeChaserName[0]}</div>
+        <div>
+          <div class="chaser-hero-name" style="color:${color}">${activeChaserName}</div>
+          <div class="chaser-hero-sub">Rank #${rank} · ${totals.days} active days · ${period.charAt(0).toUpperCase()+period.slice(1)}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary metrics -->
+    <div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
+      ${mc("Cases",        totals.cases,     "",  "teal")}
+      ${mc("Positive",     totals.positive,  "",  "green")}
+      ${mc("Faxes",        totals.faxes,     "",  "")}
+      ${mc("Approvals",    totals.approvals, "",  "green")}
+      ${mc("Denials",      totals.denials,   "",  "red")}
+      ${mc("Approval %",   appPct,           "%", "teal")}
+      ${mc("Efficiency",   eff,              "",  "")}
+      ${mc("Avg Cases/Day",avgCases,         "",  "amber")}
+    </div>
+
+    <!-- Goals -->
+    <div class="goals-panel">
+      <div class="panel-header"><span class="panel-title">Goals &amp; Targets</span></div>
+      <div class="goals-grid">
+        <div class="goal-card">
+          <div class="metric-label">Productivity</div>
+          <div class="metric-value ${getGoalStatus("productivity", parseFloat(avgProd))==="met"?"green":getGoalStatus("productivity",parseFloat(avgProd))==="close"?"amber":"red"}">${avgProd}${avgProd!=="--"?"m":""}</div>
+          ${goalBar("productivity", parseFloat(avgProd), "Avg Productive Time/Day")}
+        </div>
+        <div class="goal-card">
+          <div class="metric-label">Efficiency</div>
+          <div class="metric-value ${getGoalStatus("efficiency", parseFloat(eff))==="met"?"green":getGoalStatus("efficiency",parseFloat(eff))==="close"?"amber":"red"}">${eff}</div>
+          ${goalBar("efficiency", parseFloat(eff), "Cases ÷ Positive")}
+        </div>
+      </div>
+    </div>
+
+    <!-- Trend charts -->
+    <div class="charts-row">
+      <div class="chart-wrap">
+        <div class="chart-title">Cases Trend — ${activeChaserName}</div>
+        <div id="chaserCasesChart"></div>
+        <div class="rolling-legend">
+          <div class="rolling-legend-item"><div class="rolling-legend-line" style="background:var(--teal)"></div>Daily</div>
+          <div class="rolling-legend-item"><div class="rolling-legend-line" style="background:var(--amber);border-top:2px dashed var(--amber);height:0"></div>7-day avg</div>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-title">Approvals Trend — ${activeChaserName}</div>
+        <div id="chaserAppChart"></div>
+      </div>
+    </div>
+
+    <!-- Campaign breakdown -->
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-header"><span class="panel-title">Campaign Breakdown</span></div>
+      <div class="panel-body">
+        <div class="campaign-grid">
+          ${renderChaserCampaigns(rows)}
+        </div>
+      </div>
+    </div>
+  `);
+
+  requestAnimationFrame(() => {
+    drawLineWithRolling("chaserCasesChart", dates, caseVals, roll7cases, color);
+    drawLineWithRolling("chaserAppChart",   dates, appVals,  roll7app,   color);
+  });
+}
+
+function getChaserRows(name, period) {
+  return (archiveCache||[]).filter(r =>
+    String(r.Chaser) === name && filterByPeriod(r, period)
+  );
+}
+
+function filterByPeriod(r, period) {
+  const d     = parseArchiveDate(r.Date);
+  if (!d) return false;
+  const now   = new Date();
+  const yr    = now.getFullYear();
+  const mo    = now.getMonth();
+  const today = getTodayTab();
+  if (period === "today")   return String(r.Date).trim() === today;
+  if (period === "week") {
+    const tabs = getWeekTabsJS(today);
+    return tabs.includes(String(r.Date).trim().split("/").slice(0,2).join("/"));
+  }
+  if (period === "month")   return d.getFullYear()===yr && d.getMonth()===mo;
+  if (period === "quarter") return d.getFullYear()===yr && Math.floor(d.getMonth()/3)===Math.floor(mo/3);
+  if (period === "year")    return d.getFullYear()===yr;
+  return true;
+}
+
+function renderChaserCampaigns(rows) {
+  // Approximate from archive campaign cols
+  const campaigns = [
+    { key:"ORT",    app:"ORT_Approved",    den:"ORT_Denied"    },
+    { key:"CGM",    app:"CGM_Approved",    den:"CGM_Denied"    },
+    { key:"LymphC", app:"LymphC_Approved", den:"LymphC_Denied" },
+    { key:"LymphW", app:"LymphW_Approved", den:"LymphW_Denied" },
+  ];
+  const colors = ["var(--teal)","var(--purple)","var(--blue)","var(--amber)"];
+  return campaigns.map((c,i) => {
+    const app   = rows.reduce((s,r)=>s+(Number(r[c.app])||0),0);
+    const den   = rows.reduce((s,r)=>s+(Number(r[c.den])||0),0);
+    const total = app+den;
+    const pct   = total ? (app/total*100).toFixed(1) : "--";
+    return `<div class="campaign-card">
+      <div class="campaign-name" style="color:${colors[i]}">${c.key}</div>
+      <div class="campaign-stats">
+        <div class="cstat"><div class="cstat-val" style="color:var(--green)">${app}</div><div class="cstat-lbl">Approved</div></div>
+        <div class="cstat"><div class="cstat-val" style="color:var(--red)">${den}</div><div class="cstat-lbl">Denied</div></div>
+        <div class="cstat"><div class="cstat-val" style="color:${colors[i]}">${pct}${pct!=="--"?"%":""}</div><div class="cstat-lbl">Rate</div></div>
+      </div></div>`;
+  }).join("");
+}
+
+// ══════════════════════════════════════════════════════════════
+// ROLLING AVERAGES
+// ══════════════════════════════════════════════════════════════
+function rollingAvg(vals, window) {
+  return vals.map((_, i) => {
+    const slice = vals.slice(Math.max(0, i-window+1), i+1);
+    return +(slice.reduce((s,v)=>s+v,0)/slice.length).toFixed(2);
+  });
+}
+
+function drawLineWithRolling(containerId, dates, vals, rollVals, color) {
+  const container = document.getElementById(containerId);
+  if (!container || !dates.length) return;
+
+  const W=520, H=200, PAD={t:14,r:20,b:44,l:46};
+  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
+  const maxV   = Math.max(...vals,...rollVals,1);
+  const xStep  = iW/(dates.length-1||1);
+
+  let ylines="", mainPts=[], rollPts=[], dots="", xlabels="";
+
+  for (let i=0;i<=4;i++) {
+    const v=Math.round(maxV/4*i);
+    const y=PAD.t+iH-(v/maxV*iH);
+    ylines+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    ylines+=`<text x="${PAD.l-5}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
+  }
+
+  const step = Math.ceil(dates.length/12);
+  dates.forEach((date,i) => {
+    const x=PAD.l+xStep*i;
+    const y=PAD.t+iH-(vals[i]/maxV*iH);
+    const yr=PAD.t+iH-(rollVals[i]/maxV*iH);
+    mainPts.push(`${x},${y}`);
+    rollPts.push(`${x},${yr}`);
+    dots+=`<circle cx="${x}" cy="${y}" r="3" fill="${color}" stroke="var(--surface)" stroke-width="1.5"
+      onmouseenter="showTooltip(event,'<b>${date}</b>: ${vals[i]} (7d avg: ${rollVals[i]})')" onmouseleave="hideTooltip()"/>`;
+    if (i%step===0||i===dates.length-1) {
+      const sl=date.split("/").slice(0,2).join("/");
+      xlabels+=`<text x="${x}" y="${H-PAD.b+14}" text-anchor="middle" font-size="10" fill="var(--text-3)">${sl}</text>`;
+    }
+  });
+
+  const poly = mainPts.length>1
+    ? `<polyline points="${mainPts.join(" ")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>`
+    : "";
+  const rollPoly = rollPts.length>1
+    ? `<polyline points="${rollPts.join(" ")}" fill="none" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="4,3" stroke-linejoin="round"/>`
+    : "";
+
+  // Fill under main line
+  const fillPts = mainPts.length>1
+    ? [`${PAD.l},${PAD.t+iH}`,...mainPts,`${PAD.l+xStep*(dates.length-1)},${PAD.t+iH}`]
+    : [];
+  const fill = fillPts.length>1 ? `<polygon points="${fillPts.join(" ")}" fill="${color}" opacity=".08"/>` : "";
+
+  container.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}">
+    ${ylines}${fill}${poly}${rollPoly}${dots}${xlabels}
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
+  </svg>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// PERIOD-OVER-PERIOD COMPARISON
+// ══════════════════════════════════════════════════════════════
+function setComparePreset(type) {
+  const now = new Date();
+  let aFrom, aTo, bFrom, bTo;
+
+  if (type === "mom") {
+    aTo   = new Date(now.getFullYear(), now.getMonth(), 0);       // last day of last month
+    aFrom = new Date(now.getFullYear(), now.getMonth()-1, 1);     // first day of last month
+    bTo   = new Date(now.getFullYear(), now.getMonth()+1, 0);     // last day of this month
+    bFrom = new Date(now.getFullYear(), now.getMonth(), 1);       // first day of this month
+  } else {
+    // week over week
+    const day = now.getDay();
+    const mon = new Date(now); mon.setDate(now.getDate()-(day===0?6:day-1));
+    bFrom = new Date(mon); bTo = new Date(mon); bTo.setDate(mon.getDate()+6);
+    aFrom = new Date(mon); aFrom.setDate(mon.getDate()-7);
+    aTo   = new Date(mon); aTo.setDate(mon.getDate()-1);
+  }
+
+  const fmt = d => d.toISOString().slice(0,10);
+  document.getElementById("cmpFromA").value = fmt(aFrom);
+  document.getElementById("cmpToA").value   = fmt(aTo);
+  document.getElementById("cmpFromB").value = fmt(bFrom);
+  document.getElementById("cmpToB").value   = fmt(bTo);
+  runComparison();
+}
+
+function runComparison() {
+  if (!archiveCache || !archiveCache.length) {
+    setEl("compareContent", `<div class="state-block error-msg">Load archive data first.</div>`);
+    return;
+  }
+
+  const fromA = document.getElementById("cmpFromA").value;
+  const toA   = document.getElementById("cmpToA").value;
+  const fromB = document.getElementById("cmpFromB").value;
+  const toB   = document.getElementById("cmpToB").value;
+
+  if (!fromA||!toA||!fromB||!toB) { alert("Fill in all four dates."); return; }
+
+  const rowsA = filterByRange(archiveCache, fromA, toA);
+  const rowsB = filterByRange(archiveCache, fromB, toB);
+
+  if (!rowsA.length && !rowsB.length) {
+    setEl("compareContent", `<div class="state-block error-msg">No data found for either period.</div>`);
+    return;
+  }
+
+  const sumA = aggregateForCompare(rowsA);
+  const sumB = aggregateForCompare(rowsB);
+
+  const metrics = [
+    { key:"cases",      label:"Total Cases"  },
+    { key:"positive",   label:"Positive"     },
+    { key:"faxes",      label:"Faxes Sent"   },
+    { key:"approvals",  label:"Approvals"    },
+    { key:"denials",    label:"Denials"      },
+    { key:"appPct",     label:"Approval %"   },
+    { key:"efficiency", label:"Efficiency"   },
+    { key:"avgCases",   label:"Avg Cases/Day"},
+  ];
+
+  const changeRows = metrics.map(m => {
+    const vA = sumA[m.key], vB = sumB[m.key];
+    const diff = vB - vA;
+    const pct  = vA ? ((diff/vA)*100).toFixed(1) : "--";
+    // For efficiency and denials, down is good
+    const invertGood = m.key === "efficiency" || m.key === "denials";
+    const up   = diff > 0;
+    const good = invertGood ? !up : up;
+    const cls  = diff === 0 ? "change-flat" : (good ? "change-up" : "change-down");
+    const arrow= diff === 0 ? "→" : (up ? "↑" : "↓");
+    return `<div class="change-row">
+      <span style="color:var(--text-2)">${m.label}</span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="color:var(--text-3);font-size:12px">${typeof vA==="number"?vA.toFixed(1):vA}</span>
+        <span style="color:var(--text-3)">→</span>
+        <span style="font-weight:600">${typeof vB==="number"?vB.toFixed(1):vB}</span>
+        <span class="change-badge ${cls}">${arrow} ${pct}${pct!=="--"?"%":""}</span>
+      </div>
+    </div>`;
+  }).join("");
+
+  // Per-chaser comparison table
+  const chaserRows = CHASERS.map(name => {
+    const cA = rowsA.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r.Cases)||0),0);
+    const cB = rowsB.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r.Cases)||0),0);
+    const diff= cB-cA;
+    const cls = diff>0?"change-up":diff<0?"change-down":"change-flat";
+    const arrow=diff>0?"↑":diff<0?"↓":"→";
+    return `<tr>
+      <td><span class="chaser-name" style="color:${CHASER_BG[name]||"var(--text)"}">${name}</span></td>
+      <td>${cA}</td><td>${cB}</td>
+      <td><span class="change-badge ${cls}">${arrow} ${Math.abs(diff)}</span></td>
+    </tr>`;
+  }).join("");
+
+  setEl("compareContent", `
+    <div class="compare-grid">
+      <div class="compare-panel">
+        <div class="compare-panel-header">Period A: ${fromA} → ${toA} (${rowsA.length} rows)</div>
+        <div style="padding:8px 0">${changeRows}</div>
+      </div>
+      <div class="compare-panel">
+        <div class="compare-panel-header">Period B vs A — Changes</div>
+        <div style="padding:16px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Per Chaser — Cases</div>
+          <table class="lb-table" style="min-width:unset"><thead><tr>
+            <th>Chaser</th><th>Period A</th><th>Period B</th><th>Change</th>
+          </tr></thead><tbody>${chaserRows}</tbody></table>
+        </div>
+      </div>
+    </div>
+    ${renderComparisonCharts(rowsA, rowsB, fromA, toA, fromB, toB)}
+  `);
+
+  requestAnimationFrame(() => {
+    drawCompareChart("cmpCasesChart", rowsA, rowsB, "cases", "Cases", fromA, fromB);
+    drawCompareChart("cmpAppChart",   rowsA, rowsB, "approvals", "Approvals", fromA, fromB);
+  });
+}
+
+function renderComparisonCharts(rowsA, rowsB, fromA, toA, fromB, toB) {
+  return `<div class="charts-row">
+    <div class="chart-wrap">
+      <div class="chart-title">Cases — Period A vs B</div>
+      <div id="cmpCasesChart"></div>
+      <div class="rolling-legend">
+        <div class="rolling-legend-item"><div class="rolling-legend-line" style="background:var(--teal)"></div>Period A (${fromA})</div>
+        <div class="rolling-legend-item"><div class="rolling-legend-line" style="background:var(--amber)"></div>Period B (${fromB})</div>
+      </div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Approvals — Period A vs B</div>
+      <div id="cmpAppChart"></div>
+    </div>
+  </div>`;
+}
+
+function drawCompareChart(containerId, rowsA, rowsB, field, label, fromA, fromB) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  // Group both periods by day-index (not absolute date so they overlay)
+  const groupA = groupByDayIndex(rowsA, field);
+  const groupB = groupByDayIndex(rowsB, field);
+  const maxLen = Math.max(groupA.length, groupB.length, 1);
+
+  const W=520, H=190, PAD={t:14,r:20,b:40,l:46};
+  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
+  const maxV = Math.max(...groupA,...groupB,1);
+  const xStep = iW/(maxLen-1||1);
+
+  let ylines="", ptsA=[], ptsB=[], dotsA="", dotsB="";
+  for (let i=0;i<=4;i++) {
+    const v=Math.round(maxV/4*i), y=PAD.t+iH-(v/maxV*iH);
+    ylines+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    ylines+=`<text x="${PAD.l-5}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
+  }
+
+  groupA.forEach((v,i) => {
+    const x=PAD.l+xStep*i, y=PAD.t+iH-(v/maxV*iH);
+    ptsA.push(`${x},${y}`);
+    dotsA+=`<circle cx="${x}" cy="${y}" r="3" fill="var(--teal)" onmouseenter="showTooltip(event,'Day ${i+1}: ${v}')" onmouseleave="hideTooltip()"/>`;
+  });
+  groupB.forEach((v,i) => {
+    const x=PAD.l+xStep*i, y=PAD.t+iH-(v/maxV*iH);
+    ptsB.push(`${x},${y}`);
+    dotsB+=`<circle cx="${x}" cy="${y}" r="3" fill="var(--amber)" onmouseenter="showTooltip(event,'Day ${i+1}: ${v}')" onmouseleave="hideTooltip()"/>`;
+  });
+
+  container.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}">
+    ${ylines}
+    ${ptsA.length>1?`<polyline points="${ptsA.join(" ")}" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linejoin="round"/>`:""}
+    ${ptsB.length>1?`<polyline points="${ptsB.join(" ")}" fill="none" stroke="var(--amber)" stroke-width="2" stroke-dasharray="5,3" stroke-linejoin="round"/>`:""}
+    ${dotsA}${dotsB}
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
+  </svg>`;
+}
+
+function groupByDayIndex(rows, field) {
+  const byDate = {};
+  rows.forEach(r => {
+    const d = r.Date;
+    if (!byDate[d]) byDate[d] = 0;
+    byDate[d] += Number(r[field==="cases"?"Cases":field==="approvals"?"Approvals":"Cases"])||0;
+  });
+  return Object.keys(byDate).sort((a,b)=>parseArchiveDate(a)-parseArchiveDate(b)).map(d=>byDate[d]);
+}
+
+function filterByRange(rows, from, to) {
+  const fD = new Date(from), tD = new Date(to);
+  tD.setHours(23,59,59);
+  return rows.filter(r => {
+    const d = parseArchiveDate(r.Date);
+    return d && d >= fD && d <= tD;
+  });
+}
+
+function aggregateForCompare(rows) {
+  const s = rows.reduce((t,r)=>({
+    cases:    t.cases    +(Number(r.Cases)||0),
+    positive: t.positive +(Number(r.Positive)||0),
+    faxes:    t.faxes    +(Number(r.Faxes)||0),
+    approvals:t.approvals+(Number(r.Approvals)||0),
+    denials:  t.denials  +(Number(r.Denials)||0),
+    days:     t.days,
+  }),{cases:0,positive:0,faxes:0,approvals:0,denials:0,days:new Set(rows.map(r=>r.Date)).size});
+  s.appPct     = s.faxes    ? +(s.approvals/s.faxes*100).toFixed(1)   : 0;
+  s.efficiency = s.positive ? +(s.cases/s.positive).toFixed(2)          : 0;
+  s.avgCases   = s.days     ? +(s.cases/s.days).toFixed(1)             : 0;
+  return s;
+}
+
+// ══════════════════════════════════════════════════════════════
+// CAMPAIGN PERFORMANCE TREND (added to Campaigns tab)
+// ══════════════════════════════════════════════════════════════
+function renderCampaignTrend() {
+  if (!archiveCache || !archiveCache.length) return;
+
+  const el = document.getElementById("campaignTrendChart");
+  if (!el) return;
+
+  // Build weekly approval rate per campaign
+  const campaigns = [
+    { key:"ORT",    app:"ORT_Approved",    den:"ORT_Denied",    color:"var(--teal)"   },
+    { key:"CGM",    app:"CGM_Approved",    den:"CGM_Denied",    color:"var(--purple)" },
+    { key:"LymphC", app:"LymphC_Approved", den:"LymphC_Denied", color:"var(--blue)"   },
+    { key:"LymphW", app:"LymphW_Approved", den:"LymphW_Denied", color:"var(--amber)"  },
+  ];
+
+  // Group by week
+  const weekMap = {};
+  archiveCache.forEach(r => {
+    const d = parseArchiveDate(r.Date);
+    if (!d) return;
+    const day = d.getDay();
+    const mon = new Date(d); mon.setDate(d.getDate()-(day===0?6:day-1));
+    const wk  = `${mon.getMonth()+1}/${mon.getDate()}`;
+    if (!weekMap[wk]) weekMap[wk] = {};
+    campaigns.forEach(c => {
+      if (!weekMap[wk][c.key]) weekMap[wk][c.key]={app:0,den:0};
+      weekMap[wk][c.key].app += Number(r[c.app])||0;
+      weekMap[wk][c.key].den += Number(r[c.den])||0;
+    });
+  });
+
+  const weeks = Object.keys(weekMap).sort((a,b)=>parseArchiveDate(a)-parseArchiveDate(b)).slice(-16);
+  if (!weeks.length) return;
+
+  const W=900, H=220, PAD={t:14,r:20,b:44,l:46};
+  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
+  const xStep = iW/(weeks.length-1||1);
+
+  let ylines="", allLines="", step=Math.ceil(weeks.length/12);
+  for (let i=0;i<=5;i++) {
+    const v=i*20, y=PAD.t+iH-(v/100*iH);
+    ylines+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    ylines+=`<text x="${PAD.l-5}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}%</text>`;
+  }
+
+  campaigns.forEach(c => {
+    const pts = weeks.map((wk,i) => {
+      const d    = weekMap[wk][c.key]||{app:0,den:0};
+      const rate = (d.app+d.den) ? d.app/(d.app+d.den)*100 : null;
+      if (rate === null) return null;
+      const x=PAD.l+xStep*i, y=PAD.t+iH-(rate/100*iH);
+      return `${x},${y}`;
+    }).filter(Boolean);
+
+    if (pts.length>1) {
+      allLines+=`<polyline points="${pts.join(" ")}" fill="none" stroke="${c.color}" stroke-width="2" stroke-linejoin="round"/>`;
+    }
+    pts.forEach((pt,i) => {
+      const [x,y]=pt.split(",");
+      const d=weekMap[weeks[i]]?.[c.key]||{app:0,den:0};
+      const rate=((d.app+d.den)?d.app/(d.app+d.den)*100:0).toFixed(1);
+      allLines+=`<circle cx="${x}" cy="${y}" r="3" fill="${c.color}"
+        onmouseenter="showTooltip(event,'<b>${c.key}</b> wk ${weeks[i]}: ${rate}%')" onmouseleave="hideTooltip()"/>`;
+    });
+  });
+
+  // X labels
+  let xlabels="";
+  weeks.forEach((wk,i) => {
+    if (i%step===0||i===weeks.length-1)
+      xlabels+=`<text x="${PAD.l+xStep*i}" y="${H-PAD.b+14}" text-anchor="middle" font-size="9" fill="var(--text-3)">${wk}</text>`;
+  });
+
+  el.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}">
+    ${ylines}${allLines}${xlabels}
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
+  </svg>
+  <div class="rolling-legend">
+    ${campaigns.map(c=>`<div class="rolling-legend-item"><div class="rolling-legend-line" style="background:${c.color}"></div>${c.key}</div>`).join("")}
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// EXPORT PDF
+// ══════════════════════════════════════════════════════════════
+function exportPDF() {
+  // Switch to overview tab for best print layout
+  setTab("overview");
+  setTimeout(() => {
+    document.title = "Chasing Dashboard — " + pickerToTab();
+    window.print();
+  }, 300);
+}
+
+// ══════════════════════════════════════════════════════════════
+// HOOK INTO EXISTING FUNCTIONS
+// ══════════════════════════════════════════════════════════════
+
+// Goals controls injected via initGoalsControls() below
+
+// Extra tab init hooks — called from the existing setTab function directly
+
+function initCompareDefaults() {
+  if (document.getElementById("cmpFromA").value) return;
+  setComparePreset("mom");
 }
 
 </script>
