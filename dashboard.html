@@ -189,7 +189,7 @@ body.light .rank-badge { background:var(--border); }
   <div class="header-right">
     <span class="status-badge" id="statusBadge">Live</span>
     <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">&#9790; Dark</button>
-    <input type="date" class="date-input" id="datePicker" onchange="refreshDay()">
+    <input type="date" class="date-input" id="datePicker" onchange="loadData()">
     <button class="btn" onclick="refreshDay()">&#8635; Refresh</button>
     <button class="btn btn-ghost" onclick="toggleControls()">&#9881; Controls</button>
     <button class="btn btn-ghost" onclick="downloadCSV()">&#8595; CSV</button>
@@ -467,16 +467,21 @@ function setTab(tab) {
 }
 
 // ── DATA ──────────────────────────────────────────────────────
-async function loadData() {
+async function loadData(noCache=false) {
   const d = pickerToTab();
-  document.getElementById("todayLabel").textContent    = d;
+  document.getElementById("todayLabel").textContent   = d;
   document.getElementById("campDayLabel").textContent = d;
-  document.getElementById("statusBadge").textContent   = "Loading...";
+  document.getElementById("statusBadge").textContent  = noCache ? "Refreshing..." : "Loading...";
   ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"].forEach(id=>setEl(id,spinner()));
   try {
-    const [dr,wr] = await Promise.all([fetchAPI("day",d),fetchAPI("week",d)]);
+    const [dr,wr] = await Promise.all([fetchAPI("day",d,noCache), fetchAPI("week",d,noCache)]);
     dayData=dr; weekData=wr;
-    document.getElementById("statusBadge").textContent="Live";
+    const isLive = API_BASE && !API_BASE.includes("YOUR_APPS_SCRIPT");
+    const badge  = document.getElementById("statusBadge");
+    badge.textContent        = isLive ? "Live" : "Demo";
+    badge.style.background   = isLive ? "var(--teal-dim)"          : "var(--amber-dim)";
+    badge.style.color        = isLive ? "var(--teal)"              : "var(--amber)";
+    badge.style.borderColor  = isLive ? "rgba(0,194,168,.25)"      : "rgba(232,184,75,.25)";
     renderAll();
   } catch(err) {
     ["todayPanel","weekPanel"].forEach(id=>setEl(id,`<div class="state-block error-msg">Error: ${err.message}</div>`));
@@ -484,11 +489,12 @@ async function loadData() {
   }
 }
 
-async function fetchAPI(mode,dateTab) {
+async function fetchAPI(mode, dateTab, noCache=false) {
   if (!API_BASE || API_BASE === "https://script.google.com/macros/s/AKfycbzl9wrN5Ys-fz6H61G07c7Ot7daNp8JWDGh9xeuQ6fhTTkC58CJASLN8gdPaifuLuok/exec") {
     return mockData(mode, dateTab);
   }
-  const url = `${API_BASE}?mode=${mode}&date=${encodeURIComponent(dateTab)}`;
+  let url = `${API_BASE}?mode=${mode}&date=${encodeURIComponent(dateTab)}`;
+  if (noCache) url += '&nocache=1';
   const res = await fetch(url, { method:"GET", redirect:"follow" });
   if (!res.ok) throw new Error("API error " + res.status);
   const text = await res.text();
@@ -924,22 +930,7 @@ function toggleTheme() {
 // REFRESH (today + week)
 // ══════════════════════════════════════════════════════════════
 async function refreshDay() {
-  const d = pickerToTab();
-  document.getElementById("statusBadge").textContent = "Refreshing...";
-  ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"].forEach(id=>setEl(id,spinner()));
-  try {
-    const [dr,wr] = await Promise.all([fetchAPI("day",d), fetchAPI("week",d)]);
-    dayData=dr; weekData=wr;
-    const isLive = API_BASE && API_BASE !== "https://script.google.com/macros/s/AKfycbzl9wrN5Ys-fz6H61G07c7Ot7daNp8JWDGh9xeuQ6fhTTkC58CJASLN8gdPaifuLuok/exec";
-  document.getElementById("statusBadge").textContent = isLive ? "Live" : "Demo";
-  document.getElementById("statusBadge").style.background = isLive ? "var(--teal-dim)" : "var(--amber-dim)";
-  document.getElementById("statusBadge").style.color = isLive ? "var(--teal)" : "var(--amber)";
-  document.getElementById("statusBadge").style.borderColor = isLive ? "rgba(0,194,168,.25)" : "rgba(232,184,75,.25)";
-    renderAll();
-  } catch(err) {
-    document.getElementById("statusBadge").textContent = "Error";
-    ["todayPanel","weekPanel"].forEach(id=>setEl(id,`<div class="state-block error-msg">Error: ${err.message}</div>`));
-  }
+  await loadData(true);
 }
 
 // ── CSV DOWNLOAD ──────────────────────────────────────────────
@@ -1384,374 +1375,6 @@ function mockArchiveData() {
 
 
 
-// ══════════════════════════════════════════════════════════════
-// HISTORY / ARCHIVE
-// ══════════════════════════════════════════════════════════════
-let archiveCache   = null;   // raw rows from archive sheet
-let archiveFetched = null;   // Date object of last fetch
-let histView       = "month";
-let histRange      = { from: null, to: null };
-
-const CHASER_COLORS = {
-  Alex:"#00C2A8", Hope:"#4CAF8A", Rose:"#E8B84B", Frank:"#9B7FE8", Nova:"#E05C6A"
-};
-
-async function refreshArchive() {
-  setCacheStatus("Fetching...", false);
-  try {
-    let rows;
-    if (!API_BASE || API_BASE === "https://script.google.com/macros/s/AKfycbzl9wrN5Ys-fz6H61G07c7Ot7daNp8JWDGh9xeuQ6fhTTkC58CJASLN8gdPaifuLuok/exec") {
-      rows = mockArchiveData();
-    } else {
-      const res = await fetch(`${API_BASE}?mode=archive`);
-      if (!res.ok) throw new Error("API " + res.status);
-      const data = await res.json();
-      rows = data.rows || [];
-    }
-    archiveCache   = rows;
-    archiveFetched = new Date();
-    setCacheStatus("Last updated " + archiveFetched.toLocaleTimeString(), true);
-    renderHistView();
-  } catch(err) {
-    setCacheStatus("Error: " + err.message, false);
-  }
-}
-
-function setCacheStatus(msg, fresh) {
-  document.getElementById("cacheStatus").textContent = msg;
-  document.getElementById("cacheDot").className = "cache-dot" + (fresh ? " fresh" : "");
-}
-
-function setHistView(v) {
-  histView = v;
-  document.querySelectorAll(".hist-sub-btn").forEach(b => {
-    b.classList.toggle("active", b.getAttribute("onclick").includes("'" + v + "'"));
-  });
-  document.getElementById("histCustomRange").classList.toggle("hidden", v !== "custom");
-  if (v !== "custom") renderHistView();
-}
-
-function applyCustomRange() {
-  histRange.from = document.getElementById("histFrom").value;
-  histRange.to   = document.getElementById("histTo").value;
-  if (!histRange.from || !histRange.to) { alert("Select both dates."); return; }
-  renderHistView();
-}
-
-function renderHistView() {
-  if (!archiveCache) {
-    // Auto-load mock data for demo
-    refreshArchive();
-    return;
-  }
-  const rows = filterArchiveRows(archiveCache, histView, histRange);
-  if (!rows.length) {
-    setEl("histContent", `<div class="no-archive">No data found for this period.</div>`);
-    return;
-  }
-  const summary  = aggregateArchiveRows(rows);
-  const byDate   = groupByDate(rows);
-  const byChaserAgg = groupByChaser(rows);
-  const dates    = Object.keys(byDate).sort();
-  setEl("histContent", `
-    ${renderHistSummaryCards(summary)}
-    <div class="charts-row">
-      <div class="chart-wrap"><div class="chart-title">Cases by Chaser</div><div id="barChart"></div></div>
-      <div class="chart-wrap"><div class="chart-title">Approvals by Chaser</div><div id="barChartApprovals"></div></div>
-    </div>
-    <div class="chart-wrap"><div class="chart-title">Daily Cases Trend</div><div id="lineChart"></div></div>
-    <div class="chart-wrap"><div class="chart-title">Daily Approvals Trend</div><div id="lineChartApprovals"></div></div>
-    ${renderHistLeaderboard(byChaserAgg)}
-  `);
-  requestAnimationFrame(() => {
-    drawBarChart("barChart",       byChaserAgg, "cases",     "Cases");
-    drawBarChart("barChartApprovals", byChaserAgg, "approvals", "Approvals");
-    drawLineChart("lineChart",          byDate, dates, "cases",     "Cases");
-    drawLineChart("lineChartApprovals", byDate, dates, "approvals", "Approvals");
-  });
-}
-
-// ── FILTER ────────────────────────────────────────────────────
-function filterArchiveRows(rows, view, range) {
-  const now   = new Date();
-  const year  = now.getFullYear();
-  const month = now.getMonth();
-  const q     = Math.floor(month / 3);
-
-  return rows.filter(r => {
-    const d = parseArchiveDate(r.Date);
-    if (!d) return false;
-    if (view === "month")   return d.getFullYear()===year && d.getMonth()===month;
-    if (view === "quarter") return d.getFullYear()===year && Math.floor(d.getMonth()/3)===q;
-    if (view === "year")    return d.getFullYear()===year;
-    if (view === "custom") {
-      const from = new Date(range.from), to = new Date(range.to);
-      to.setHours(23,59,59);
-      return d >= from && d <= to;
-    }
-    return true;
-  });
-}
-
-function parseArchiveDate(str) {
-  if (!str) return null;
-  // supports "6/25", "6/25/2026", "2026-06-25"
-  if (str.includes("-")) return new Date(str);
-  const parts = str.split("/");
-  if (parts.length >= 2) {
-    const yr = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
-    return new Date(yr, parseInt(parts[0])-1, parseInt(parts[1]));
-  }
-  return null;
-}
-
-// ── AGGREGATE ────────────────────────────────────────────────
-function aggregateArchiveRows(rows) {
-  const daySet = new Set(rows.map(r=>r.Date));
-  return rows.reduce((s, r) => ({
-    cases:          s.cases          + (Number(r.Cases)||0),
-    positive:       s.positive       + (Number(r.Positive)||0),
-    faxes:          s.faxes          + (Number(r.Faxes)||0),
-    approvals:      s.approvals      + (Number(r.Approvals)||0),
-    denials:        s.denials        + (Number(r.Denials)||0),
-    timeMins:       s.timeMins       + (Number(r.TimeMins)||0),
-    calls:          s.calls          + (Number(r.TotalCalls)||0),
-    durationMins:   s.durationMins   + (Number(r.TotalDurationMins)||0),
-    productiveTime: s.productiveTime + (Number(r.ProductiveTime)||0),
-    days: s.days,
-  }), { cases:0, positive:0, faxes:0, approvals:0, denials:0, timeMins:0,
-        calls:0, durationMins:0, productiveTime:0,
-        days: daySet.size });
-}
-
-function groupByDate(rows) {
-  const map = {};
-  for (const r of rows) {
-    if (!map[r.Date]) map[r.Date] = { cases:0, positive:0, faxes:0, approvals:0, denials:0 };
-    map[r.Date].cases     += Number(r.Cases)||0;
-    map[r.Date].positive  += Number(r.Positive)||0;
-    map[r.Date].faxes     += Number(r.Faxes)||0;
-    map[r.Date].approvals += Number(r.Approvals)||0;
-    map[r.Date].denials   += Number(r.Denials)||0;
-  }
-  return map;
-}
-
-function groupByChaser(rows) {
-  const map = {};
-  for (const r of rows) {
-    const n = r.Chaser;
-    if (!n) continue;
-    if (!map[n]) map[n] = { cases:0, positive:0, faxes:0, approvals:0, denials:0,
-                             timeMins:0, calls:0, durationMins:0, productiveTime:0, days:new Set() };
-    map[n].cases          += Number(r.Cases)||0;
-    map[n].positive       += Number(r.Positive)||0;
-    map[n].faxes          += Number(r.Faxes)||0;
-    map[n].approvals      += Number(r.Approvals)||0;
-    map[n].denials        += Number(r.Denials)||0;
-    map[n].timeMins       += Number(r.TimeMins)||0;
-    map[n].calls          += Number(r.TotalCalls)||0;
-    map[n].durationMins   += Number(r.TotalDurationMins)||0;
-    map[n].productiveTime += Number(r.ProductiveTime)||0;
-    map[n].days.add(r.Date);
-  }
-  Object.values(map).forEach(v => v.days = v.days.size);
-  return map;
-}
-
-// ── SUMMARY CARDS ────────────────────────────────────────────
-function renderHistSummaryCards(s) {
-  const label   = { month:"Month", quarter:"Quarter", year:"Year", custom:"Period" }[histView]||"";
-  const appPct  = s.faxes    ? (s.approvals/s.faxes*100).toFixed(1) : "--";
-  const eff     = s.positive ? (s.cases/s.positive).toFixed(2)       : "--";
-  const avgTime = s.cases    ? (s.timeMins/s.cases).toFixed(1)        : "--";
-  const avgDay  = s.days     ? (s.cases/s.days).toFixed(1)            : "--";
-  const avgProd = s.days     ? (s.productiveTime/s.days).toFixed(1)   : "--";
-  const totalH  = s.durationMins ? (s.durationMins/60).toFixed(1)     : "--";
-  return `<div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
-    ${mc("Cases ("+label+")",    s.cases,     "", "teal")}
-    ${mc("Approvals",            s.approvals, "", "green")}
-    ${mc("Denials",              s.denials,   "", "red")}
-    ${mc("Faxes Sent",           s.faxes,     "", "")}
-    ${mc("Approval Rate",        appPct,      "%","green")}
-    ${mc("Efficiency",           eff,         "", "")}
-    ${mc("Avg Time/Case",        avgTime,     "m","")}
-    ${mc("Avg Cases/Day",        avgDay,      "", "teal")}
-    ${mc("Total Calls",          s.calls,     "", "")}
-    ${mc("Call Hours",           totalH,      "h","")}
-    ${mc("Avg Productive Time",  avgProd,     "m","")}
-    ${mc("Active Days",          s.days,      "", "amber")}
-  </div>`;
-}
-
-// ── HISTORY LEADERBOARD ───────────────────────────────────────
-function renderHistLeaderboard(byChaserAgg) {
-  const rows = Object.entries(byChaserAgg).map(([name, d]) => ({
-    name, ...d,
-    approvalPct:  d.faxes    ? (d.approvals/d.faxes*100).toFixed(1) : "--",
-    efficiency:   d.positive ? (d.cases/d.positive).toFixed(2)       : "--",
-    avgCasesDay:  d.days     ? (d.cases/d.days).toFixed(1)           : "--",
-    avgProd:      d.days     ? (d.productiveTime/d.days).toFixed(1)  : "--",
-    callHours:    d.durationMins ? (d.durationMins/60).toFixed(1)    : "--",
-  })).sort((a,b) => b.cases - a.cases);
-
-  return `<div class="chart-wrap">
-    <div class="chart-title">Chaser Totals for Period</div>
-    <div style="overflow:auto"><table class="lb-table" style="min-width:900px"><thead><tr>
-      <th>#</th><th>Chaser</th><th>Cases</th><th>Positive</th><th>Faxes</th>
-      <th>Approvals</th><th>Denials</th><th>Approv.%</th><th>Efficiency</th>
-      <th>Calls</th><th>Call Hrs</th><th>Avg Prod.Time</th><th>Avg Cases/Day</th><th>Days</th>
-    </tr></thead><tbody>
-      ${rows.map((r,i)=>`<tr>
-        <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
-        <td><span class="chaser-name" style="color:${CHASER_COLORS[r.name]||"var(--text)"}">${r.name}</span></td>
-        <td>${r.cases}</td><td>${r.positive}</td><td>${r.faxes}</td>
-        <td><span class="pill pill-green">${r.approvals}</span></td>
-        <td><span class="pill pill-red">${r.denials}</span></td>
-        <td>${r.approvalPct==="--"?"--":`<span class="pill pill-teal">${r.approvalPct}%</span>`}</td>
-        <td>${r.efficiency}</td>
-        <td>${r.calls}</td>
-        <td>${r.callHours==="--"?"--":r.callHours+"h"}</td>
-        <td>${r.avgProd==="--"?"--":r.avgProd+"m"}</td>
-        <td>${r.avgCasesDay}</td><td>${r.days}</td>
-      </tr>`).join("")}
-    </tbody></table></div></div>`;
-}
-
-// ══════════════════════════════════════════════════════════════
-// CHARTS (vanilla SVG — no library)
-// ══════════════════════════════════════════════════════════════
-const TOOLTIP = () => document.getElementById("chartTooltip");
-
-function showTooltip(e, html) {
-  const t = TOOLTIP();
-  t.innerHTML = html;
-  t.style.display = "block";
-  t.style.left = (e.clientX + 12) + "px";
-  t.style.top  = (e.clientY - 10) + "px";
-}
-function hideTooltip() { TOOLTIP().style.display = "none"; }
-
-// ── BAR CHART ─────────────────────────────────────────────────
-function drawBarChart(containerId, byChaserAgg, field, label) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  const entries = Object.entries(byChaserAgg).sort((a,b)=>b[1][field]-a[1][field]);
-  if (!entries.length) { container.innerHTML = `<div style="color:var(--text-3);font-size:12px;padding:12px">No data</div>`; return; }
-
-  const W=560, H=200, PAD={t:10,r:20,b:50,l:50};
-  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
-  const maxVal = Math.max(...entries.map(([,d])=>d[field]),1);
-  const barW   = Math.min(iW/entries.length - 8, 60);
-  const xStep  = iW / entries.length;
-
-  let bars = "", labels = "", yLines = "";
-  const ticks = 4;
-  for (let i=0; i<=ticks; i++) {
-    const v = Math.round(maxVal/ticks*i);
-    const y = PAD.t + iH - (v/maxVal*iH);
-    yLines += `<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
-    yLines += `<text x="${PAD.l-6}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
-  }
-
-  entries.forEach(([name,d],i) => {
-    const val = d[field]||0;
-    const bH  = val/maxVal*iH;
-    const x   = PAD.l + xStep*i + (xStep-barW)/2;
-    const y   = PAD.t + iH - bH;
-    const col = CHASER_COLORS[name]||"var(--teal)";
-    bars   += `<rect class="chart-bar" x="${x}" y="${y}" width="${barW}" height="${bH}" rx="4" fill="${col}"
-      onmouseenter="showTooltip(event,'<b>${name}</b>: ${val} ${label}')" onmouseleave="hideTooltip()"/>`;
-    labels += `<text x="${x+barW/2}" y="${H-PAD.b+16}" text-anchor="middle" font-size="11" fill="var(--text-2)">${name}</text>`;
-    labels += `<text x="${x+barW/2}" y="${y-5}" text-anchor="middle" font-size="10" fill="${col}" font-weight="600">${val}</text>`;
-  });
-
-  container.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}">
-    ${yLines}${bars}${labels}
-    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
-  </svg>`;
-}
-
-// ── LINE CHART ─────────────────────────────────────────────────
-function drawLineChart(containerId, byDate, dates, field, label) {
-  const container = document.getElementById(containerId);
-  if (!container || !dates.length) { if(container)container.innerHTML=`<div style="color:var(--text-3);font-size:12px;padding:12px">No data</div>`; return; }
-
-  const W=900, H=200, PAD={t:14,r:20,b:46,l:50};
-  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
-  const vals   = dates.map(d=>(byDate[d]||{})[field]||0);
-  const maxVal = Math.max(...vals,1);
-  const xStep  = iW/(dates.length-1||1);
-
-  let yLines="", points=[], dots="", xLabels="";
-  for (let i=0; i<=4; i++) {
-    const v = Math.round(maxVal/4*i);
-    const y = PAD.t + iH - (v/maxVal*iH);
-    yLines += `<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
-    yLines += `<text x="${PAD.l-6}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
-  }
-
-  // Thin out x labels if too many dates
-  const step = Math.ceil(dates.length / 20);
-  dates.forEach((date,i) => {
-    const x = PAD.l + xStep*i;
-    const y = PAD.t + iH - (vals[i]/maxVal*iH);
-    points.push(`${x},${y}`);
-    dots += `<circle cx="${x}" cy="${y}" r="3" fill="var(--teal)"
-      onmouseenter="showTooltip(event,'<b>${date}</b>: ${vals[i]} ${label}')" onmouseleave="hideTooltip()"/>`;
-    if (i%step===0||i===dates.length-1) {
-      // Show short date
-      const parts=date.split("/"); const lbl=parts.slice(0,2).join("/");
-      xLabels+=`<text x="${x}" y="${H-PAD.b+16}" text-anchor="middle" font-size="10" fill="var(--text-3)">${lbl}</text>`;
-    }
-  });
-
-  const polyline = points.length > 1
-    ? `<polyline points="${points.join(" ")}" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linejoin="round"/>`
-    : `<circle cx="${points[0].split(",")[0]}" cy="${points[0].split(",")[1]}" r="4" fill="var(--teal)"/>`;
-
-  // Gradient fill under line
-  const fillPts = [`${PAD.l},${PAD.t+iH}`, ...points, `${PAD.l+xStep*(dates.length-1)},${PAD.t+iH}`];
-  const fill = points.length > 1
-    ? `<polygon points="${fillPts.join(" ")}" fill="url(#lineGrad)" opacity=".25"/>`
-    : "";
-
-  container.innerHTML = `<svg class="chart" viewBox="0 0 ${W} ${H}">
-    <defs><linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="var(--teal)"/><stop offset="100%" stop-color="transparent"/>
-    </linearGradient></defs>
-    ${yLines}${fill}${polyline}${dots}${xLabels}
-    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
-  </svg>`;
-}
-
-// ── MOCK ARCHIVE DATA ─────────────────────────────────────────
-function mockArchiveData() {
-  const rows = [];
-  const now  = new Date();
-  const names = CHASERS;
-  // Generate 60 weekdays of data
-  for (let daysBack=90; daysBack>=0; daysBack--) {
-    const d = new Date(now); d.setDate(now.getDate()-daysBack);
-    if (d.getDay()===0||d.getDay()===6) continue;
-    const dateStr = `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
-    names.forEach(name => {
-      const base = { Alex:18, Hope:14, Rose:22, Frank:11, Nova:16 }[name]||15;
-      const rand = n => Math.max(0, n + Math.floor((Math.random()-.4)*n*.6));
-      const cases = rand(base);
-      const pos   = Math.min(cases, rand(Math.round(cases*.65)));
-      const fax   = Math.min(cases, rand(Math.round(cases*.75)));
-      const app   = Math.min(fax, rand(Math.round(fax*.55)));
-      const den   = Math.min(fax-app, rand(Math.round(fax*.2)));
-      rows.push({ Date:dateStr, Chaser:name, Cases:cases, Positive:pos, Faxes:fax,
-                  Approvals:app, Denials:den, TimeMins:cases*11 });
-    });
-  }
-  return rows;
-}
-
-// ── AUTO-LOAD when switching to History tab ───────────────────
-// (handled inside setTab directly — no override needed)
 
 </script>
 <div class="chart-tooltip" id="chartTooltip"></div>
