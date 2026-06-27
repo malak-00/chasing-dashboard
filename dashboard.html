@@ -183,6 +183,69 @@ body.light .rank-badge { background:var(--border); }
 
 .btn-syncing { opacity:.6; cursor:not-allowed; pointer-events:none; }
 
+
+/* CHART BUILDER */
+#cbOutput .chart-wrap { margin-bottom:0; }
+.cb-legend { display:flex; gap:16px; flex-wrap:wrap; margin-top:12px; }
+.cb-legend-item { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); }
+.cb-legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+select[multiple] option { padding:4px 8px; }
+select[multiple] option:checked { background:var(--teal-dim); color:var(--teal); }
+
+
+/* CHASER PAGE */
+.chaser-hero { display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:center; margin-bottom:20px; }
+.chaser-avatar { width:64px; height:64px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:700; color:#fff; flex-shrink:0; }
+.chaser-hero-name { font-size:22px; font-weight:700; margin-bottom:4px; }
+.chaser-hero-sub { font-size:12px; color:var(--text-3); }
+.goal-bar-bg { height:8px; background:var(--border); border-radius:4px; overflow:hidden; margin-top:4px; }
+.goal-bar-fill { height:100%; border-radius:4px; transition:width .5s ease; }
+.goal-met { background:var(--green); }
+.goal-close { background:var(--amber); }
+.goal-miss { background:var(--red); }
+.goal-label { font-size:10px; color:var(--text-3); margin-top:3px; display:flex; justify-content:space-between; }
+.chaser-btn { padding:6px 16px; border-radius:20px; border:1px solid var(--border); background:var(--card); color:var(--text-2); font-family:var(--font); font-size:12px; font-weight:600; cursor:pointer; transition:all .15s; }
+.chaser-btn:hover { color:var(--text); }
+.chaser-btn.active { border-color:var(--teal); background:var(--teal-dim); color:var(--teal); }
+
+/* COMPARE TAB */
+.compare-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:20px; }
+.compare-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; }
+.compare-panel-header { padding:12px 16px; border-bottom:1px solid var(--border); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-2); }
+.change-row { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; border-bottom:1px solid var(--border); font-size:13px; }
+.change-row:last-child { border-bottom:none; }
+.change-badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px; }
+.change-up   { background:var(--green-dim); color:var(--green); }
+.change-down { background:var(--red-dim);   color:var(--red);   }
+.change-flat { background:var(--card);       color:var(--text-3); }
+
+/* GOALS */
+.goals-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:20px; overflow:hidden; }
+.goals-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; padding:16px; }
+.goal-card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:14px; }
+
+/* CAMPAIGN TREND */
+.camp-trend-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin-bottom:18px; }
+
+/* ROLLING AVG */
+.rolling-legend { display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; font-size:11px; color:var(--text-2); }
+.rolling-legend-item { display:flex; align-items:center; gap:6px; }
+.rolling-legend-line { width:20px; height:2px; border-radius:1px; }
+
+/* PDF EXPORT */
+@media print {
+  .header, .tab-nav, .controls-panel, .hist-cache-bar, .hist-subnav,
+  .lb-range-bar, .sort-btns, .btn, .theme-btn, .pulse-bar,
+  #tab-charts, #tab-chasers, #tab-compare, #tab-custom,
+  #tab-leaderboard .section-header > div:last-child { display:none !important; }
+  body { background:#fff !important; color:#000 !important; }
+  .panel, .chart-wrap, .leaderboard, .metric, .resp-card, .campaign-card,
+  .compare-panel, .goals-panel { border:1px solid #ddd !important; background:#fff !important; break-inside:avoid; }
+  .metric-value, .chaser-name { color:#000 !important; }
+  .panel-title, .metric-label, .section-title, .resp-label { color:#555 !important; }
+  * { color-adjust:exact !important; -webkit-print-color-adjust:exact !important; }
+}
+
 </style>
 </head>
 <body>
@@ -197,6 +260,7 @@ body.light .rank-badge { background:var(--border); }
     <button class="btn btn-ghost" id="syncBtn" onclick="syncToday()" title="Re-reads today from live sheets and updates archive">&#9650; Sync Today</button>
     <button class="btn btn-ghost" onclick="toggleControls()">&#9881; Controls</button>
     <button class="btn btn-ghost" onclick="downloadCSV()">&#8595; CSV</button>
+    <button class="btn btn-ghost" onclick="exportPDF()">&#128438; PDF</button>
   </div>
 </header>
 
@@ -210,6 +274,9 @@ body.light .rank-badge { background:var(--border); }
     <button class="tab-btn" onclick="setTab('leaderboard')">Leaderboard</button>
     <button class="tab-btn" onclick="setTab('custom')">Custom Metrics</button>
     <button class="tab-btn" onclick="setTab('history')">History</button>
+    <button class="tab-btn" onclick="setTab('charts')">Charts</button>
+    <button class="tab-btn" onclick="setTab('chasers')">Chasers</button>
+    <button class="tab-btn" onclick="setTab('compare')">Compare</button>
   </div>
 
   <!-- OVERVIEW TAB -->
@@ -397,6 +464,153 @@ body.light .rank-badge { background:var(--border); }
     </div>
   </div>
 
+
+  <!-- CHARTS TAB -->
+  <div id="tab-charts" class="hidden">
+
+    <!-- Builder Controls -->
+    <div class="panel" style="margin-bottom:18px">
+      <div class="panel-header">
+        <span class="panel-title">&#128202; Chart Builder</span>
+        <span style="font-size:11px;color:var(--text-3)">Build a temporary chart from your archive data</span>
+      </div>
+      <div style="padding:16px">
+
+        <!-- Row 1: Chart type + metric -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:14px">
+          <div class="ctrl-group">
+            <label>Chart Type</label>
+            <select class="ctrl-select" id="cbType" onchange="previewChartBuilder()">
+              <option value="bar">Bar</option>
+              <option value="groupedbar">Grouped Bar</option>
+              <option value="line">Line</option>
+              <option value="pie">Pie / Donut</option>
+            </select>
+          </div>
+          <div class="ctrl-group">
+            <label>X Axis / Group By</label>
+            <select class="ctrl-select" id="cbXAxis" onchange="previewChartBuilder()">
+              <option value="chaser">Chaser</option>
+              <option value="date">Date</option>
+              <option value="week">Week</option>
+              <option value="campaign">Campaign</option>
+            </select>
+          </div>
+          <div class="ctrl-group">
+            <label>Y Axis (Primary)</label>
+            <select class="ctrl-select" id="cbYAxis" onchange="previewChartBuilder()">
+              <option value="cases">Cases</option>
+              <option value="positive">Positive</option>
+              <option value="faxes">Faxes</option>
+              <option value="approvals">Approvals</option>
+              <option value="denials">Denials</option>
+              <option value="approvalPct">Approval %</option>
+              <option value="efficiency">Efficiency</option>
+              <option value="timeMins">Time (mins)</option>
+            </select>
+          </div>
+          <div class="ctrl-group" id="cbY2Group">
+            <label>Y Axis (Secondary) <span style="color:var(--text-3);font-weight:400">grouped bar only</span></label>
+            <select class="ctrl-select" id="cbYAxis2" onchange="previewChartBuilder()">
+              <option value="none">— none —</option>
+              <option value="cases">Cases</option>
+              <option value="positive">Positive</option>
+              <option value="faxes">Faxes</option>
+              <option value="approvals">Approvals</option>
+              <option value="denials">Denials</option>
+              <option value="approvalPct">Approval %</option>
+              <option value="efficiency">Efficiency</option>
+              <option value="timeMins">Time (mins)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Row 2: Filters -->
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:14px">
+          <div class="ctrl-group">
+            <label>Date From</label>
+            <input type="date" class="ctrl-input" id="cbFrom" onchange="previewChartBuilder()">
+          </div>
+          <div class="ctrl-group">
+            <label>Date To</label>
+            <input type="date" class="ctrl-input" id="cbTo" onchange="previewChartBuilder()">
+          </div>
+          <div class="ctrl-group">
+            <label>Chasers (leave blank = all)</label>
+            <select class="ctrl-select" id="cbChasers" multiple size="5" onchange="previewChartBuilder()" style="height:auto">
+              <option value="Alex">Alex</option>
+              <option value="Hope">Hope</option>
+              <option value="Rose">Rose</option>
+              <option value="Frank">Frank</option>
+              <option value="Nova">Nova</option>
+            </select>
+          </div>
+          <div class="ctrl-group">
+            <label>Chart Title (optional)</label>
+            <input type="text" class="ctrl-input" id="cbTitle" placeholder="e.g. June Approvals by Chaser">
+            <button class="btn" style="margin-top:8px;width:100%" onclick="buildCustomChart()">&#128202; Build Chart</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Chart Output -->
+    <div id="cbOutput">
+      <div class="state-block" style="color:var(--text-3)">
+        <div style="font-size:32px;margin-bottom:10px">&#128202;</div>
+        Configure your chart above and click <strong>Build Chart</strong>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ══ CHASERS TAB ══ -->
+  <div id="tab-chasers" class="hidden">
+    <div class="lb-range-bar" style="margin-bottom:18px">
+      <label>Select Chaser</label>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" id="chaserSelectorBtns"></div>
+      <label style="margin-left:12px">Period</label>
+      <select class="ctrl-select" style="width:140px" id="chaserPeriod" onchange="renderChaserPage()">
+        <option value="today">Today</option>
+        <option value="week">This Week</option>
+        <option value="month" selected>This Month</option>
+        <option value="quarter">This Quarter</option>
+        <option value="year">This Year</option>
+      </select>
+    </div>
+    <div id="chaserPageContent">
+      <div class="state-block" style="color:var(--text-3)">
+        <div style="font-size:32px;margin-bottom:10px">👤</div>
+        Select a chaser above to view their profile
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ COMPARE TAB ══ -->
+  <div id="tab-compare" class="hidden">
+    <div class="lb-range-bar" style="margin-bottom:18px;flex-wrap:wrap">
+      <label>Period A</label>
+      <input type="date" class="date-input" id="cmpFromA">
+      <span style="color:var(--text-3)">→</span>
+      <input type="date" class="date-input" id="cmpToA">
+      <label style="margin-left:12px">Period B</label>
+      <input type="date" class="date-input" id="cmpFromB">
+      <span style="color:var(--text-3)">→</span>
+      <input type="date" class="date-input" id="cmpToB">
+      <button class="btn" onclick="runComparison()">Compare</button>
+      <button class="btn btn-ghost" onclick="setComparePreset('mom')">Month vs Last Month</button>
+      <button class="btn btn-ghost" onclick="setComparePreset('wow')">Week vs Last Week</button>
+    </div>
+    <div id="compareContent">
+      <div class="state-block" style="color:var(--text-3)">
+        <div style="font-size:32px;margin-bottom:10px">⚖️</div>
+        Select two date ranges above and click Compare
+      </div>
+    </div>
+  </div>
+
 </main>
 
 <script>
@@ -460,7 +674,7 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 // ── TABS ──────────────────────────────────────────────────────
-const TABS = ["overview","campaigns","leaderboard","custom","history"];
+const TABS = ["overview","campaigns","leaderboard","custom","history","charts","chasers","compare"];
 function setTab(tab) {
   activeTab = tab;
   TABS.forEach(t => document.getElementById("tab-"+t).classList.toggle("hidden", t!==tab));
@@ -468,6 +682,7 @@ function setTab(tab) {
     b.classList.toggle("active", b.getAttribute("onclick").includes("'"+tab+"'"));
   });
   if (tab === "history" && !archiveCache) refreshArchive();
+  if (tab === "charts") initChartBuilder();
 }
 
 // ── DATA ──────────────────────────────────────────────────────
@@ -1500,6 +1715,286 @@ function mockArchiveData() {
 
 
 
+
+
+// ══════════════════════════════════════════════════════════════
+// CHART BUILDER
+// ══════════════════════════════════════════════════════════════
+
+const CB_COLORS = ["#00C2A8","#4CAF8A","#E8B84B","#9B7FE8","#E05C6A","#5B9BD5","#F08080","#90EE90"];
+
+const CB_FIELDS = {
+  cases:       { label:"Cases",       fn: r => Number(r.Cases)||0 },
+  positive:    { label:"Positive",    fn: r => Number(r.Positive)||0 },
+  faxes:       { label:"Faxes",       fn: r => Number(r.Faxes)||0 },
+  approvals:   { label:"Approvals",   fn: r => Number(r.Approvals)||0 },
+  denials:     { label:"Denials",     fn: r => Number(r.Denials)||0 },
+  approvalPct: { label:"Approval %",  fn: (r,g) => g.faxes ? (g.approvals/g.faxes*100) : 0 },
+  efficiency:  { label:"Efficiency",  fn: (r,g) => g.positive ? (g.cases/g.positive) : 0 },
+  timeMins:    { label:"Time (mins)", fn: r => Number(r.TimeMins)||0 },
+};
+
+// Set default dates on tab load
+function initChartBuilder() {
+  const now = new Date();
+  const ago = new Date(now); ago.setDate(now.getDate()-30);
+  document.getElementById("cbFrom").value = ago.toISOString().slice(0,10);
+  document.getElementById("cbTo").value   = now.toISOString().slice(0,10);
+}
+
+// Called when user changes any control — just shows a hint
+function previewChartBuilder() {
+  const type = document.getElementById("cbType").value;
+  const y2   = document.getElementById("cbY2Group");
+  y2.style.opacity = type === "groupedbar" ? "1" : ".35";
+  y2.style.pointerEvents = type === "groupedbar" ? "auto" : "none";
+}
+
+// ── MAIN BUILD FUNCTION ───────────────────────────────────────
+function buildCustomChart() {
+  if (!archiveCache || !archiveCache.length) {
+    setEl("cbOutput", `<div class="state-block error-msg">No archive data loaded. Go to Overview tab first to load data.</div>`);
+    return;
+  }
+
+  // Read controls
+  const type   = document.getElementById("cbType").value;
+  const xAxis  = document.getElementById("cbXAxis").value;
+  const yKey   = document.getElementById("cbYAxis").value;
+  const yKey2  = document.getElementById("cbYAxis2").value;
+  const fromV  = document.getElementById("cbFrom").value;
+  const toV    = document.getElementById("cbTo").value;
+  const title  = document.getElementById("cbTitle").value.trim() ||
+                 `${CB_FIELDS[yKey].label} by ${xAxis.charAt(0).toUpperCase()+xAxis.slice(1)}`;
+  const selChasers = [...document.getElementById("cbChasers").selectedOptions].map(o=>o.value);
+
+  // Filter rows by date range and chasers
+  const fromD = fromV ? new Date(fromV) : null;
+  const toD   = toV   ? new Date(toV)   : null;
+  if (toD) toD.setHours(23,59,59);
+
+  const filtered = archiveCache.filter(r => {
+    const d = parseArchiveDate(r.Date);
+    if (!d) return false;
+    if (fromD && d < fromD) return false;
+    if (toD   && d > toD)   return false;
+    if (selChasers.length && !selChasers.includes(r.Chaser)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    setEl("cbOutput", `<div class="state-block error-msg">No data found for the selected filters.</div>`);
+    return;
+  }
+
+  // Group data by xAxis
+  const grouped = groupForChart(filtered, xAxis);
+  const labels  = Object.keys(grouped).sort((a,b) => {
+    // Sort dates chronologically, others alphabetically
+    if (xAxis === "date" || xAxis === "week") {
+      return parseArchiveDate(a.split(" ")[0]) - parseArchiveDate(b.split(" ")[0]);
+    }
+    return a.localeCompare(b);
+  });
+
+  // Compute Y values
+  const yVals  = labels.map(l => computeMetric(grouped[l], yKey));
+  const yVals2 = yKey2 !== "none" ? labels.map(l => computeMetric(grouped[l], yKey2)) : [];
+
+  // Render
+  const html = renderChart(type, labels, yVals, yVals2, yKey, yKey2, title, xAxis);
+  setEl("cbOutput", `
+    <div class="chart-wrap">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div class="chart-title">${title}</div>
+        <div style="font-size:11px;color:var(--text-3)">${filtered.length} rows · ${labels.length} ${xAxis}s</div>
+      </div>
+      ${html}
+    </div>
+  `);
+}
+
+// ── GROUP DATA ────────────────────────────────────────────────
+function groupForChart(rows, xAxis) {
+  const map = {};
+  rows.forEach(r => {
+    let key;
+    if (xAxis === "chaser")   key = r.Chaser || "Unknown";
+    else if (xAxis === "date")     key = r.Date   || "Unknown";
+    else if (xAxis === "campaign") key = "All";  // campaigns handled separately
+    else if (xAxis === "week") {
+      const d = parseArchiveDate(r.Date);
+      if (!d) return;
+      const day = d.getDay();
+      const mon = new Date(d); mon.setDate(d.getDate() + (day===0?-6:1-day));
+      const fri = new Date(mon); fri.setDate(mon.getDate()+4);
+      const fmt = d2 => `${d2.getMonth()+1}/${d2.getDate()}`;
+      key = `${fmt(mon)}-${fmt(fri)}`;
+    }
+    if (!key) return;
+    if (!map[key]) map[key] = { cases:0, positive:0, faxes:0, approvals:0, denials:0, timeMins:0, count:0 };
+    map[key].cases     += Number(r.Cases)||0;
+    map[key].positive  += Number(r.Positive)||0;
+    map[key].faxes     += Number(r.Faxes)||0;
+    map[key].approvals += Number(r.Approvals)||0;
+    map[key].denials   += Number(r.Denials)||0;
+    map[key].timeMins  += Number(r.TimeMins)||0;
+    map[key].count++;
+  });
+  return map;
+}
+
+function computeMetric(g, key) {
+  if (!g) return 0;
+  if (key === "approvalPct") return g.faxes ? +(g.approvals/g.faxes*100).toFixed(1) : 0;
+  if (key === "efficiency")  return g.positive ? +(g.cases/g.positive).toFixed(2) : 0;
+  return g[key] || 0;
+}
+
+// ── RENDER CHARTS ─────────────────────────────────────────────
+function renderChart(type, labels, yVals, yVals2, yKey, yKey2, title, xAxis) {
+  if (type === "bar")        return renderBarChartCB(labels, yVals, yKey, false);
+  if (type === "groupedbar") return renderBarChartCB(labels, yVals, yKey, true, yVals2, yKey2);
+  if (type === "line")       return renderLineChartCB(labels, yVals, yKey);
+  if (type === "pie")        return renderPieChart(labels, yVals, yKey);
+  return "";
+}
+
+// ── BAR CHART ─────────────────────────────────────────────────
+function renderBarChartCB(labels, vals, yKey, grouped, vals2, yKey2) {
+  const W=860, H=280, PAD={t:20,r:20,b:60,l:55};
+  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
+  const n    = labels.length;
+  const cols = grouped ? 2 : 1;
+  const maxV = Math.max(...vals, ...(vals2||[]), 1);
+  const grpW = iW/n;
+  const barW = Math.min(grpW/(cols+.5) - 4, 50);
+
+  let bars="", xlabels="", ylines="";
+
+  for (let i=0;i<=5;i++) {
+    const v = (maxV/5*i).toFixed(maxV<5?1:0);
+    const y = PAD.t + iH - (v/maxV*iH);
+    ylines += `<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    ylines += `<text x="${PAD.l-6}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
+  }
+
+  labels.forEach((lbl,i) => {
+    const cx = PAD.l + grpW*i + grpW/2;
+    const v1 = vals[i]||0;
+    const bH1= v1/maxV*iH;
+    const x1 = cx - (grouped ? barW+2 : barW/2);
+    const y1 = PAD.t+iH-bH1;
+    bars += `<rect class="chart-bar" x="${x1}" y="${y1}" width="${barW}" height="${bH1}" rx="3" fill="${CB_COLORS[0]}"
+      onmouseenter="showTooltip(event,'<b>${lbl}</b><br>${CB_FIELDS[yKey].label}: ${v1}')" onmouseleave="hideTooltip()"/>`;
+    bars += `<text x="${x1+barW/2}" y="${y1-4}" text-anchor="middle" font-size="9" fill="${CB_COLORS[0]}" font-weight="600">${v1}</text>`;
+
+    if (grouped && vals2 && vals2[i] !== undefined && yKey2 !== "none") {
+      const v2=vals2[i]||0, bH2=v2/maxV*iH, x2=cx+2, y2=PAD.t+iH-bH2;
+      bars += `<rect class="chart-bar" x="${x2}" y="${y2}" width="${barW}" height="${bH2}" rx="3" fill="${CB_COLORS[1]}"
+        onmouseenter="showTooltip(event,'<b>${lbl}</b><br>${CB_FIELDS[yKey2]?.label||yKey2}: ${v2}')" onmouseleave="hideTooltip()"/>`;
+      bars += `<text x="${x2+barW/2}" y="${y2-4}" text-anchor="middle" font-size="9" fill="${CB_COLORS[1]}" font-weight="600">${v2}</text>`;
+    }
+
+    // X label — truncate if long
+    const shortLbl = lbl.length > 10 ? lbl.slice(0,9)+"…" : lbl;
+    xlabels += `<text x="${cx}" y="${H-PAD.b+16}" text-anchor="middle" font-size="10" fill="var(--text-2)">${shortLbl}</text>`;
+  });
+
+  const legend = grouped && yKey2 !== "none" ? `
+    <div class="cb-legend">
+      <div class="cb-legend-item"><div class="cb-legend-dot" style="background:${CB_COLORS[0]}"></div>${CB_FIELDS[yKey].label}</div>
+      <div class="cb-legend-item"><div class="cb-legend-dot" style="background:${CB_COLORS[1]}"></div>${CB_FIELDS[yKey2]?.label||yKey2}</div>
+    </div>` : "";
+
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}">
+    ${ylines}${bars}${xlabels}
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
+  </svg>${legend}`;
+}
+
+// ── LINE CHART ─────────────────────────────────────────────────
+function renderLineChartCB(labels, vals, yKey) {
+  const W=860, H=260, PAD={t:20,r:20,b:56,l:55};
+  const iW=W-PAD.l-PAD.r, iH=H-PAD.t-PAD.b;
+  const maxV = Math.max(...vals,1);
+  const xStep = iW/(labels.length-1||1);
+
+  let ylines="", points=[], dots="", xlabels="";
+
+  for (let i=0;i<=5;i++) {
+    const v=(maxV/5*i).toFixed(maxV<5?1:0);
+    const y=PAD.t+iH-(v/maxV*iH);
+    ylines+=`<line x1="${PAD.l}" y1="${y}" x2="${W-PAD.r}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+    ylines+=`<text x="${PAD.l-6}" y="${y+4}" text-anchor="end" font-size="10" fill="var(--text-3)">${v}</text>`;
+  }
+
+  const step = Math.ceil(labels.length/18);
+  labels.forEach((lbl,i) => {
+    const x=PAD.l+xStep*i, y=PAD.t+iH-(vals[i]/maxV*iH), v=vals[i]||0;
+    points.push(`${x},${y}`);
+    dots+=`<circle cx="${x}" cy="${y}" r="4" fill="${CB_COLORS[0]}" stroke="var(--surface)" stroke-width="2"
+      onmouseenter="showTooltip(event,'<b>${lbl}</b>: ${v}')" onmouseleave="hideTooltip()"/>`;
+    if (i%step===0||i===labels.length-1) {
+      const sl=lbl.length>8?lbl.slice(0,7)+"…":lbl;
+      xlabels+=`<text x="${x}" y="${H-PAD.b+16}" text-anchor="middle" font-size="10" fill="var(--text-2)">${sl}</text>`;
+    }
+  });
+
+  const poly = points.length>1
+    ? `<polyline points="${points.join(" ")}" fill="none" stroke="${CB_COLORS[0]}" stroke-width="2.5" stroke-linejoin="round"/>`
+    : `<circle cx="${points[0]?.split(",")[0]}" cy="${points[0]?.split(",")[1]}" r="5" fill="${CB_COLORS[0]}"/>`;
+
+  const fillPts = points.length>1
+    ? [`${PAD.l},${PAD.t+iH}`,...points,`${PAD.l+xStep*(labels.length-1)},${PAD.t+iH}`]
+    : [];
+  const fill = fillPts.length ? `<polygon points="${fillPts.join(" ")}" fill="${CB_COLORS[0]}" opacity=".1"/>` : "";
+
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}">
+    ${ylines}${fill}${poly}${dots}${xlabels}
+    <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
+  </svg>`;
+}
+
+// ── PIE / DONUT CHART ─────────────────────────────────────────
+function renderPieChart(labels, vals, yKey) {
+  const W=500, H=300, cx=180, cy=150, R=120, r=60;
+  const total = vals.reduce((s,v)=>s+v,0)||1;
+  let svgSlices="", legendItems="";
+  let angle=-Math.PI/2;
+
+  labels.forEach((lbl,i) => {
+    const v     = vals[i]||0;
+    const pct   = v/total;
+    const sweep = pct*2*Math.PI;
+    const x1=cx+R*Math.cos(angle), y1=cy+R*Math.sin(angle);
+    angle+=sweep;
+    const x2=cx+R*Math.cos(angle), y2=cy+R*Math.sin(angle);
+    const large=sweep>Math.PI?1:0;
+    const col=CB_COLORS[i%CB_COLORS.length];
+    const midA=angle-sweep/2;
+    const lx=cx+(R+18)*Math.cos(midA), ly=cy+(R+18)*Math.sin(midA);
+    if (pct > 0.01) {
+      svgSlices+=`<path d="M${cx},${cy} L${x1},${y1} A${R},${R} 0 ${large},1 ${x2},${y2} Z"
+        fill="${col}" stroke="var(--surface)" stroke-width="2"
+        onmouseenter="showTooltip(event,'<b>${lbl}</b>: ${v} (${(pct*100).toFixed(1)}%)')" onmouseleave="hideTooltip()"/>`;
+      if (pct > 0.05) {
+        svgSlices+=`<text x="${lx}" y="${ly}" text-anchor="middle" font-size="10" fill="var(--text)" font-weight="600">${(pct*100).toFixed(0)}%</text>`;
+      }
+    }
+    legendItems+=`<div class="cb-legend-item"><div class="cb-legend-dot" style="background:${col}"></div>${lbl}: ${v}</div>`;
+  });
+
+  // Donut hole
+  svgSlices+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="var(--surface)"/>`;
+  svgSlices+=`<text x="${cx}" y="${cy-6}" text-anchor="middle" font-size="13" font-weight="700" fill="var(--text)">${total}</text>`;
+  svgSlices+=`<text x="${cx}" y="${cy+12}" text-anchor="middle" font-size="10" fill="var(--text-3)">${CB_FIELDS[yKey].label}</text>`;
+
+  return `<div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+    <svg viewBox="0 0 ${W/1.8} ${H}" style="width:280px;flex-shrink:0">${svgSlices}</svg>
+    <div class="cb-legend" style="flex-direction:column;gap:8px">${legendItems}</div>
+  </div>`;
+}
 
 </script>
 <div class="chart-tooltip" id="chartTooltip"></div>
