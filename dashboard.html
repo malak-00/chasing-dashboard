@@ -180,6 +180,9 @@ body.light .rank-badge { background:var(--border); }
 .lb-range-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
 .lb-range-bar label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)}
 
+
+.btn-syncing { opacity:.6; cursor:not-allowed; pointer-events:none; }
+
 </style>
 </head>
 <body>
@@ -190,7 +193,8 @@ body.light .rank-badge { background:var(--border); }
     <span class="status-badge" id="statusBadge">Live</span>
     <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">&#9790; Dark</button>
     <input type="date" class="date-input" id="datePicker" onchange="loadData()">
-    <button class="btn" onclick="refreshDay()">&#8635; Refresh</button>
+    <button class="btn" onclick="loadData()">&#8635; Load</button>
+    <button class="btn btn-ghost" id="syncBtn" onclick="syncToday()" title="Re-reads today from live sheets and updates archive">&#9650; Sync Today</button>
     <button class="btn btn-ghost" onclick="toggleControls()">&#9881; Controls</button>
     <button class="btn btn-ghost" onclick="downloadCSV()">&#8595; CSV</button>
   </div>
@@ -364,7 +368,7 @@ body.light .rank-badge { background:var(--border); }
     <div class="hist-cache-bar">
       <span class="cache-dot" id="cacheDot"></span>
       <span id="cacheStatus">No data loaded yet</span>
-      <button class="btn btn-ghost" style="padding:4px 12px;font-size:11px" onclick="refreshArchive()">&#8635; Refresh from Archive</button>
+      <button class="btn btn-ghost" style="padding:4px 12px;font-size:11px" onclick="forceRefreshArchive()">&#8635; Refresh from Archive</button>
     </div>
 
     <div class="hist-subnav">
@@ -471,24 +475,53 @@ async function loadData() {
   const d = pickerToTab();
   document.getElementById("todayLabel").textContent   = d;
   document.getElementById("campDayLabel").textContent = d;
-  document.getElementById("statusBadge").textContent = "Loading...";
+  document.getElementById("statusBadge").textContent  = "Loading...";
   ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"].forEach(id=>setEl(id,spinner()));
   try {
-    const [dr,wr] = await Promise.all([fetchAPI("day",d), fetchAPI("week",d)]);
-    dayData=dr; weekData=wr;
-    const isLive = API_BASE && !API_BASE.includes("YOUR_APPS_SCRIPT");
-    const badge  = document.getElementById("statusBadge");
-    badge.textContent        = isLive ? "Live" : "Demo";
-    badge.style.background   = isLive ? "var(--teal-dim)"          : "var(--amber-dim)";
-    badge.style.color        = isLive ? "var(--teal)"              : "var(--amber)";
-    badge.style.borderColor  = isLive ? "rgba(0,194,168,.25)"      : "rgba(232,184,75,.25)";
+    const res  = await fetchAPI("archive", "");
+    const rows = (res.rows || []);
+    archiveCache   = rows;
+    archiveFetched = new Date();
+    dayData  = buildDayFromArchive(rows, d);
+    weekData = buildWeekFromArchive(rows, d);
+    const badge = document.getElementById("statusBadge");
+    badge.textContent       = "Archive";
+    badge.style.background  = "var(--teal-dim)";
+    badge.style.color       = "var(--teal)";
+    badge.style.borderColor = "rgba(0,194,168,.25)";
     renderAll();
   } catch(err) {
     ["todayPanel","weekPanel"].forEach(id=>setEl(id,`<div class="state-block error-msg">Error: ${err.message}</div>`));
-    document.getElementById("statusBadge").textContent="Error";
+    document.getElementById("statusBadge").textContent = "Error";
   }
 }
 
+async function syncToday() {
+  const d   = getTodayTab();
+  const btn = document.getElementById("syncBtn");
+  btn.innerHTML = "Syncing...";
+  btn.classList.add("btn-syncing");
+  document.getElementById("statusBadge").textContent = "Syncing...";
+  try {
+    const url = `${API_BASE}?mode=sync&date=${encodeURIComponent(d)}`;
+    const res = await fetch(url, { method:"GET", redirect:"follow" });
+    if (!res.ok) throw new Error("Sync failed: " + res.status);
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+    btn.innerHTML = "&#9650; Sync Today";
+    btn.classList.remove("btn-syncing");
+    await loadData();
+  } catch(err) {
+    btn.innerHTML = "&#9650; Sync Today";
+    btn.classList.remove("btn-syncing");
+    document.getElementById("statusBadge").textContent = "Sync Error";
+    alert("Sync failed: " + err.message);
+  }
+}
+
+async function refreshDay() { await loadData(); }
+
+// Fetch from Apps Script API
 async function fetchAPI(mode, dateTab) {
   const url = `${API_BASE}?mode=${mode}&date=${encodeURIComponent(dateTab)}`;
   const res = await fetch(url, { method:"GET", redirect:"follow" });
@@ -499,6 +532,100 @@ async function fetchAPI(mode, dateTab) {
   } catch(e) {
     throw new Error("Bad JSON: " + text.slice(0,200));
   }
+}
+
+// All dashboard data comes from archive
+// Transforms flat archive rows into the shape the dashboard expects
+async function fetchFromArchive() {
+  const res  = await fetchAPI("archive", "");
+  const rows = res.rows || [];
+  return rows;
+}
+
+// Build day-shaped data from archive rows for a specific date
+function buildDayFromArchive(rows, dateTab) {
+  const dayRows = rows.filter(r => String(r.Date).trim() === dateTab);
+  const chasers = dayRows.map(r => ({
+    name:          String(r.Chaser),
+    totalCases:    Number(r.Cases)    || 0,
+    totalPositive: Number(r.Positive) || 0,
+    totalTimeMins: Number(r.TimeMins) || 0,
+    totalFaxes:    Number(r.Faxes)    || 0,
+    tabFound:      true,
+  }));
+  const teamTotals = chasers.reduce((t, c) => ({
+    totalCases:    t.totalCases    + c.totalCases,
+    totalPositive: t.totalPositive + c.totalPositive,
+    totalTimeMins: t.totalTimeMins + c.totalTimeMins,
+    totalFaxes:    t.totalFaxes    + c.totalFaxes,
+  }), { totalCases:0, totalPositive:0, totalTimeMins:0, totalFaxes:0 });
+
+  // Responses
+  const totalApproved = dayRows.reduce((s,r) => s + (Number(r.Approvals)||0), 0);
+  const totalDenied   = dayRows.reduce((s,r) => s + (Number(r.Denials)||0),   0);
+  const byChaser = {};
+  dayRows.forEach(r => {
+    byChaser[r.Chaser] = { approvals: Number(r.Approvals)||0, denials: Number(r.Denials)||0 };
+  });
+
+  // Campaign data from archive columns
+  const byCampaign = {
+    ort:    { approved: dayRows.reduce((s,r)=>s+(Number(r.ORT_Approved)||0),0),   denied: dayRows.reduce((s,r)=>s+(Number(r.ORT_Denied)||0),0),   total:0 },
+    cgm:    { approved: dayRows.reduce((s,r)=>s+(Number(r.CGM_Approved)||0),0),   denied: dayRows.reduce((s,r)=>s+(Number(r.CGM_Denied)||0),0),   total:0 },
+    lymphc: { approved: dayRows.reduce((s,r)=>s+(Number(r.LymphC_Approved)||0),0),denied: dayRows.reduce((s,r)=>s+(Number(r.LymphC_Denied)||0),0),total:0 },
+    lymphw: { approved: dayRows.reduce((s,r)=>s+(Number(r.LymphW_Approved)||0),0),denied: dayRows.reduce((s,r)=>s+(Number(r.LymphW_Denied)||0),0),total:0 },
+  };
+  Object.values(byCampaign).forEach(c => { c.total = c.approved + c.denied; });
+
+  return {
+    mode: "day", date: dateTab, chasers, teamTotals,
+    responses: { approved: totalApproved, denied: totalDenied, byChaser, byCampaign }
+  };
+}
+
+// Build week-shaped data from archive rows
+function buildWeekFromArchive(rows, dateTab) {
+  const weekTabs = getWeekTabsJS(dateTab);
+  const weekDays = weekTabs.map(tab => buildDayFromArchive(rows, tab));
+  const weekTotals = weekDays.reduce((t, d) => ({
+    totalCases:    t.totalCases    + d.teamTotals.totalCases,
+    totalPositive: t.totalPositive + d.teamTotals.totalPositive,
+    totalTimeMins: t.totalTimeMins + d.teamTotals.totalTimeMins,
+    totalFaxes:    t.totalFaxes    + d.teamTotals.totalFaxes,
+    totalApproved: t.totalApproved + d.responses.approved,
+    totalDenied:   t.totalDenied   + d.responses.denied,
+  }), { totalCases:0, totalPositive:0, totalTimeMins:0, totalFaxes:0, totalApproved:0, totalDenied:0 });
+
+  // Per-chaser week totals
+  const chaserMap = {};
+  weekDays.forEach(day => {
+    day.chasers.forEach(c => {
+      if (!chaserMap[c.name]) chaserMap[c.name] = { name:c.name, totalCases:0, totalPositive:0, totalTimeMins:0, totalFaxes:0 };
+      chaserMap[c.name].totalCases    += c.totalCases;
+      chaserMap[c.name].totalPositive += c.totalPositive;
+      chaserMap[c.name].totalTimeMins += c.totalTimeMins;
+      chaserMap[c.name].totalFaxes    += c.totalFaxes;
+    });
+  });
+
+  return { mode:"week", weekDays, weekTotals, chaserWeekTotals: Object.values(chaserMap) };
+}
+
+// Get Mon-Fri tabs for a week — mirrors Apps Script getWeekTabs
+function getWeekTabsJS(dateTab) {
+  const parts = dateTab.split("/");
+  const yr    = parts[2] ? parseInt(parts[2]) : new Date().getFullYear();
+  const ref   = new Date(yr, parseInt(parts[0])-1, parseInt(parts[1]));
+  const day   = ref.getDay();
+  const mon   = new Date(ref);
+  mon.setDate(ref.getDate() + (day===0 ? -6 : 1-day));
+  const tabs  = [];
+  for (let i=0; i<5; i++) {
+    const d = new Date(mon);
+    d.setDate(mon.getDate()+i);
+    tabs.push(`${d.getMonth()+1}/${d.getDate()}`);
+  }
+  return tabs;
 }
 
 function renderAll() {
@@ -1013,24 +1140,26 @@ const CHASER_COLORS = {
 };
 
 async function refreshArchive() {
+  if (archiveCache && archiveFetched) {
+    setCacheStatus("Last updated " + archiveFetched.toLocaleTimeString(), true);
+    renderHistView();
+    return;
+  }
   setCacheStatus("Fetching...", false);
   try {
-    let rows;
-    if (!API_BASE || API_BASE === "https://script.google.com/macros/s/AKfycbzl9wrN5Ys-fz6H61G07c7Ot7daNp8JWDGh9xeuQ6fhTTkC58CJASLN8gdPaifuLuok/exec") {
-      rows = mockArchiveData();
-    } else {
-      const res = await fetch(`${API_BASE}?mode=archive`);
-      if (!res.ok) throw new Error("API " + res.status);
-      const data = await res.json();
-      rows = data.rows || [];
-    }
-    archiveCache   = rows;
+    const res  = await fetchAPI("archive", "");
+    archiveCache   = res.rows || [];
     archiveFetched = new Date();
     setCacheStatus("Last updated " + archiveFetched.toLocaleTimeString(), true);
     renderHistView();
   } catch(err) {
     setCacheStatus("Error: " + err.message, false);
   }
+}
+
+async function forceRefreshArchive() {
+  archiveCache = null; archiveFetched = null;
+  await refreshArchive();
 }
 
 function setCacheStatus(msg, fresh) {
