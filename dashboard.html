@@ -632,22 +632,21 @@ const CAMPAIGNS = [
 const SHIFT_MULTI = { full:1, half:.5, quarter:.25, off:0 };
 
 const METRIC_FIELDS = [
-  { key:"cases",     label:"Total Cases"   },
-  { key:"positive",  label:"Total Positive"},
-  { key:"faxes",     label:"Faxes Sent"    },
-  { key:"approvals", label:"Approvals"     },
-  { key:"denials",   label:"Denials"       },
-  { key:"timeMins",  label:"Time (mins)"   },
+  { key:"cases",     label:"Total Cases"    },
+  { key:"positive",  label:"Total Positive" },
+  { key:"responses", label:"Total Responses"},
+  { key:"approvals", label:"Approvals"      },
+  { key:"denials",   label:"Denials"        },
+  { key:"timeMins",  label:"Time (mins)"    },
 ];
 
 const LB_COLS = [
   { key:"cases",        label:"Cases",       tip:"Total chased cases"               },
   { key:"positive",     label:"Positive",    tip:"Total positive outcomes"           },
-  { key:"faxes",        label:"Faxes",       tip:"Faxes sent"                       },
   { key:"approvals",    label:"Approv.",     tip:"Approvals"                        },
   { key:"denials",      label:"Denials",     tip:"Denials"                          },
-  { key:"approvalPct",  label:"Approv.%",    tip:"Approvals / faxes x 100"          },
-  { key:"denialPct",    label:"Denial%",     tip:"Denials / faxes x 100"            },
+  { key:"approvalPct",  label:"Approv.%",    tip:"Approvals / (Approvals+Denials)"  },
+  { key:"denialPct",    label:"Denial%",     tip:"Denials / (Approvals+Denials)"    },
   { key:"efficiency",   label:"Efficiency",  tip:"Cases / Positive (lower = better)"},
   { key:"productivity", label:"Productivity",tip:"Productive time / shift x 100"    },
 ];
@@ -779,14 +778,14 @@ function buildDayFromArchive(rows, dateTab) {
     totalCases:    Number(r.Cases)    || 0,
     totalPositive: Number(r.Positive) || 0,
     totalTimeMins: Number(r.TimeMins) || 0,
-    totalFaxes:    Number(r.Faxes)    || 0,
+    totalFaxes:    0, // FaxDurationMins not used in dashboard
     tabFound:      true,
   }));
   const teamTotals = chasers.reduce((t, c) => ({
     totalCases:    t.totalCases    + c.totalCases,
     totalPositive: t.totalPositive + c.totalPositive,
     totalTimeMins: t.totalTimeMins + c.totalTimeMins,
-    totalFaxes:    t.totalFaxes    + c.totalFaxes,
+    totalFaxes:    0,
   }), { totalCases:0, totalPositive:0, totalTimeMins:0, totalFaxes:0 });
 
   // Responses
@@ -882,37 +881,37 @@ function renderPulseBar() {
 // ── TODAY / WEEK PANELS ────────────────────────────────────────
 function renderTodayPanel() {
   const t=dayData.teamTotals||{}, r=dayData.responses||{};
-  const fx=t.totalFaxes||1, avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
+  const totalResp=(r.approved||0)+(r.denied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
   setEl("todayPanel",`
     <div class="metric-grid">
-      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Faxes Sent",t.totalFaxes||0,"","")}
+      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",(r.approved||0)+(r.denied||0),"","")}
       ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
     </div>
     <div class="response-row">
       <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
         <div><div class="resp-label">Approved</div><div class="resp-value">${r.approved||0}</div>
-        <div class="resp-pct">${((r.approved||0)/fx*100).toFixed(1)}% of faxes</div></div></div>
+        <div class="resp-pct">${((r.approved||0)/totalResp*100).toFixed(1)}% of responses</div></div></div>
       <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
         <div><div class="resp-label">Denied</div><div class="resp-value">${r.denied||0}</div>
-        <div class="resp-pct">${((r.denied||0)/fx*100).toFixed(1)}% of faxes</div></div></div>
+        <div class="resp-pct">${((r.denied||0)/totalResp*100).toFixed(1)}% of responses</div></div></div>
     </div>`);
 }
 
 function renderWeekPanel() {
   const t=weekData.weekTotals||{};
-  const fx=t.totalFaxes||1, avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
+  const totalResp=(t.totalApproved||0)+(t.totalDenied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
   setEl("weekPanel",`
     <div class="metric-grid">
-      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Faxes Sent",t.totalFaxes||0,"","")}
+      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",(r.approved||0)+(r.denied||0),"","")}
       ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
     </div>
     <div class="response-row">
       <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
         <div><div class="resp-label">Approved (Week)</div><div class="resp-value">${t.totalApproved||0}</div>
-        <div class="resp-pct">${((t.totalApproved||0)/fx*100).toFixed(1)}% of faxes</div></div></div>
+        <div class="resp-pct">${((t.totalApproved||0)/totalResp*100).toFixed(1)}% of responses</div></div></div>
       <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
         <div><div class="resp-label">Denied (Week)</div><div class="resp-value">${t.totalDenied||0}</div>
-        <div class="resp-pct">${((t.totalDenied||0)/fx*100).toFixed(1)}% of faxes</div></div></div>
+        <div class="resp-pct">${((t.totalDenied||0)/totalResp*100).toFixed(1)}% of responses</div></div></div>
     </div>`);
 }
 
@@ -972,7 +971,7 @@ function campaignHTML(data,mode) {
   const totDen=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.denied||0),0);
   return `<div class="campaign-grid">${CAMPAIGNS.map(camp=>{
     const d=camps[camp.key]||{approved:0,denied:0,total:0};
-    const pct=d.total?(d.approved/d.total*100).toFixed(1):"--";
+    const campTotal=(d.approved||0)+(d.denied||0); const pct=campTotal?(d.approved/campTotal*100).toFixed(1):"--";
     return `<div class="campaign-card">
       <div class="campaign-name" style="color:${camp.color}">${camp.label}</div>
       <div class="campaign-stats">
@@ -1088,7 +1087,6 @@ function renderLeaderboard() {
       <td><span class="chaser-name">${r.name}</span></td>
       <td><div>${r.cases}</div><div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${(r.cases/mxC*100).toFixed(0)}%;background:var(--teal)"></div></div></td>
       <td>${r.positive}</td>
-      <td><div>${r.faxes}</div><div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${(r.faxes/mxF*100).toFixed(0)}%;background:var(--text-2)"></div></div></td>
       <td><span class="pill pill-green">${r.approvals}</span></td>
       <td><span class="pill pill-red">${r.denials}</span></td>
       <td>${r.approvalPct==="--"?"--":`<span class="pill pill-teal">${r.approvalPct}%</span>`}</td>
@@ -1105,11 +1103,11 @@ function renderLeaderboard() {
 }
 
 function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMins){
-  cases=cases||0;positive=positive||0;faxes=faxes||0;approvals=approvals||0;denials=denials||0;
+  cases=cases||0;positive=positive||0;approvals=approvals||0;denials=denials||0;
   const shift=shiftMap[name]||"full";
   const sm=sfm*SHIFT_MULTI[shift];
-  const approvalPct=faxes?(approvals/faxes*100).toFixed(1):"--";
-  const denialPct=faxes?(denials/faxes*100).toFixed(1):"--";
+  const totalResp=approvals+denials; const approvalPct=totalResp?(approvals/totalResp*100).toFixed(1):"--";
+  const denialPct=totalResp?(denials/totalResp*100).toFixed(1):"--";
   const efficiency=positive?(cases/positive).toFixed(2):"--";
   let productivity="--",productivityStub=false;
   if(shift==="off"){productivity="--";}
@@ -1234,7 +1232,7 @@ function calcCM(m,data,mode){
   if(!data)return "--";
   const t=mode==="week"?(data.weekTotals||{}):(data.teamTotals||{});
   const r=mode==="week"?{approved:data.weekTotals?.totalApproved||0,denied:data.weekTotals?.totalDenied||0}:(data.responses||{});
-  const f={cases:t.totalCases||0,positive:t.totalPositive||0,faxes:t.totalFaxes||0,approvals:r.approved||0,denials:r.denied||0,timeMins:t.totalTimeMins||0};
+  const totalR=(r.approved||0)+(r.denied||0); const f={cases:t.totalCases||0,positive:t.totalPositive||0,responses:totalR,approvals:r.approved||0,denials:r.denied||0,timeMins:t.totalTimeMins||0};
   const d=f[m.denom]; if(!d)return "--";
   return (f[m.numer]/d*m.multiply).toFixed(1);
 }
@@ -1291,12 +1289,12 @@ function downloadCSV(){
   const d=pickerToTab();
   const sfm=Number(document.getElementById("shiftMins").value);
   const acw=Number(document.getElementById("acwMult").value);
-  const headers=["Date","Chaser","Cases","Positive","Faxes","Approvals","Denials","Approval%","Denial%","Efficiency","Productivity%","Shift","ShiftMins"];
+  const headers=["Date","Chaser","Cases","Positive","Approvals","Denials","Approval%","Denial%","Efficiency","Productivity%","Shift","ShiftMins"];
   const bc=(dayData.responses||{}).byChaser||{};
   const rows=(dayData.chasers||[]).map(c=>{
     const rs=bc[c.name]||{approvals:0,denials:0};
     const r=buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name));
-    return [d,c.name,r.cases,r.positive,r.faxes,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,shiftMap[c.name]||"full",r.shiftMins].join(",");
+    return [d,c.name,r.cases,r.positive,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,shiftMap[c.name]||"full",r.shiftMins].join(",");
   });
   const camps=dayData.responses?.byCampaign||mockCampaignData();
   rows.push("","Campaign,Approved,Denied,Total,Approval%");
@@ -1528,7 +1526,7 @@ function aggregateArchiveRows(rows) {
   return rows.reduce((s, r) => ({
     cases:          s.cases          + (Number(r.Cases)||0),
     positive:       s.positive       + (Number(r.Positive)||0),
-    faxes:          s.faxes          + (Number(r.Faxes)||0),
+    faxes:          0, // not tracked
     approvals:      s.approvals      + (Number(r.Approvals)||0),
     denials:        s.denials        + (Number(r.Denials)||0),
     timeMins:       s.timeMins       + (Number(r.TimeMins)||0),
@@ -1547,7 +1545,7 @@ function groupByDate(rows) {
     if (!map[r.Date]) map[r.Date] = { cases:0, positive:0, faxes:0, approvals:0, denials:0 };
     map[r.Date].cases     += Number(r.Cases)||0;
     map[r.Date].positive  += Number(r.Positive)||0;
-    map[r.Date].faxes     += Number(r.Faxes)||0;
+    // faxes not tracked
     map[r.Date].approvals += Number(r.Approvals)||0;
     map[r.Date].denials   += Number(r.Denials)||0;
   }
@@ -1563,7 +1561,7 @@ function groupByChaser(rows) {
                              timeMins:0, calls:0, durationMins:0, productiveTime:0, days:new Set() };
     map[n].cases          += Number(r.Cases)||0;
     map[n].positive       += Number(r.Positive)||0;
-    map[n].faxes          += Number(r.Faxes)||0;
+    // faxes not tracked
     map[n].approvals      += Number(r.Approvals)||0;
     map[n].denials        += Number(r.Denials)||0;
     map[n].timeMins       += Number(r.TimeMins)||0;
@@ -1579,7 +1577,7 @@ function groupByChaser(rows) {
 // ── SUMMARY CARDS ────────────────────────────────────────────
 function renderHistSummaryCards(s) {
   const label   = { month:"Month", quarter:"Quarter", year:"Year", custom:"Period" }[histView]||"";
-  const appPct  = s.faxes    ? (s.approvals/s.faxes*100).toFixed(1) : "--";
+  const totalR  = (s.approvals||0)+(s.denials||0); const appPct = totalR ? (s.approvals/totalR*100).toFixed(1) : "--";
   const eff     = s.positive ? (s.cases/s.positive).toFixed(2)       : "--";
   const avgTime = s.cases    ? (s.timeMins/s.cases).toFixed(1)        : "--";
   const avgDay  = s.days     ? (s.cases/s.days).toFixed(1)            : "--";
@@ -1589,7 +1587,6 @@ function renderHistSummaryCards(s) {
     ${mc("Cases ("+label+")",    s.cases,     "", "teal")}
     ${mc("Approvals",            s.approvals, "", "green")}
     ${mc("Denials",              s.denials,   "", "red")}
-    ${mc("Faxes Sent",           s.faxes,     "", "")}
     ${mc("Approval Rate",        appPct,      "%","green")}
     ${mc("Efficiency",           eff,         "", "")}
     ${mc("Avg Time/Case",        avgTime,     "m","")}
@@ -1605,7 +1602,7 @@ function renderHistSummaryCards(s) {
 function renderHistLeaderboard(byChaserAgg) {
   const rows = Object.entries(byChaserAgg).map(([name, d]) => ({
     name, ...d,
-    approvalPct:  d.faxes    ? (d.approvals/d.faxes*100).toFixed(1) : "--",
+    approvalPct:  (d.approvals+d.denials) ? (d.approvals/(d.approvals+d.denials)*100).toFixed(1) : "--",
     efficiency:   d.positive ? (d.cases/d.positive).toFixed(2)       : "--",
     avgCasesDay:  d.days     ? (d.cases/d.days).toFixed(1)           : "--",
     avgProd:      d.days     ? (d.productiveTime/d.days).toFixed(1)  : "--",
@@ -1615,14 +1612,14 @@ function renderHistLeaderboard(byChaserAgg) {
   return `<div class="chart-wrap">
     <div class="chart-title">Chaser Totals for Period</div>
     <div style="overflow:auto"><table class="lb-table" style="min-width:900px"><thead><tr>
-      <th>#</th><th>Chaser</th><th>Cases</th><th>Positive</th><th>Faxes</th>
+      <th>#</th><th>Chaser</th><th>Cases</th><th>Positive</th>
       <th>Approvals</th><th>Denials</th><th>Approv.%</th><th>Efficiency</th>
       <th>Calls</th><th>Call Hrs</th><th>Avg Prod.Time</th><th>Avg Cases/Day</th><th>Days</th>
     </tr></thead><tbody>
       ${rows.map((r,i)=>`<tr>
         <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
         <td><span class="chaser-name" style="color:${CHASER_COLORS[r.name]||"var(--text-2)"}">${r.name}</span></td>
-        <td>${r.cases}</td><td>${r.positive}</td><td>${r.faxes}</td>
+        <td>${r.cases}</td><td>${r.positive}</td>
         <td><span class="pill pill-green">${r.approvals}</span></td>
         <td><span class="pill pill-red">${r.denials}</span></td>
         <td>${r.approvalPct==="--"?"--":`<span class="pill pill-teal">${r.approvalPct}%</span>`}</td>
@@ -1892,7 +1889,7 @@ function groupForChart(rows, xAxis) {
     if (!map[key]) map[key] = { cases:0, positive:0, faxes:0, approvals:0, denials:0, timeMins:0, count:0 };
     map[key].cases     += Number(r.Cases)||0;
     map[key].positive  += Number(r.Positive)||0;
-    map[key].faxes     += Number(r.Faxes)||0;
+    // faxes not tracked
     map[key].approvals += Number(r.Approvals)||0;
     map[key].denials   += Number(r.Denials)||0;
     map[key].timeMins  += Number(r.TimeMins)||0;
@@ -2173,7 +2170,7 @@ function renderChaserPage() {
        days: new Set(rows.map(r=>r.Date)).size});
 
   const eff      = totals.positive ? (totals.cases/totals.positive).toFixed(2) : "--";
-  const appPct   = totals.faxes    ? (totals.approvals/totals.faxes*100).toFixed(1) : "--";
+  const appPct   = (totals.approvals+totals.denials) ? (totals.approvals/(totals.approvals+totals.denials)*100).toFixed(1) : "--";
   const avgTime  = totals.cases    ? (totals.timeMins/totals.cases).toFixed(1) : "--";
   const avgProd  = totals.days     ? (totals.prodTime/totals.days).toFixed(1) : "--";
   const avgCases = totals.days     ? (totals.cases/totals.days).toFixed(1) : "--";
@@ -2218,7 +2215,6 @@ function renderChaserPage() {
     <div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
       ${mc("Cases",        totals.cases,     "",  "teal")}
       ${mc("Positive",     totals.positive,  "",  "green")}
-      ${mc("Faxes",        totals.faxes,     "",  "")}
       ${mc("Approvals",    totals.approvals, "",  "green")}
       ${mc("Denials",      totals.denials,   "",  "red")}
       ${mc("Approval %",   appPct,           "%", "teal")}
@@ -2442,8 +2438,7 @@ function runComparison() {
   const metrics = [
     { key:"cases",      label:"Total Cases"  },
     { key:"positive",   label:"Positive"     },
-    { key:"faxes",      label:"Faxes Sent"   },
-    { key:"approvals",  label:"Approvals"    },
+      { key:"approvals",  label:"Approvals"    },
     { key:"denials",    label:"Denials"      },
     { key:"appPct",     label:"Approval %"   },
     { key:"efficiency", label:"Efficiency"   },
@@ -2591,12 +2586,12 @@ function aggregateForCompare(rows) {
   const s = rows.reduce((t,r)=>({
     cases:    t.cases    +(Number(r.Cases)||0),
     positive: t.positive +(Number(r.Positive)||0),
-    faxes:    t.faxes    +(Number(r.Faxes)||0),
+    faxes:    0,
     approvals:t.approvals+(Number(r.Approvals)||0),
     denials:  t.denials  +(Number(r.Denials)||0),
     days:     t.days,
   }),{cases:0,positive:0,faxes:0,approvals:0,denials:0,days:new Set(rows.map(r=>r.Date)).size});
-  s.appPct     = s.faxes    ? +(s.approvals/s.faxes*100).toFixed(1)   : 0;
+  s.appPct     = (s.approvals+s.denials) ? +(s.approvals/(s.approvals+s.denials)*100).toFixed(1) : 0;
   s.efficiency = s.positive ? +(s.cases/s.positive).toFixed(2)          : 0;
   s.avgCases   = s.days     ? +(s.cases/s.days).toFixed(1)             : 0;
   return s;
