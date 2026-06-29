@@ -283,7 +283,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
   <div id="tab-overview">
     <div class="controls-panel">
       <button class="controls-toggle" onclick="toggleControls()">
-        <span class="section-title">&#9881; Shift, Formula &amp; Utlatel Controls</span>
+        <span class="section-title">&#9881; Session Controls — apply to current view only, reset on refresh</span>
         <span class="chevron" id="ctrlChevron">&#9662;</span>
       </button>
       <div class="controls-body hidden" id="ctrlBody">
@@ -292,7 +292,15 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
              ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragleave="this.classList.remove('drag')">
           <input type="file" id="utlatelFile" accept=".csv,.xlsx,.xls" onchange="handleFileUpload(event)">
           <div class="upload-label">Drop Utlatel export here or <span>browse</span></div>
-          <div class="upload-status" id="uploadStatus">No file loaded &mdash; productivity shows as stub until uploaded</div>
+          <div class="upload-status" id="uploadStatus">Upload Utlatel report (any date range) — matched to dates in the archive</div>
+        </div>
+        <div style="margin-top:8px" id="utlatelSaveBar" class="hidden">
+          <button class="btn" style="padding:5px 14px;font-size:12px" onclick="saveUtlatelToArchive()">
+            &#128190; Save Utlatel to Archive
+          </button>
+          <span style="font-size:11px;color:var(--text-3);margin-left:8px">
+            Saves permanently so it reloads next session
+          </span>
         </div>
         <div id="agentMapSection" class="hidden">
           <div class="sub-label">Map Agent Names to Chasers</div>
@@ -647,7 +655,7 @@ const LB_COLS = [
   { key:"denials",      label:"Denials",     tip:"Denials"                          },
   { key:"approvalPct",  label:"Approv.%",    tip:"Approvals / (Approvals+Denials)"  },
   { key:"denialPct",    label:"Denial%",     tip:"Denials / (Approvals+Denials)"    },
-  { key:"efficiency",   label:"Efficiency",  tip:"Cases / Positive (lower = better)"},
+  { key:"efficiency",   label:"Efficiency",  tip:"Positive / Cases % (higher = better)"},
   { key:"productivity", label:"Productivity",tip:"Productive time / shift x 100"    },
 ];
 
@@ -661,7 +669,10 @@ let activeTab     = "overview";
 let utlatelData   = {};
 let agentMap      = {};
 let customMetrics = [];
-let lbCustomData  = null;  // aggregated rows for custom lb range
+let lbCustomData   = null;  // aggregated rows for custom lb range
+let shiftHistory   = [];    // [{ Chaser, ShiftType, EffectiveDate, Notes }]
+let utlatelPersist = [];    // [{ Date, Agent, DurationMins, Calls }]
+let settingsLoaded = false;
 let campDayData   = null;  // separate campaign day data
 let campWeekData  = null;  // separate campaign week data
 
@@ -700,14 +711,27 @@ async function loadData() {
   document.getElementById("statusBadge").textContent  = "Loading...";
   ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"].forEach(id=>setEl(id,spinner()));
   try {
-    const res  = await fetchAPI("archive", "");
-    const rows = (res.rows || []);
+    const [archiveRes, settingsRes] = await Promise.all([
+      fetchAPI("archive",  ""),
+      fetchAPI("settings", "")
+    ]);
+    const rows = (archiveRes.rows || []);
     archiveCache   = rows;
     archiveFetched = new Date();
+
+    // Load persistent settings
+    if (settingsRes && !settingsRes.error) {
+      shiftHistory   = settingsRes.shiftHistory || [];
+      utlatelPersist = settingsRes.utlatel      || [];
+      applyShiftHistory(d);
+      applyUtlatelPersist();
+      settingsLoaded = true;
+    }
+
     dayData      = buildDayFromArchive(rows, d);
     weekData     = buildWeekFromArchive(rows, d);
-    campDayData  = dayData;   // campaigns tab uses same day by default
-    campWeekData = weekData;  // campaigns tab uses same week by default
+    campDayData  = dayData;
+    campWeekData = weekData;
     const badge = document.getElementById("statusBadge");
     badge.textContent       = "Archive";
     badge.style.background  = "var(--teal-dim)";
@@ -1070,7 +1094,7 @@ function renderLeaderboard() {
       const bc=(dayData.responses||{}).byChaser||{};
       rows=(dayData.chasers||[]).map(c=>{
         const rs=bc[c.name]||{approvals:0,denials:0};
-        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name));
+        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name,d));
       });
     } else {
       const bc=mergeWeekResp(weekData.weekDays||[]);
@@ -1118,7 +1142,7 @@ function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMin
   const sm=sfm*SHIFT_MULTI[shift];
   const totalResp=approvals+denials; const approvalPct=totalResp?(approvals/totalResp*100).toFixed(1):"--";
   const denialPct=totalResp?(denials/totalResp*100).toFixed(1):"--";
-  const efficiency=positive?(cases/positive).toFixed(2):"--";
+  const efficiency=cases?(positive/cases*100).toFixed(1):"--";
   let productivity="--",productivityStub=false;
   if(shift==="off"){productivity="--";}
   else if(!utlMins){productivityStub=true;}
@@ -1166,24 +1190,60 @@ function parseCSV(text){
 function processUtlatelRows(rows,fileName,setS){
   if(!rows.length){setS("File is empty.","err");return;}
   const keys=Object.keys(rows[0]);
-  const agentCol=keys.find(k=>/agent|name|user/i.test(k));
-  const durCol=keys.find(k=>/duration|total.?dur/i.test(k));
-  const callsCol=keys.find(k=>/total.?calls?/i.test(k));
+  const agentCol =keys.find(k=>/agent|name|user/i.test(k));
+  const durCol   =keys.find(k=>/duration|total.?dur/i.test(k));
+  const callsCol =keys.find(k=>/total.?calls?/i.test(k));
+  const dateCol  =keys.find(k=>/^date$/i.test(k));
   if(!agentCol){setS("Cannot find Agent Name column.","err");return;}
   if(!durCol){setS("Cannot find Total Duration column.","err");return;}
-  utlatelData={};
+
+  utlatelData={};  // { agentName: { totalDurationMins, totalCalls, byDate: { "6/25": {mins,calls} } } }
+
   for(const row of rows){
     const agent=String(row[agentCol]||"").trim();
     if(!agent)continue;
-    const dur=parseDuration(String(row[durCol]||""));
+    const dur  =parseDuration(String(row[durCol]||""));
     const calls=parseInt(row[callsCol]||0)||0;
-    if(!utlatelData[agent])utlatelData[agent]={totalDurationMins:0,totalCalls:0};
+
+    if(!utlatelData[agent]) utlatelData[agent]={totalDurationMins:0,totalCalls:0,byDate:{}};
     utlatelData[agent].totalDurationMins+=dur;
     utlatelData[agent].totalCalls+=calls;
+
+    // If the file has a date column, group by date too
+    if(dateCol){
+      const rawDate=row[dateCol];
+      let dateStr="";
+      if(rawDate instanceof Date && !isNaN(rawDate)){
+        dateStr=(rawDate.getMonth()+1)+"/"+rawDate.getDate();
+      } else {
+        const s=String(rawDate||"").trim();
+        // Handle YYYY-MM-DD or M/D/YYYY
+        if(s.includes("-")){
+          const p=s.split("T")[0].split("-");
+          dateStr=parseInt(p[1])+"/"+parseInt(p[2]);
+        } else if(s.includes("/")) {
+          const p=s.split("/");
+          dateStr=parseInt(p[0])+"/"+parseInt(p[1]);
+        }
+      }
+      if(dateStr){
+        if(!utlatelData[agent].byDate[dateStr]) utlatelData[agent].byDate[dateStr]={mins:0,calls:0};
+        utlatelData[agent].byDate[dateStr].mins +=dur;
+        utlatelData[agent].byDate[dateStr].calls+=calls;
+      }
+    }
   }
+
   const agents=Object.keys(utlatelData);
-  setS("Loaded "+fileName+" - "+agents.length+" agent(s)","ok");
+  const hasDateCol=!!dateCol;
+  const dateCount=hasDateCol?new Set(rows.map(r=>{
+    const s=String(r[dateCol]||"");
+    return s.split("T")[0];
+  }).filter(Boolean)).size:0;
+
+  setS("Loaded "+fileName+" — "+agents.length+" agent(s)"+(hasDateCol?" across "+dateCount+" date(s)":"")+" · click Save to persist","ok");
   buildAgentMapUI(agents);
+  document.getElementById("utlatelSaveBar").classList.remove("hidden");
   recalc();
 }
 
@@ -1208,10 +1268,18 @@ function buildAgentMapUI(agents){
       </select></div>`;}).join("");
 }
 
-function getUtlMins(chaserName){
+// Get Utlatel minutes for a chaser — optionally filtered to a specific date
+function getUtlMins(chaserName, dateTab){
   let tot=0;
   for(const[agent,mapped]of Object.entries(agentMap)){
-    if(mapped===chaserName&&utlatelData[agent])tot+=utlatelData[agent].totalDurationMins||0;
+    if(mapped!==chaserName||!utlatelData[agent]) continue;
+    if(dateTab && utlatelData[agent].byDate && Object.keys(utlatelData[agent].byDate).length){
+      // Use date-specific value if available
+      tot+=utlatelData[agent].byDate[dateTab]?.mins||0;
+    } else {
+      // Fall back to total (e.g. file has no date column)
+      tot+=utlatelData[agent].totalDurationMins||0;
+    }
   }
   return tot;
 }
@@ -1293,6 +1361,144 @@ async function refreshDay() {
   await loadData();
 }
 
+
+// ══════════════════════════════════════════════════════════════
+// PERSISTENT SETTINGS — Shift History & Utlatel
+// ══════════════════════════════════════════════════════════════
+
+// Apply shift history — find effective shift for each chaser on a given date
+function applyShiftHistory(dateTab) {
+  if (!shiftHistory.length) return;
+  const targetDate = parseArchiveDate(dateTab + "/" + new Date().getFullYear());
+
+  CHASERS.forEach(name => {
+    // Find the most recent shift entry for this chaser on or before the target date
+    const entries = shiftHistory
+      .filter(s => s.Chaser === name)
+      .map(s => ({ ...s, date: parseArchiveDate(s.EffectiveDate) }))
+      .filter(s => s.date && s.date <= targetDate)
+      .sort((a,b) => b.date - a.date); // most recent first
+
+    if (entries.length) {
+      shiftMap[name] = entries[0].ShiftType.toLowerCase();
+    }
+  });
+
+  // Rebuild shift grid UI to reflect loaded values
+  buildShiftGrid();
+}
+
+// Apply persisted Utlatel data to utlatelData in memory
+function applyUtlatelPersist() {
+  if (!utlatelPersist.length) return;
+  utlatelData = {};
+  agentMap    = {};
+
+  for (const row of utlatelPersist) {
+    const agent = String(row.Agent || "").trim();
+    if (!agent) continue;
+    const dur   = parseFloat(row.DurationMins) || 0;
+    const calls = parseInt(row.Calls)          || 0;
+    const date  = String(row.Date || "").trim();
+
+    if (!utlatelData[agent]) {
+      utlatelData[agent] = { totalDurationMins:0, totalCalls:0, byDate:{} };
+      // Auto-map agent name to chaser
+      const mapped = CHASERS.find(c => agent.toLowerCase().includes(c.toLowerCase()));
+      if (mapped) agentMap[agent] = mapped;
+    }
+    utlatelData[agent].totalDurationMins += dur;
+    utlatelData[agent].totalCalls        += calls;
+    if (date) {
+      if (!utlatelData[agent].byDate[date]) utlatelData[agent].byDate[date]={mins:0,calls:0};
+      utlatelData[agent].byDate[date].mins  += dur;
+      utlatelData[agent].byDate[date].calls += calls;
+    }
+  }
+
+  // Rebuild agent map UI if already visible
+  const agents = Object.keys(utlatelData);
+  if (agents.length) {
+    document.getElementById("uploadStatus").textContent =
+      "✓ " + agents.length + " agent(s) loaded from archive";
+    document.getElementById("uploadStatus").className = "upload-status ok";
+    buildAgentMapUI(agents);
+  }
+}
+
+// Save a shift change permanently
+async function saveShift(name, val, effectiveDate, notes) {
+  shiftMap[name] = val;
+  document.querySelectorAll(`select[onchange*="'${name}'"]`).forEach(el => el.value = val);
+  recalc();
+
+  // Persist to archive sheet
+  try {
+    const url = `${API_BASE}?mode=savesetting&chaser=${encodeURIComponent(name)}&shiftType=${val}&effectiveDate=${encodeURIComponent(effectiveDate)}&notes=${encodeURIComponent(notes||"")}`;
+    const res = await fetch(url, { method:"GET", redirect:"follow" });
+    const data = await res.json();
+    if (data.success) {
+      // Update local shiftHistory
+      shiftHistory.push({ Chaser:name, ShiftType:val, EffectiveDate:effectiveDate, Notes:notes||"" });
+      showToast("Shift saved for " + name);
+    }
+  } catch(err) {
+    console.error("Failed to save shift:", err);
+  }
+}
+
+// Save Utlatel data permanently after upload
+async function saveUtlatelToArchive() {
+  if (!Object.keys(utlatelData).length) return;
+
+  const rows = [];
+  for (const [agent, data] of Object.entries(utlatelData)) {
+    if (Object.keys(data.byDate).length) {
+      // Has date breakdown — save per date
+      for (const [date, vals] of Object.entries(data.byDate)) {
+        rows.push({ date, agent, durationMins: vals.mins, calls: vals.calls });
+      }
+    } else {
+      // No date breakdown — save as total with today's date
+      rows.push({
+        date: getTodayTab(),
+        agent,
+        durationMins: data.totalDurationMins,
+        calls: data.totalCalls
+      });
+    }
+  }
+
+  try {
+    const url = `${API_BASE}?mode=saveutlatel&data=${encodeURIComponent(JSON.stringify(rows))}`;
+    const res  = await fetch(url, { method:"GET", redirect:"follow" });
+    const data = await res.json();
+    if (data.success) {
+      utlatelPersist = [...utlatelPersist, ...rows];
+      showToast(`Utlatel saved: ${data.written} new, ${data.updated} updated`);
+    }
+  } catch(err) {
+    console.error("Failed to save Utlatel:", err);
+    showToast("Failed to save Utlatel — data still available this session", "error");
+  }
+}
+
+// Simple toast notification
+function showToast(msg, type) {
+  let toast = document.getElementById("toastMsg");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "toastMsg";
+    toast.style.cssText = "position:fixed;bottom:24px;right:24px;background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 18px;border-radius:8px;font-size:13px;z-index:9999;transition:opacity .3s;box-shadow:0 4px 16px rgba(0,0,0,.3)";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.borderColor = type === "error" ? "var(--red)" : "var(--teal)";
+  toast.style.opacity = "1";
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.style.opacity="0"; }, 3000);
+}
+
 // ── CSV DOWNLOAD ──────────────────────────────────────────────
 function downloadCSV(){
   if(!dayData){alert("Load data first.");return;}
@@ -1326,10 +1532,26 @@ function buildShiftGrid(){
       <option value="off"     ${shiftMap[name]==="off"    ?"selected":""}>Off</option>
     </select></div>`).join("");
 }
-function setShift(name,val){
-  shiftMap[name]=val;
-  document.querySelectorAll(`select[onchange*="'${name}'"]`).forEach(el=>el.value=val);
-  recalc();
+function setShift(name, val) {
+  // Ask for effective date
+  const today     = new Date().toISOString().slice(0,10);
+  const dateInput = prompt(
+    `Shift change for ${name}\nEnter effective date (YYYY-MM-DD) or leave blank for today:`,
+    today
+  );
+  if (dateInput === null) {
+    // User cancelled — revert the dropdown
+    document.querySelectorAll(`select[onchange*="'${name}'"]`).forEach(el => el.value = shiftMap[name]||"full");
+    return;
+  }
+
+  const parts   = (dateInput.trim()||today).split("-");
+  const effDate = parts.length === 3
+    ? parseInt(parts[1]) + "/" + parseInt(parts[2]) + "/" + parts[0]
+    : getTodayTab();
+
+  const notes = "";
+  saveShift(name, val, effDate, notes);
 }
 function toggleControls(){
   controlsOpen=!controlsOpen;
@@ -1588,7 +1810,7 @@ function groupByChaser(rows) {
 function renderHistSummaryCards(s) {
   const label   = { month:"Month", quarter:"Quarter", year:"Year", custom:"Period" }[histView]||"";
   const totalR  = (s.approvals||0)+(s.denials||0); const appPct = totalR ? (s.approvals/totalR*100).toFixed(1) : "--";
-  const eff     = s.positive ? (s.cases/s.positive).toFixed(2)       : "--";
+  const eff     = s.cases    ? (s.positive/s.cases*100).toFixed(1)   : "--";
   const avgTime = s.cases    ? (s.timeMins/s.cases).toFixed(1)        : "--";
   const avgDay  = s.days     ? (s.cases/s.days).toFixed(1)            : "--";
   const avgProd = s.days     ? (s.productiveTime/s.days).toFixed(1)   : "--";
@@ -1613,7 +1835,7 @@ function renderHistLeaderboard(byChaserAgg) {
   const rows = Object.entries(byChaserAgg).map(([name, d]) => ({
     name, ...d,
     approvalPct:  (d.approvals+d.denials) ? (d.approvals/(d.approvals+d.denials)*100).toFixed(1) : "--",
-    efficiency:   d.positive ? (d.cases/d.positive).toFixed(2)       : "--",
+    efficiency:   d.cases    ? (d.positive/d.cases*100).toFixed(1)    : "--",
     avgCasesDay:  d.days     ? (d.cases/d.days).toFixed(1)           : "--",
     avgProd:      d.days     ? (d.productiveTime/d.days).toFixed(1)  : "--",
     callHours:    d.durationMins ? (d.durationMins/60).toFixed(1)    : "--",
@@ -2074,9 +2296,9 @@ function getGoalStatus(metric, actual) {
   if (actual === "--" || actual === "" || isNaN(actual)) return "flat";
   const target = goals[metric];
   if (metric === "efficiency") {
-    // Lower is better for efficiency
-    if (actual <= target)               return "met";
-    if (actual <= target * 1.2)         return "close";
+    // Higher is better — positive / cases * 100, target is a %
+    if (actual >= target)               return "met";
+    if (actual >= target * 0.85)        return "close";
     return "miss";
   }
   if (actual >= target)                 return "met";
@@ -2179,7 +2401,7 @@ function renderChaserPage() {
   }), {cases:0,positive:0,faxes:0,approvals:0,denials:0,timeMins:0,prodTime:0,calls:0,
        days: new Set(rows.map(r=>r.Date)).size});
 
-  const eff      = totals.positive ? (totals.cases/totals.positive).toFixed(2) : "--";
+  const eff      = totals.cases    ? (totals.positive/totals.cases*100).toFixed(1) : "--";
   const appPct   = (totals.approvals+totals.denials) ? (totals.approvals/(totals.approvals+totals.denials)*100).toFixed(1) : "--";
   const avgTime  = totals.cases    ? (totals.timeMins/totals.cases).toFixed(1) : "--";
   const avgProd  = totals.days     ? (totals.prodTime/totals.days).toFixed(1) : "--";
@@ -2451,7 +2673,7 @@ function runComparison() {
       { key:"approvals",  label:"Approvals"    },
     { key:"denials",    label:"Denials"      },
     { key:"appPct",     label:"Approval %"   },
-    { key:"efficiency", label:"Efficiency"   },
+    { key:"efficiency", label:"Efficiency %" },
     { key:"avgCases",   label:"Avg Cases/Day"},
   ];
 
@@ -2602,7 +2824,7 @@ function aggregateForCompare(rows) {
     days:     t.days,
   }),{cases:0,positive:0,faxes:0,approvals:0,denials:0,days:new Set(rows.map(r=>r.Date)).size});
   s.appPct     = (s.approvals+s.denials) ? +(s.approvals/(s.approvals+s.denials)*100).toFixed(1) : 0;
-  s.efficiency = s.positive ? +(s.cases/s.positive).toFixed(2)          : 0;
+  s.efficiency = s.cases    ? +(s.positive/s.cases*100).toFixed(1)       : 0;
   s.avgCases   = s.days     ? +(s.cases/s.days).toFixed(1)             : 0;
   return s;
 }
