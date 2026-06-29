@@ -704,8 +704,10 @@ async function loadData() {
     const rows = (res.rows || []);
     archiveCache   = rows;
     archiveFetched = new Date();
-    dayData  = buildDayFromArchive(rows, d);
-    weekData = buildWeekFromArchive(rows, d);
+    dayData      = buildDayFromArchive(rows, d);
+    weekData     = buildWeekFromArchive(rows, d);
+    campDayData  = dayData;   // campaigns tab uses same day by default
+    campWeekData = weekData;  // campaigns tab uses same week by default
     const badge = document.getElementById("statusBadge");
     badge.textContent       = "Archive";
     badge.style.background  = "var(--teal-dim)";
@@ -884,7 +886,7 @@ function renderTodayPanel() {
   const totalResp=(r.approved||0)+(r.denied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
   setEl("todayPanel",`
     <div class="metric-grid">
-      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",(r.approved||0)+(r.denied||0),"","")}
+      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",totalResp,"","")}
       ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
     </div>
     <div class="response-row">
@@ -902,16 +904,16 @@ function renderWeekPanel() {
   const totalResp=(t.totalApproved||0)+(t.totalDenied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
   setEl("weekPanel",`
     <div class="metric-grid">
-      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",(r.approved||0)+(r.denied||0),"","")}
+      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",totalResp,"","")}
       ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
     </div>
     <div class="response-row">
       <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
         <div><div class="resp-label">Approved (Week)</div><div class="resp-value">${t.totalApproved||0}</div>
-        <div class="resp-pct">${((t.totalApproved||0)/totalResp*100).toFixed(1)}% of responses</div></div></div>
+        <div class="resp-pct">${t.totalApproved?((t.totalApproved||0)/totalResp*100).toFixed(1):"0"}% of responses</div></div></div>
       <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
         <div><div class="resp-label">Denied (Week)</div><div class="resp-value">${t.totalDenied||0}</div>
-        <div class="resp-pct">${((t.totalDenied||0)/totalResp*100).toFixed(1)}% of responses</div></div></div>
+        <div class="resp-pct">${t.totalDenied?((t.totalDenied||0)/totalResp*100).toFixed(1):"0"}% of responses</div></div></div>
     </div>`);
 }
 
@@ -919,8 +921,8 @@ function renderWeekPanel() {
 function renderCampaignPanels() {
   const cd = campDayData  || dayData;
   const cw = campWeekData || weekData;
-  setEl("campaignTodayPanel", campaignHTML(cd, "day"));
-  setEl("campaignWeekPanel",  campaignHTML(cw, "week"));
+  if (cd) setEl("campaignTodayPanel", campaignHTML(cd, "day"));
+  if (cw) setEl("campaignWeekPanel",  campaignHTML(cw, "week"));
 }
 
 async function loadCampaignDay() {
@@ -931,7 +933,11 @@ async function loadCampaignDay() {
   document.getElementById("campDayLabel").textContent = dateTab;
   setEl("campaignTodayPanel", spinner());
   try {
-    campDayData = await fetchAPI("day", dateTab);
+    if (archiveCache && archiveCache.length) {
+      campDayData = buildDayFromArchive(archiveCache, dateTab);
+    } else {
+      campDayData = await fetchAPI("day", dateTab);
+    }
     setEl("campaignTodayPanel", campaignHTML(campDayData, "day"));
   } catch(err) {
     setEl("campaignTodayPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
@@ -943,16 +949,19 @@ async function loadCampaignWeek() {
   if (!val) return;
   const [y,m,d] = val.split("-");
   const dateTab = `${parseInt(m)}/${parseInt(d)}`;
-  // Get Mon-Fri of that week for label
   const ref = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
   const day = ref.getDay();
   const mon = new Date(ref); mon.setDate(ref.getDate() + (day===0?-6:1-day));
   const fri = new Date(mon); fri.setDate(mon.getDate()+4);
-  const fmtD = d => `${d.getMonth()+1}/${d.getDate()}`;
+  const fmtD = d2 => `${d2.getMonth()+1}/${d2.getDate()}`;
   document.getElementById("campWeekLabel").textContent = `${fmtD(mon)} – ${fmtD(fri)}`;
   setEl("campaignWeekPanel", spinner());
   try {
-    campWeekData = await fetchAPI("week", dateTab);
+    if (archiveCache && archiveCache.length) {
+      campWeekData = buildWeekFromArchive(archiveCache, dateTab);
+    } else {
+      campWeekData = await fetchAPI("week", dateTab);
+    }
     setEl("campaignWeekPanel", campaignHTML(campWeekData, "week"));
   } catch(err) {
     setEl("campaignWeekPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
@@ -1045,8 +1054,8 @@ function applyLbCustomRange() {
 }
 
 function renderLeaderboard() {
-  const sfm=Number(document.getElementById("shiftMins").value);
-  const acw=Number(document.getElementById("acwMult").value);
+  const sfm=Number(document.getElementById("shiftMins")?.value||400);
+  const acw=Number(document.getElementById("acwMult")?.value||2);
   let rows;
 
   if (lbView==="custom") {
@@ -1076,7 +1085,8 @@ function renderLeaderboard() {
     if(av==="--"&&bv==="--")return 0; if(av==="--")return 1; if(bv==="--")return -1;
     return lbSort.dir==="desc"?bv-av:av-bv;
   });
-  const mxC=Math.max(...rows.map(r=>r.cases),1), mxF=Math.max(...rows.map(r=>r.faxes),1);
+  // mxF removed - faxes not used
+  const mxC=Math.max(...rows.map(r=>r.cases),1);
   const thC=col=>col===lbSort.col?"sort-"+lbSort.dir:"";
   setEl("leaderboardEl",`<table class="lb-table"><thead><tr>
     <th>#</th><th>Chaser</th>
