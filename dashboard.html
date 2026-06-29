@@ -246,6 +246,11 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
   * { color-adjust:exact !important; -webkit-print-color-adjust:exact !important; }
 }
 
+
+/* CONTROLS TAB */
+#tab-controls .range-row { margin-top:6px; }
+#tab-controls .ctrl-group { margin-bottom:0; }
+
 </style>
 </head>
 <body>
@@ -277,6 +282,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
     <button class="tab-btn" onclick="setTab('charts')">Charts</button>
     <button class="tab-btn" onclick="setTab('chasers')">Chasers</button>
     <button class="tab-btn" onclick="setTab('compare')">Compare</button>
+    <button class="tab-btn" onclick="setTab('controls')">Controls</button>
   </div>
 
   <!-- OVERVIEW TAB -->
@@ -514,7 +520,6 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
             <select class="ctrl-select" id="cbYAxis" onchange="previewChartBuilder()">
               <option value="cases">Cases</option>
               <option value="positive">Positive</option>
-              <option value="faxes">Faxes</option>
               <option value="approvals">Approvals</option>
               <option value="denials">Denials</option>
               <option value="approvalPct">Approval %</option>
@@ -528,7 +533,6 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
               <option value="none">— none —</option>
               <option value="cases">Cases</option>
               <option value="positive">Positive</option>
-              <option value="faxes">Faxes</option>
               <option value="approvals">Approvals</option>
               <option value="denials">Denials</option>
               <option value="approvalPct">Approval %</option>
@@ -624,6 +628,181 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
     </div>
   </div>
 
+
+  <!-- ══ CONTROLS TAB ══ -->
+  <div id="tab-controls" class="hidden">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:20px">
+
+      <!-- Formula Settings -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">&#9881; Formula Settings</span>
+          <span style="font-size:11px;color:var(--text-3)">Saved permanently to archive</span>
+        </div>
+        <div class="panel-body">
+          <div style="display:grid;gap:16px">
+
+            <div class="ctrl-group">
+              <label>Full Shift Duration (mins)</label>
+              <div class="range-row">
+                <input type="range" id="ctrlShiftMins" min="60" max="600" value="400" step="10"
+                  oninput="document.getElementById('ctrlShiftMinsVal').textContent=this.value">
+                <span class="range-val" id="ctrlShiftMinsVal">400</span>
+              </div>
+              <button class="btn" style="margin-top:8px;padding:5px 14px;font-size:11px"
+                onclick="saveFormulaSetting('shiftMins', document.getElementById('ctrlShiftMins').value)">
+                Save
+              </button>
+            </div>
+
+            <div class="ctrl-group">
+              <label>ACW Multiplier (mins added per case)</label>
+              <div class="range-row">
+                <input type="range" id="ctrlAcwMult" min="0.5" max="10" value="2" step="0.5"
+                  oninput="document.getElementById('ctrlAcwMultVal').textContent=this.value">
+                <span class="range-val" id="ctrlAcwMultVal">2</span>
+              </div>
+              <button class="btn" style="margin-top:8px;padding:5px 14px;font-size:11px"
+                onclick="saveFormulaSetting('acwMult', document.getElementById('ctrlAcwMult').value)">
+                Save
+              </button>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="ctrl-group">
+              <label>Productivity Target (%)</label>
+              <div class="range-row">
+                <input type="range" id="ctrlGoalProd" min="30" max="100" value="70" step="5"
+                  oninput="document.getElementById('ctrlGoalProdVal').textContent=this.value+'%'">
+                <span class="range-val" id="ctrlGoalProdVal">70%</span>
+              </div>
+              <button class="btn" style="margin-top:8px;padding:5px 14px;font-size:11px"
+                onclick="saveFormulaSetting('goalProd', document.getElementById('ctrlGoalProd').value)">
+                Save
+              </button>
+            </div>
+
+            <div class="ctrl-group">
+              <label>Efficiency Target (positive ÷ cases × 100)</label>
+              <div class="range-row">
+                <input type="range" id="ctrlGoalEff" min="10" max="100" value="60" step="5"
+                  oninput="document.getElementById('ctrlGoalEffVal').textContent=this.value+'%'">
+                <span class="range-val" id="ctrlGoalEffVal">60%</span>
+              </div>
+              <button class="btn" style="margin-top:8px;padding:5px 14px;font-size:11px"
+                onclick="saveFormulaSetting('goalEff', document.getElementById('ctrlGoalEff').value)">
+                Save
+              </button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Shift History -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">&#128197; Shift History</span>
+          <span style="font-size:11px;color:var(--text-3)">Add a new shift change below</span>
+        </div>
+        <div class="panel-body">
+
+          <!-- Add new shift entry -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+            <div class="ctrl-group">
+              <label>Chaser</label>
+              <select class="ctrl-select" id="ctrlShiftChaser">
+                <!-- populated by initControlsTab() -->
+              </select>
+            </div>
+            <div class="ctrl-group">
+              <label>Shift Type</label>
+              <select class="ctrl-select" id="ctrlShiftType">
+                <option value="full">Full (400 min)</option>
+                <option value="half">Half (200 min)</option>
+                <option value="quarter">Quarter (100 min)</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
+            <div class="ctrl-group">
+              <label>Effective Date</label>
+              <input type="date" class="ctrl-input" id="ctrlShiftDate">
+            </div>
+            <div class="ctrl-group">
+              <label>Notes (optional)</label>
+              <input type="text" class="ctrl-input" id="ctrlShiftNotes" placeholder="e.g. annual leave">
+            </div>
+          </div>
+          <button class="btn" onclick="addShiftEntry()">Add Shift Entry</button>
+
+          <div class="divider"></div>
+
+          <!-- Shift history table -->
+          <div style="overflow:auto;max-height:300px">
+            <table class="lb-table" style="min-width:unset" id="shiftHistoryTable">
+              <thead><tr>
+                <th>Chaser</th><th>Shift</th><th>From</th><th>Notes</th><th></th>
+              </tr></thead>
+              <tbody id="shiftHistoryBody">
+                <tr><td colspan="5" style="color:var(--text-3);text-align:center;padding:20px">
+                  Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Utlatel from Archive info -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">&#128222; Utlatel Data</span>
+        <span style="font-size:11px;color:var(--text-3)">Call duration read from TotalDurationMins in archive — upload below to override for specific dates</span>
+      </div>
+      <div class="panel-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+          <div>
+            <div class="sub-label">How productivity is calculated</div>
+            <div style="font-size:13px;color:var(--text-2);line-height:1.8">
+              <div>Productive Time = <span style="color:var(--teal)">Call Duration (mins)</span> + (ACW × Cases)</div>
+              <div>Productivity % = Productive Time ÷ Shift Mins × 100</div>
+              <div style="margin-top:10px;color:var(--text-3);font-size:12px;line-height:1.6">
+                <strong style="color:var(--text-2)">Data source priority:</strong><br>
+                1. Uploaded Utlatel CSV (current method — upload per date or full week/month)<br>
+                2. TotalDurationMins column in archive (from previous manual uploads)<br>
+                3. No data → productivity shows "Upload Utlatel"<br>
+                <br>
+                <span style="color:var(--amber)">&#9432;</span> When the Utlatel API is available it will slot in here automatically.
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="sub-label">Upload Utlatel Override</div>
+            <div class="upload-zone" id="ctrlUploadZone"
+                 onclick="document.getElementById('ctrlUtlatelFile').click()"
+                 ondragover="handleDragOver(event)" ondrop="handleCtrlDrop(event)"
+                 ondragleave="this.classList.remove('drag')">
+              <input type="file" id="ctrlUtlatelFile" accept=".csv,.xlsx,.xls"
+                     onchange="handleCtrlFileUpload(event)">
+              <div class="upload-label">Drop Utlatel export or <span>browse</span></div>
+              <div class="upload-status" id="ctrlUploadStatus">No override loaded</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Utlatel summary from archive -->
+        <div class="divider"></div>
+        <div class="sub-label">Recent Utlatel Data in Archive</div>
+        <div id="utlatelArchiveSummary" style="color:var(--text-3);font-size:12px">
+          Load dashboard to see data
+        </div>
+      </div>
+    </div>
+
+  </div>
+
 </main>
 
 <script>
@@ -655,7 +834,7 @@ const LB_COLS = [
   { key:"denials",      label:"Denials",     tip:"Denials"                          },
   { key:"approvalPct",  label:"Approv.%",    tip:"Approvals / (Approvals+Denials)"  },
   { key:"denialPct",    label:"Denial%",     tip:"Denials / (Approvals+Denials)"    },
-  { key:"efficiency",   label:"Efficiency",  tip:"Positive / Cases % (higher = better)"},
+  { key:"efficiency",   label:"Efficiency",  tip:"Positive ÷ Cases × 100 (higher = better)"},
   { key:"productivity", label:"Productivity",tip:"Productive time / shift x 100"    },
 ];
 
@@ -689,7 +868,7 @@ window.addEventListener("DOMContentLoaded", () => {
 });
 
 // ── TABS ──────────────────────────────────────────────────────
-const TABS = ["overview","campaigns","leaderboard","custom","history","charts","chasers","compare"];
+const TABS = ["overview","campaigns","leaderboard","custom","history","charts","chasers","compare","controls"];
 function setTab(tab) {
   activeTab = tab;
   TABS.forEach(t => document.getElementById("tab-"+t).classList.toggle("hidden", t!==tab));
@@ -701,6 +880,7 @@ function setTab(tab) {
   if (tab === "chasers")  initChaserTab();
   if (tab === "compare")  initCompareDefaults();
   if (tab === "campaigns") setTimeout(renderCampaignTrend, 200);
+  if (tab === "controls")  setTimeout(initControlsTab, 100);
 }
 
 // ── DATA ──────────────────────────────────────────────────────
@@ -711,18 +891,39 @@ async function loadData() {
   document.getElementById("statusBadge").textContent  = "Loading...";
   ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"].forEach(id=>setEl(id,spinner()));
   try {
-    const [archiveRes, settingsRes] = await Promise.all([
+    const [archiveRes, settingsRes, campaignRes] = await Promise.allSettled([
       fetchAPI("archive",  ""),
-      fetchAPI("settings", "")
+      fetchAPI("settings", ""),
+      fetchAPI("campaignresponses", "")
     ]);
-    const rows = (archiveRes.rows || []);
+    const archiveData   = archiveRes.status   === "fulfilled" ? archiveRes.value   : { rows: [] };
+    const settingsData  = settingsRes.status  === "fulfilled" ? settingsRes.value  : null;
+    const campaignData  = campaignRes.status  === "fulfilled" ? campaignRes.value  : null;
+    const rows = (archiveData.rows || []);
+    // Store deduplicated campaign totals (one row per date+campaign)
+    if (campaignData && campaignData.rows) {
+      campaignLeads = campaignData.rows;
+    }
     archiveCache   = rows;
     archiveFetched = new Date();
 
     // Load persistent settings
-    if (settingsRes && !settingsRes.error) {
+    if (settingsData && !settingsData.error) {
+      const settingsRes = settingsData;
       shiftHistory   = settingsRes.shiftHistory || [];
       utlatelPersist = settingsRes.utlatel      || [];
+
+      // Load formula settings from special __formula__ entries
+      shiftHistory.filter(s => s.Chaser === "__formula__").forEach(s => {
+        const key = s.ShiftType;
+        const val = parseFloat(s.Notes);
+        if (!isNaN(val) && formulaSettings.hasOwnProperty(key)) {
+          formulaSettings[key] = val;
+        }
+      });
+      // Remove formula entries from shift history display
+      shiftHistory = shiftHistory.filter(s => s.Chaser !== "__formula__");
+
       applyShiftHistory(d);
       applyUtlatelPersist();
       settingsLoaded = true;
@@ -790,6 +991,103 @@ async function fetchFromArchive() {
   return rows;
 }
 
+// ── CAMPAIGN RESPONSES HELPERS ───────────────────────────────
+// campaignLeads: rows from "Campaign Responses" tab in archive.
+// Format: [{ Date:"M/D/YYYY", Campaign:"ORT"|"CGM"|"LymphC"|"LymphW",
+//            Approved:N, Denied:N, ApprovalPct:N }]
+// One row per date+campaign — no chaser-multiplication, no double-counting.
+
+// Normalize campaign label to lowercase key used in byCampaign objects
+function campLabelToKey(label) {
+  const m = { "ORT":"ort", "CGM":"cgm", "LYMPHC":"lymphc", "LYMPHW":"lymphw" };
+  return m[String(label).toUpperCase()] || String(label).toLowerCase();
+}
+
+// Build byCampaign object for a single date from the Campaign Responses tab.
+// dateTab: "M/D" or "M/D/YYYY"
+function buildCampaignFromLeads(dateTab) {
+  const camps = {
+    ort:    { approved:0, denied:0, total:0 },
+    cgm:    { approved:0, denied:0, total:0 },
+    lymphc: { approved:0, denied:0, total:0 },
+    lymphw: { approved:0, denied:0, total:0 },
+  };
+  if (!campaignLeads) return camps;
+
+  const tp       = String(dateTab).split("/");
+  const shortDay = parseInt(tp[0]) + "/" + parseInt(tp[1]);
+
+  for (const row of campaignLeads) {
+    const rp      = String(row.Date || "").split("/");
+    const rowDay  = parseInt(rp[0]) + "/" + parseInt(rp[1]);
+    if (rowDay !== shortDay) continue;
+
+    const key = campLabelToKey(row.Campaign);
+    if (!camps[key]) continue;
+
+    camps[key].approved = Number(row.Approved) || 0;
+    camps[key].denied   = Number(row.Denied)   || 0;
+    camps[key].total    = camps[key].approved + camps[key].denied;
+  }
+  return camps;
+}
+
+// Build byCampaign for a set of dates (week view etc.)
+function buildCampaignFromLeadsRange(dateTabs) {
+  const camps = {
+    ort:    { approved:0, denied:0, total:0 },
+    cgm:    { approved:0, denied:0, total:0 },
+    lymphc: { approved:0, denied:0, total:0 },
+    lymphw: { approved:0, denied:0, total:0 },
+  };
+  if (!campaignLeads) return camps;
+
+  const shortSet = new Set(dateTabs.map(dt => {
+    const p = String(dt).split("/");
+    return parseInt(p[0]) + "/" + parseInt(p[1]);
+  }));
+
+  for (const row of campaignLeads) {
+    const rp     = String(row.Date || "").split("/");
+    const rowDay = parseInt(rp[0]) + "/" + parseInt(rp[1]);
+    if (!shortSet.has(rowDay)) continue;
+
+    const key = campLabelToKey(row.Campaign);
+    if (!camps[key]) continue;
+
+    camps[key].approved += Number(row.Approved) || 0;
+    camps[key].denied   += Number(row.Denied)   || 0;
+    camps[key].total    += (Number(row.Approved)||0) + (Number(row.Denied)||0);
+  }
+  return camps;
+}
+
+// Build byCampaign for an arbitrary date range (Date objects)
+function buildCampaignFromLeadsDateRange(fromDate, toDate) {
+  const camps = {
+    ort:    { approved:0, denied:0, total:0 },
+    cgm:    { approved:0, denied:0, total:0 },
+    lymphc: { approved:0, denied:0, total:0 },
+    lymphw: { approved:0, denied:0, total:0 },
+  };
+  if (!campaignLeads) return camps;
+
+  for (const row of campaignLeads) {
+    const d = parseArchiveDate(row.Date);
+    if (!d) continue;
+    if (fromDate && d < fromDate) continue;
+    if (toDate   && d > toDate)   continue;
+
+    const key = campLabelToKey(row.Campaign);
+    if (!camps[key]) continue;
+
+    camps[key].approved += Number(row.Approved) || 0;
+    camps[key].denied   += Number(row.Denied)   || 0;
+    camps[key].total    += (Number(row.Approved)||0) + (Number(row.Denied)||0);
+  }
+  return camps;
+}
+
 // Build day-shaped data from archive rows for a specific date
 function buildDayFromArchive(rows, dateTab) {
   // Match by M/D ignoring year — dateTab is "6/25", archive may store "6/25/2026"
@@ -814,22 +1112,30 @@ function buildDayFromArchive(rows, dateTab) {
     totalFaxes:    0,
   }), { totalCases:0, totalPositive:0, totalTimeMins:0, totalFaxes:0 });
 
-  // Responses
-  const totalApproved = dayRows.reduce((s,r) => s + (Number(r.Approvals)||0), 0);
-  const totalDenied   = dayRows.reduce((s,r) => s + (Number(r.Denials)||0),   0);
+  // Per-chaser response totals (from archive rows — each chaser's own count)
   const byChaser = {};
   dayRows.forEach(r => {
     byChaser[r.Chaser] = { approvals: Number(r.Approvals)||0, denials: Number(r.Denials)||0 };
   });
 
-  // Campaign data from archive columns
-  const byCampaign = {
-    ort:    { approved: dayRows.reduce((s,r)=>s+(Number(r.ORT_Approved)||0),0),   denied: dayRows.reduce((s,r)=>s+(Number(r.ORT_Denied)||0),0),   total:0 },
-    cgm:    { approved: dayRows.reduce((s,r)=>s+(Number(r.CGM_Approved)||0),0),   denied: dayRows.reduce((s,r)=>s+(Number(r.CGM_Denied)||0),0),   total:0 },
-    lymphc: { approved: dayRows.reduce((s,r)=>s+(Number(r.LymphC_Approved)||0),0),denied: dayRows.reduce((s,r)=>s+(Number(r.LymphC_Denied)||0),0),total:0 },
-    lymphw: { approved: dayRows.reduce((s,r)=>s+(Number(r.LymphW_Approved)||0),0),denied: dayRows.reduce((s,r)=>s+(Number(r.LymphW_Denied)||0),0),total:0 },
-  };
-  Object.values(byCampaign).forEach(c => { c.total = c.approved + c.denied; });
+  // Campaign data — always use Campaign Responses tab when available (deduplicated,
+  // one row per date+campaign). Falls back to archive columns only if not yet loaded.
+  let byCampaign;
+  if (campaignLeads) {
+    byCampaign = buildCampaignFromLeads(dateTab);
+  } else {
+    byCampaign = {
+      ort:    { approved: dayRows.reduce((s,r)=>s+(Number(r.ORT_Approved)||0),0),   denied: dayRows.reduce((s,r)=>s+(Number(r.ORT_Denied)||0),0),   total:0 },
+      cgm:    { approved: dayRows.reduce((s,r)=>s+(Number(r.CGM_Approved)||0),0),   denied: dayRows.reduce((s,r)=>s+(Number(r.CGM_Denied)||0),0),   total:0 },
+      lymphc: { approved: dayRows.reduce((s,r)=>s+(Number(r.LymphC_Approved)||0),0),denied: dayRows.reduce((s,r)=>s+(Number(r.LymphC_Denied)||0),0),total:0 },
+      lymphw: { approved: dayRows.reduce((s,r)=>s+(Number(r.LymphW_Approved)||0),0),denied: dayRows.reduce((s,r)=>s+(Number(r.LymphW_Denied)||0),0),total:0 },
+    };
+    Object.values(byCampaign).forEach(c => { c.total = c.approved + c.denied; });
+  }
+
+  // Team-level approved/denied = sum of campaign totals (correct, deduplicated)
+  const totalApproved = Object.values(byCampaign).reduce((s,c) => s + (c.approved||0), 0);
+  const totalDenied   = Object.values(byCampaign).reduce((s,c) => s + (c.denied||0),   0);
 
   return {
     mode: "day", date: dateTab, chasers, teamTotals,
@@ -957,6 +1263,13 @@ async function loadCampaignDay() {
   document.getElementById("campDayLabel").textContent = dateTab;
   setEl("campaignTodayPanel", spinner());
   try {
+    // Fetch campaign responses if not yet loaded (e.g. initial fetch failed)
+    if (!campaignLeads) {
+      try {
+        const cr = await fetchAPI("campaignresponses", "");
+        if (cr && cr.rows) campaignLeads = cr.rows;
+      } catch(e) { /* will use archive fallback */ }
+    }
     if (archiveCache && archiveCache.length) {
       campDayData = buildDayFromArchive(archiveCache, dateTab);
     } else {
@@ -981,6 +1294,13 @@ async function loadCampaignWeek() {
   document.getElementById("campWeekLabel").textContent = `${fmtD(mon)} – ${fmtD(fri)}`;
   setEl("campaignWeekPanel", spinner());
   try {
+    // Fetch campaign responses if not yet loaded
+    if (!campaignLeads) {
+      try {
+        const cr = await fetchAPI("campaignresponses", "");
+        if (cr && cr.rows) campaignLeads = cr.rows;
+      } catch(e) { /* will use archive fallback */ }
+    }
     if (archiveCache && archiveCache.length) {
       campWeekData = buildWeekFromArchive(archiveCache, dateTab);
     } else {
@@ -993,6 +1313,11 @@ async function loadCampaignWeek() {
 }
 
 async function refreshCampaigns() {
+  // Always re-fetch campaign responses on manual refresh so numbers stay current
+  try {
+    const cr = await fetchAPI("campaignresponses", "");
+    if (cr && cr.rows) campaignLeads = cr.rows;
+  } catch(e) { /* continue with stale or null */ }
   await Promise.all([loadCampaignDay(), loadCampaignWeek()]);
 }
 
@@ -1023,6 +1348,12 @@ function campaignHTML(data,mode) {
 }
 
 function aggWeekCampaigns(weekDays) {
+  // Use deduplicated leads if available — avoids double-counting multi-chaser leads
+  if (campaignLeads) {
+    const dateTabs = weekDays.map(d => d.date).filter(Boolean);
+    return buildCampaignFromLeadsRange(dateTabs);
+  }
+  // Fallback: sum per-day byCampaign (may overcount)
   const agg={}; CAMPAIGNS.forEach(c=>{agg[c.key]={approved:0,denied:0,total:0};});
   for (const day of weekDays) {
     const bc=day.responses?.byCampaign||mockCampaignData();
@@ -1094,7 +1425,7 @@ function renderLeaderboard() {
       const bc=(dayData.responses||{}).byChaser||{};
       rows=(dayData.chasers||[]).map(c=>{
         const rs=bc[c.name]||{approvals:0,denials:0};
-        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name,d));
+        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMinsForDate(c.name,pickerToTab()));
       });
     } else {
       const bc=mergeWeekResp(weekData.weekDays||[]);
@@ -1369,7 +1700,9 @@ async function refreshDay() {
 // Apply shift history — find effective shift for each chaser on a given date
 function applyShiftHistory(dateTab) {
   if (!shiftHistory.length) return;
-  const targetDate = parseArchiveDate(dateTab + "/" + new Date().getFullYear());
+  // Only append year if not already present (avoid "M/D/YYYY/2026")
+  const fullDate = dateTab.split("/").length >= 3 ? dateTab : dateTab + "/" + new Date().getFullYear();
+  const targetDate = parseArchiveDate(fullDate);
 
   CHASERS.forEach(name => {
     // Find the most recent shift entry for this chaser on or before the target date
@@ -1469,14 +1802,39 @@ async function saveUtlatelToArchive() {
     }
   }
 
+  // Chunk into max 10 rows per request to avoid URL length limits
+  const CHUNK = 10;
+  let totalWritten = 0, totalUpdated = 0;
+
+  // Build set of rows already in utlatelPersist to avoid duplicating in-memory
+  const persistedKeys = new Set(
+    utlatelPersist.map(r => `${String(r.Date||r.date).trim()}|${String(r.Agent||r.agent).trim()}`)
+  );
+  const newToPersist = [];
+
   try {
-    const url = `${API_BASE}?mode=saveutlatel&data=${encodeURIComponent(JSON.stringify(rows))}`;
-    const res  = await fetch(url, { method:"GET", redirect:"follow" });
-    const data = await res.json();
-    if (data.success) {
-      utlatelPersist = [...utlatelPersist, ...rows];
-      showToast(`Utlatel saved: ${data.written} new, ${data.updated} updated`);
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      const url = `${API_BASE}?mode=saveutlatel&data=${encodeURIComponent(JSON.stringify(chunk))}`;
+      const res  = await fetch(url, { method:"GET", redirect:"follow" });
+      const data = await res.json();
+      if (data.success) {
+        totalWritten += data.written || 0;
+        totalUpdated += data.updated || 0;
+        // Track which rows were accepted so we can update utlatelPersist accurately
+        for (const row of chunk) {
+          const key = `${row.date}|${row.agent}`;
+          if (!persistedKeys.has(key)) {
+            newToPersist.push({ Date: row.date, Agent: row.agent,
+              DurationMins: row.durationMins, Calls: row.calls });
+            persistedKeys.add(key);
+          }
+        }
+      }
     }
+    // Only append genuinely new rows to in-memory persist list
+    utlatelPersist = [...utlatelPersist, ...newToPersist];
+    showToast(`Utlatel saved: ${totalWritten} new, ${totalUpdated} updated`);
   } catch(err) {
     console.error("Failed to save Utlatel:", err);
     showToast("Failed to save Utlatel — data still available this session", "error");
@@ -1596,6 +1954,7 @@ function mockData(mode,dateTab){
 // ══════════════════════════════════════════════════════════════
 let archiveCache   = null;   // raw rows from archive sheet
 let archiveFetched = null;   // Date object of last fetch
+let campaignLeads  = null;   // rows from Campaign Responses tab (one row = Date+Campaign aggregate)
 let histView       = "month";
 let histRange      = { from: null, to: null };
 
@@ -1721,8 +2080,11 @@ function filterArchiveRows(rows, view, range) {
     if (view === "quarter") return d.getFullYear()===year && Math.floor(d.getMonth()/3)===q;
     if (view === "year")    return d.getFullYear()===year;
     if (view === "custom") {
-      const from = new Date(range.from), to = new Date(range.to);
-      to.setHours(23,59,59);
+      // Parse ISO date strings as local midnight (not UTC) to avoid timezone-off-by-one
+      const [fy,fm,fd] = range.from.split("-").map(Number);
+      const [ty,tm,td] = range.to.split("-").map(Number);
+      const from = new Date(fy, fm-1, fd, 0, 0, 0);
+      const to   = new Date(ty, tm-1, td, 23, 59, 59);
       return d >= from && d <= to;
     }
     return true;
@@ -2012,11 +2374,10 @@ const CB_COLORS = ["#00C2A8","#4CAF8A","#E8B84B","#9B7FE8","#E05C6A","#5B9BD5","
 const CB_FIELDS = {
   cases:       { label:"Cases",       fn: r => Number(r.Cases)||0 },
   positive:    { label:"Positive",    fn: r => Number(r.Positive)||0 },
-  faxes:       { label:"Faxes",       fn: r => Number(r.Faxes)||0 },
   approvals:   { label:"Approvals",   fn: r => Number(r.Approvals)||0 },
   denials:     { label:"Denials",     fn: r => Number(r.Denials)||0 },
-  approvalPct: { label:"Approval %",  fn: (r,g) => g.faxes ? (g.approvals/g.faxes*100) : 0 },
-  efficiency:  { label:"Efficiency",  fn: (r,g) => g.positive ? (g.cases/g.positive) : 0 },
+  approvalPct: { label:"Approval %",  fn: (r,g) => (g.approvals+g.denials) ? ((g.approvals/(g.approvals+g.denials))*100) : 0 },
+  efficiency:  { label:"Efficiency",  fn: (r,g) => g.cases ? (g.positive/g.cases*100) : 0 },
   timeMins:    { label:"Time (mins)", fn: r => Number(r.TimeMins)||0 },
 };
 
@@ -2055,9 +2416,10 @@ function buildCustomChart() {
   const selChasers = [...document.getElementById("cbChasers").selectedOptions].map(o=>o.value);
 
   // Filter rows by date range and chasers
-  const fromD = fromV ? new Date(fromV) : null;
-  const toD   = toV   ? new Date(toV)   : null;
-  if (toD) toD.setHours(23,59,59);
+  // Parse as local midnight (not UTC) to avoid timezone off-by-one
+  let fromD = null, toD = null;
+  if (fromV) { const [fy,fm,fd] = fromV.split("-").map(Number); fromD = new Date(fy,fm-1,fd,0,0,0); }
+  if (toV)   { const [ty,tm,td] = toV.split("-").map(Number);   toD   = new Date(ty,tm-1,td,23,59,59); }
 
   const filtered = archiveCache.filter(r => {
     const d = parseArchiveDate(r.Date);
@@ -2132,8 +2494,8 @@ function groupForChart(rows, xAxis) {
 
 function computeMetric(g, key) {
   if (!g) return 0;
-  if (key === "approvalPct") return g.faxes ? +(g.approvals/g.faxes*100).toFixed(1) : 0;
-  if (key === "efficiency")  return g.positive ? +(g.cases/g.positive).toFixed(2) : 0;
+  if (key === "approvalPct") return (g.approvals+g.denials) ? +((g.approvals/(g.approvals+g.denials))*100).toFixed(1) : 0;
+  if (key === "efficiency")  return g.cases ? +(g.positive/g.cases*100).toFixed(1) : 0;
   return g[key] || 0;
 }
 
@@ -2333,11 +2695,11 @@ function renderGoalsControls() {
         </div>
       </div>
       <div class="ctrl-group">
-        <label>Efficiency Target (cases ÷ positive)</label>
+        <label>Efficiency Target (positive ÷ cases × 100)</label>
         <div class="range-row">
-          <input type="range" id="goalEff" min="1" max="5" value="${goals.efficiency}" step="0.1"
-            oninput="goals.efficiency=Number(this.value);document.getElementById('goalEffVal').textContent=this.value;recalc()">
-          <span class="range-val" id="goalEffVal">${goals.efficiency}</span>
+          <input type="range" id="goalEff" min="10" max="100" value="${goals.efficiency}" step="5"
+            oninput="goals.efficiency=Number(this.value);document.getElementById('goalEffVal').textContent=this.value+'%';recalc()">
+          <span class="range-val" id="goalEffVal">${goals.efficiency}%</span>
         </div>
       </div>
     </div>`;
@@ -2347,10 +2709,6 @@ function renderGoalsControls() {
 // CHASER PAGES
 // ══════════════════════════════════════════════════════════════
 let activeChaserName = null;
-
-const CHASER_BG = {
-  Alex:"#00C2A8", Hope:"#4CAF8A", Rose:"#E8B84B", Frank:"#9B7FE8", Nova:"#E05C6A"
-};
 
 function initChaserTab() {
   const btns = document.getElementById("chaserSelectorBtns");
@@ -2466,7 +2824,7 @@ function renderChaserPage() {
         <div class="goal-card">
           <div class="metric-label">Efficiency</div>
           <div class="metric-value ${getGoalStatus("efficiency", parseFloat(eff))==="met"?"green":getGoalStatus("efficiency",parseFloat(eff))==="close"?"amber":"red"}">${eff}</div>
-          ${goalBar("efficiency", parseFloat(eff), "Cases ÷ Positive")}
+          ${goalBar("efficiency", parseFloat(eff), "Positive ÷ Cases × 100")}
         </div>
       </div>
     </div>
@@ -2511,16 +2869,24 @@ function getChaserRows(name, period) {
 }
 
 function filterByPeriod(r, period) {
-  const d     = parseArchiveDate(r.Date);
+  const d   = parseArchiveDate(r.Date);
   if (!d) return false;
-  const now   = new Date();
-  const yr    = now.getFullYear();
-  const mo    = now.getMonth();
-  const today = getTodayTab();
-  if (period === "today")   return String(r.Date).trim() === today;
+  const now = new Date();
+  const yr  = now.getFullYear();
+  const mo  = now.getMonth();
+
+  if (period === "today") {
+    // Compare parsed dates to handle M/D, M/D/YYYY, and YYYY-MM-DD in archive
+    const today = new Date(); today.setHours(0,0,0,0);
+    const rd    = new Date(d); rd.setHours(0,0,0,0);
+    return rd.getTime() === today.getTime();
+  }
   if (period === "week") {
-    const tabs = getWeekTabsJS(today);
-    return tabs.includes(String(r.Date).trim().split("/").slice(0,2).join("/"));
+    // Build the current week's M/D short strings and compare against parsed date
+    const todayTab = getTodayTab();
+    const tabs     = getWeekTabsJS(todayTab);
+    const rShort   = (d.getMonth()+1) + "/" + d.getDate();
+    return tabs.includes(rShort);
   }
   if (period === "month")   return d.getFullYear()===yr && d.getMonth()===mo;
   if (period === "quarter") return d.getFullYear()===yr && Math.floor(d.getMonth()/3)===Math.floor(mo/3);
@@ -2706,7 +3072,7 @@ function runComparison() {
     const cls = diff>0?"change-up":diff<0?"change-down":"change-flat";
     const arrow=diff>0?"↑":diff<0?"↓":"→";
     return `<tr>
-      <td><span class="chaser-name" style="color:${CHASER_BG[name]||"var(--text)"}">${name}</span></td>
+      <td><span class="chaser-name" style="color:${CHASER_COLORS[name]||"var(--text)"}">${name}</span></td>
       <td>${cA}</td><td>${cB}</td>
       <td><span class="change-badge ${cls}">${arrow} ${Math.abs(diff)}</span></td>
     </tr>`;
@@ -2806,8 +3172,11 @@ function groupByDayIndex(rows, field) {
 }
 
 function filterByRange(rows, from, to) {
-  const fD = new Date(from), tD = new Date(to);
-  tD.setHours(23,59,59);
+  // Parse as local midnight to avoid UTC timezone off-by-one
+  const [fy,fm,fd] = from.split("-").map(Number);
+  const [ty,tm,td] = to.split("-").map(Number);
+  const fD = new Date(fy, fm-1, fd, 0, 0, 0);
+  const tD = new Date(ty, tm-1, td, 23, 59, 59);
   return rows.filter(r => {
     const d = parseArchiveDate(r.Date);
     return d && d >= fD && d <= tD;
@@ -2840,27 +3209,47 @@ function renderCampaignTrend() {
 
   // Build weekly approval rate per campaign
   const campaigns = [
-    { key:"ORT",    app:"ORT_Approved",    den:"ORT_Denied",    color:"var(--teal)"   },
-    { key:"CGM",    app:"CGM_Approved",    den:"CGM_Denied",    color:"var(--purple)" },
-    { key:"LymphC", app:"LymphC_Approved", den:"LymphC_Denied", color:"var(--blue)"   },
-    { key:"LymphW", app:"LymphW_Approved", den:"LymphW_Denied", color:"var(--amber)"  },
+    { key:"ort",    label:"ORT",    color:"var(--teal)"   },
+    { key:"cgm",    label:"CGM",    color:"var(--purple)" },
+    { key:"lymphc", label:"LymphC", color:"var(--blue)"   },
+    { key:"lymphw", label:"LymphW", color:"var(--amber)"  },
   ];
 
-  // Group by week
+  // Group by week — use Campaign Responses tab (deduplicated) when available
   const weekMap = {};
-  archiveCache.forEach(r => {
-    const d = parseArchiveDate(r.Date);
-    if (!d) return;
-    const day = d.getDay();
-    const mon = new Date(d); mon.setDate(d.getDate()-(day===0?6:day-1));
-    const wk  = `${mon.getMonth()+1}/${mon.getDate()}`;
-    if (!weekMap[wk]) weekMap[wk] = {};
-    campaigns.forEach(c => {
-      if (!weekMap[wk][c.key]) weekMap[wk][c.key]={app:0,den:0};
-      weekMap[wk][c.key].app += Number(r[c.app])||0;
-      weekMap[wk][c.key].den += Number(r[c.den])||0;
+  const source = campaignLeads || [];
+
+  if (campaignLeads) {
+    // One row per date+campaign aggregate — no double-counting
+    campaignLeads.forEach(row => {
+      const d = parseArchiveDate(row.Date);
+      if (!d) return;
+      const day = d.getDay();
+      const mon = new Date(d); mon.setDate(d.getDate()-(day===0?6:day-1));
+      const wk  = `${mon.getMonth()+1}/${mon.getDate()}`;
+      if (!weekMap[wk]) weekMap[wk] = {};
+      const key = campLabelToKey(row.Campaign);
+      if (!weekMap[wk][key]) weekMap[wk][key] = {app:0,den:0};
+      weekMap[wk][key].app += Number(row.Approved) || 0;
+      weekMap[wk][key].den += Number(row.Denied)   || 0;
     });
-  });
+  } else {
+    // Fallback: use archive rows (may overcount multi-chaser leads)
+    archiveCache.forEach(r => {
+      const d = parseArchiveDate(r.Date);
+      if (!d) return;
+      const day = d.getDay();
+      const mon = new Date(d); mon.setDate(d.getDate()-(day===0?6:day-1));
+      const wk  = `${mon.getMonth()+1}/${mon.getDate()}`;
+      if (!weekMap[wk]) weekMap[wk] = {};
+      const colMap = [{key:"ort",app:"ORT_Approved",den:"ORT_Denied"},{key:"cgm",app:"CGM_Approved",den:"CGM_Denied"},{key:"lymphc",app:"LymphC_Approved",den:"LymphC_Denied"},{key:"lymphw",app:"LymphW_Approved",den:"LymphW_Denied"}];
+      colMap.forEach(c => {
+        if (!weekMap[wk][c.key]) weekMap[wk][c.key]={app:0,den:0};
+        weekMap[wk][c.key].app += Number(r[c.app])||0;
+        weekMap[wk][c.key].den += Number(r[c.den])||0;
+      });
+    });
+  }
 
   const weeks = Object.keys(weekMap).sort((a,b)=>parseArchiveDate(a)-parseArchiveDate(b)).slice(-16);
   if (!weeks.length) return;
@@ -2893,7 +3282,7 @@ function renderCampaignTrend() {
       const d=weekMap[weeks[i]]?.[c.key]||{app:0,den:0};
       const rate=((d.app+d.den)?d.app/(d.app+d.den)*100:0).toFixed(1);
       allLines+=`<circle cx="${x}" cy="${y}" r="3" fill="${c.color}"
-        onmouseenter="showTooltip(event,'<b>${c.key}</b> wk ${weeks[i]}: ${rate}%')" onmouseleave="hideTooltip()"/>`;
+        onmouseenter="showTooltip(event,'<b>${c.label}</b> wk ${weeks[i]}: ${rate}%')" onmouseleave="hideTooltip()"/>`;
     });
   });
 
@@ -2909,7 +3298,7 @@ function renderCampaignTrend() {
     <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
   </svg>
   <div class="rolling-legend">
-    ${campaigns.map(c=>`<div class="rolling-legend-item"><div class="rolling-legend-line" style="background:${c.color}"></div>${c.key}</div>`).join("")}
+    ${campaigns.map(c=>`<div class="rolling-legend-item"><div class="rolling-legend-line" style="background:${c.color}"></div>${c.label}</div>`).join("")}
   </div>`;
 }
 
@@ -2936,6 +3325,246 @@ function exportPDF() {
 function initCompareDefaults() {
   if (document.getElementById("cmpFromA").value) return;
   setComparePreset("mom");
+}
+
+
+// ══════════════════════════════════════════════════════════════
+// CONTROLS TAB
+// ══════════════════════════════════════════════════════════════
+
+// Formula settings stored in memory + archive Settings tab
+let formulaSettings = {
+  shiftMins: 400,
+  acwMult:   2,
+  goalProd:  70,
+  goalEff:   60,
+};
+
+function initControlsTab() {
+  // Sync sliders to current values
+  const s = formulaSettings;
+  setSlider("ctrlShiftMins",  "ctrlShiftMinsVal", s.shiftMins,  "");
+  setSlider("ctrlAcwMult",    "ctrlAcwMultVal",   s.acwMult,    "");
+  setSlider("ctrlGoalProd",   "ctrlGoalProdVal",  s.goalProd,   "%");
+  setSlider("ctrlGoalEff",    "ctrlGoalEffVal",   s.goalEff,    "%");
+
+  // Sync goals to goal tracking system
+  goals.productivity = s.goalProd;
+  goals.efficiency   = s.goalEff;
+
+  // Populate chaser dropdown
+  const sel = document.getElementById("ctrlShiftChaser");
+  if (sel && !sel.children.length) {
+    getAllChasers().forEach(n => {
+      const opt = document.createElement("option");
+      opt.value = n; opt.textContent = n;
+      sel.appendChild(opt);
+    });
+  }
+
+  // Set default date to today
+  const dateEl = document.getElementById("ctrlShiftDate");
+  if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0,10);
+
+  // Render shift history table
+  renderShiftHistoryTable();
+
+  // Render Utlatel summary from archive
+  renderUtlatelSummary();
+}
+
+function setSlider(sliderId, valId, val, suffix) {
+  const el  = document.getElementById(sliderId);
+  const vel = document.getElementById(valId);
+  if (el)  el.value      = val;
+  if (vel) vel.textContent = val + suffix;
+}
+
+async function saveFormulaSetting(key, value) {
+  formulaSettings[key] = Number(value);
+
+  // Apply immediately
+  if (key === "shiftMins" || key === "acwMult") {
+    // Sync the overview controls panel sliders too
+    const overviewId  = key === "shiftMins" ? "shiftMins" : "acwMult";
+    const overviewVal = key === "shiftMins" ? "shiftMinsVal" : "acwMultVal";
+    const oel = document.getElementById(overviewId);
+    const vel = document.getElementById(overviewVal);
+    if (oel) oel.value       = value;
+    if (vel) vel.textContent  = value;
+  }
+  if (key === "goalProd") goals.productivity = Number(value);
+  if (key === "goalEff")  goals.efficiency   = Number(value);
+
+  recalc();
+
+  // Persist to Settings tab
+  try {
+    const url = `${API_BASE}?mode=savesetting&chaser=__formula__&shiftType=${key}&effectiveDate=${getTodayTab()}&notes=${encodeURIComponent(String(value))}`;
+    const res  = await fetch(url, { method:"GET", redirect:"follow" });
+    const data = await res.json();
+    if (data.success) showToast("Saved: " + key + " = " + value);
+  } catch(err) {
+    showToast("Saved locally only — archive save failed", "error");
+  }
+}
+
+function addShiftEntry() {
+  const chaser    = document.getElementById("ctrlShiftChaser").value;
+  const shiftType = document.getElementById("ctrlShiftType").value;
+  const dateRaw   = document.getElementById("ctrlShiftDate").value;
+  const notes     = document.getElementById("ctrlShiftNotes").value.trim();
+
+  if (!chaser || !dateRaw) { alert("Select a chaser and date."); return; }
+
+  const parts   = dateRaw.split("-");
+  const effDate = parseInt(parts[1]) + "/" + parseInt(parts[2]) + "/" + parts[0];
+
+  // Update local shift map and history
+  shiftMap[chaser] = shiftType;
+  shiftHistory.push({ Chaser:chaser, ShiftType:shiftType, EffectiveDate:effDate, Notes:notes });
+
+  // Persist
+  saveShift(chaser, shiftType, effDate, notes);
+
+  // Clear notes, re-render table
+  document.getElementById("ctrlShiftNotes").value = "";
+  renderShiftHistoryTable();
+  recalc();
+}
+
+function renderShiftHistoryTable() {
+  const tbody = document.getElementById("shiftHistoryBody");
+  if (!tbody) return;
+
+  if (!shiftHistory.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-3);text-align:center;padding:20px">
+      No shift history yet. Add entries above.</td></tr>`;
+    return;
+  }
+
+  // Sort by date descending
+  const sorted = [...shiftHistory].sort((a,b) => {
+    const da = parseArchiveDate(a.EffectiveDate), db = parseArchiveDate(b.EffectiveDate);
+    return (db||0) - (da||0);
+  });
+
+  const colorMap = { full:"var(--green)", half:"var(--amber)", quarter:"var(--text-3)", off:"var(--red)" };
+
+  tbody.innerHTML = sorted.map((s,i) => `
+    <tr>
+      <td><span class="chaser-name" style="color:${CHASER_COLORS[s.Chaser]||"var(--text)"}">${s.Chaser}</span></td>
+      <td><span class="pill" style="background:${colorMap[s.ShiftType?.toLowerCase()]||"var(--card)"}20;color:${colorMap[s.ShiftType?.toLowerCase()]||"var(--text-2)"}">${s.ShiftType}</span></td>
+      <td style="color:var(--text-2)">${s.EffectiveDate}</td>
+      <td style="color:var(--text-3);font-size:12px">${s.Notes||""}</td>
+      <td><button onclick="deleteShiftEntry('${s.Chaser}','${s.ShiftType}','${s.EffectiveDate}')" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:13px" title="Delete">&#10005;</button></td>
+    </tr>`).join("");
+}
+
+async function deleteShiftEntry(chaser, shiftType, effectiveDate) {
+  // Use unique key (Chaser+ShiftType+EffectiveDate) to find and remove
+  const origIdx = shiftHistory.findIndex(s =>
+    s.Chaser===chaser && s.ShiftType===shiftType && s.EffectiveDate===effectiveDate
+  );
+  if (origIdx >= 0) shiftHistory.splice(origIdx, 1);
+  renderShiftHistoryTable();
+  showToast("Entry removed from session — reload to re-apply from archive");
+  recalc();
+}
+
+function renderUtlatelSummary() {
+  const el = document.getElementById("utlatelArchiveSummary");
+  if (!el || !archiveCache || !archiveCache.length) return;
+
+  // Find most recent date per chaser that has TotalDurationMins
+  const chaserData = {};
+  archiveCache.forEach(r => {
+    const dur = Number(r.TotalDurationMins)||0;
+    if (!dur) return;
+    const name = r.Chaser;
+    const d    = parseArchiveDate(r.Date);
+    if (!chaserData[name] || d > parseArchiveDate(chaserData[name].Date)) {
+      chaserData[name] = r;
+    }
+  });
+
+  if (!Object.keys(chaserData).length) {
+    el.innerHTML = "<div style='color:var(--text-3)'>No TotalDurationMins data found in archive yet.</div>";
+    return;
+  }
+
+  el.innerHTML = `<table class="lb-table" style="min-width:unset"><thead><tr>
+    <th>Chaser</th><th>Most Recent Date</th><th>Call Duration (mins)</th><th>Total Calls</th>
+  </tr></thead><tbody>
+    ${Object.entries(chaserData).map(([name,r]) => `<tr>
+      <td><span class="chaser-name" style="color:${CHASER_COLORS[name]||"var(--text)"}">${name}</span></td>
+      <td style="color:var(--text-2)">${r.Date}</td>
+      <td><span class="pill pill-teal">${(Number(r.TotalDurationMins)||0).toFixed(1)} min</span></td>
+      <td>${Number(r.TotalCalls)||0}</td>
+    </tr>`).join("")}
+  </tbody></table>`;
+}
+
+// Utlatel upload from controls tab
+function handleCtrlDrop(e) {
+  e.preventDefault();
+  document.getElementById("ctrlUploadZone").classList.remove("drag");
+  if (e.dataTransfer.files[0]) handleCtrlFileUploadFile(e.dataTransfer.files[0]);
+}
+
+function handleCtrlFileUpload(e) {
+  if (e.target.files[0]) handleCtrlFileUploadFile(e.target.files[0]);
+}
+
+function handleCtrlFileUploadFile(file) {
+  const setS = (msg,cls) => {
+    const el = document.getElementById("ctrlUploadStatus");
+    el.textContent = msg; el.className = "upload-status "+(cls||"");
+  };
+  setS("Reading...");
+  const ext = file.name.split(".").pop().toLowerCase();
+  if (ext === "csv") {
+    const r = new FileReader();
+    r.onload = e => processUtlatelRows(parseCSV(e.target.result), file.name, setS);
+    r.readAsText(file);
+  } else if (["xlsx","xls"].includes(ext)) {
+    const r = new FileReader();
+    r.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result,{type:"array"});
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        processUtlatelRows(XLSX.utils.sheet_to_json(ws,{defval:""}), file.name, setS);
+      } catch(err) { setS("Error: "+err.message,"err"); }
+    };
+    r.readAsArrayBuffer(file);
+  } else { setS("Unsupported file type.","err"); }
+}
+
+// Update getUtlMins to also check archive rows for TotalDurationMins
+// Get Utlatel call duration mins for a chaser on a specific date.
+// Priority:
+//   1. Uploaded CSV (most accurate — use this for current testing)
+//   2. TotalDurationMins column in archive (from manual upload / future API)
+//   3. Zero (productivity shows as stub)
+function getUtlMinsForDate(chaserName, dateTab) {
+  // 1. Uploaded CSV override
+  const uploaded = getUtlMins(chaserName, dateTab);
+  if (uploaded > 0) return uploaded;
+
+  // 2. Archive TotalDurationMins column
+  if (archiveCache) {
+    const row = archiveCache.find(r => {
+      const d = parseArchiveDate(r.Date);
+      if (!d) return false;
+      const rTab = (d.getMonth()+1) + "/" + d.getDate();
+      return rTab === dateTab && r.Chaser === chaserName;
+    });
+    const archiveMins = Number(row?.TotalDurationMins) || 0;
+    if (archiveMins > 0) return archiveMins;
+  }
+
+  // 3. No data — productivity will show as stub
+  return 0;
 }
 
 </script>
