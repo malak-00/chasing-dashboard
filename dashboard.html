@@ -260,9 +260,9 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
   <div class="header-right">
     <span class="status-badge" id="statusBadge">Live</span>
     <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">&#9790; Dark</button>
-    <input type="date" class="date-input" id="datePicker" onchange="loadData()">
+    <input type="date" class="date-input" id="datePicker" onchange="loadData(); updateSyncLabel();">
     <button class="btn" onclick="loadData()">&#8635; Load</button>
-    <button class="btn btn-ghost" id="syncBtn" onclick="syncToday()" title="Re-reads today from live sheets and updates archive">&#9650; Sync Today</button>
+    <button class="btn btn-ghost" id="syncBtn" onclick="syncSelectedDate()" title="Re-reads the selected date from live sheets and updates archive">&#9650; Sync <span id="syncDateLabel">Today</span></button>
     <button class="btn btn-ghost" onclick="toggleControls()">&#9881; Controls</button>
     <button class="btn btn-ghost" onclick="downloadCSV()">&#8595; CSV</button>
     <button class="btn btn-ghost" onclick="exportPDF()">&#128438; PDF</button>
@@ -858,6 +858,7 @@ let campWeekData  = null;  // separate campaign week data
 window.addEventListener("DOMContentLoaded", () => {
   const today = new Date().toISOString().slice(0,10);
   document.getElementById("datePicker").value    = today;
+  updateSyncLabel();
   document.getElementById("campDayPicker").value  = today;
   document.getElementById("campWeekPicker").value = today;
   CHASERS.forEach(n => { shiftMap[n]="full"; agentMap[n]=n; });
@@ -945,27 +946,46 @@ async function loadData() {
   }
 }
 
-async function syncToday() {
-  const d   = getTodayTab();
+async function syncSelectedDate() {
+  // Sync whatever date is currently selected in the date picker (defaults to today)
+  const d   = pickerToTab();
   const btn = document.getElementById("syncBtn");
+  const label = document.getElementById("syncDateLabel");
+
+  const prevLabel = label.textContent;
   btn.innerHTML = "Syncing...";
   btn.classList.add("btn-syncing");
-  document.getElementById("statusBadge").textContent = "Syncing...";
+  document.getElementById("statusBadge").textContent = `Syncing ${d}...`;
+
   try {
     const url = `${API_BASE}?mode=sync&date=${encodeURIComponent(d)}`;
     const res = await fetch(url, { method:"GET", redirect:"follow" });
     if (!res.ok) throw new Error("Sync failed: " + res.status);
     const result = await res.json();
     if (result.error) throw new Error(result.error);
-    btn.innerHTML = "&#9650; Sync Today";
+    document.getElementById("statusBadge").textContent = `Synced ${d}`;
+    setTimeout(() => {
+      document.getElementById("statusBadge").textContent = "Live";
+    }, 3000);
+    updateSyncLabel();
     btn.classList.remove("btn-syncing");
     await loadData();
   } catch(err) {
-    btn.innerHTML = "&#9650; Sync Today";
+    updateSyncLabel();
     btn.classList.remove("btn-syncing");
     document.getElementById("statusBadge").textContent = "Sync Error";
     alert("Sync failed: " + err.message);
   }
+}
+
+// Keep the sync button label in sync with the date picker
+function updateSyncLabel() {
+  const label   = document.getElementById("syncDateLabel");
+  if (!label) return;
+  const picker  = document.getElementById("datePicker");
+  const today   = getTodayTab();
+  const picked  = picker.value ? pickerToTab() : today;
+  label.textContent = picked === today ? "Today" : picked;
 }
 
 async function refreshDay() { await loadData(); }
