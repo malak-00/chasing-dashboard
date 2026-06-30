@@ -678,6 +678,25 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
 
             <div class="divider"></div>
 
+            <div class="sub-label">Productivity &amp; Efficiency Targets</div>
+            <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;line-height:1.5">
+              Set a target for All chasers, or pick one chaser for an individual target. Optionally
+              apply it starting from a specific date — leave as today to apply immediately.
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+              <div class="ctrl-group" style="margin:0">
+                <label>Applies To</label>
+                <select class="ctrl-select" id="ctrlGoalChaser" onchange="syncGoalSlidersToScope()">
+                  <option value="">All Chasers</option>
+                </select>
+              </div>
+              <div class="ctrl-group" style="margin:0">
+                <label>Effective From</label>
+                <input type="date" class="ctrl-input" id="ctrlGoalDate" onchange="syncGoalSlidersToScope()">
+              </div>
+            </div>
+
             <div class="ctrl-group">
               <label>Productivity Target (%)</label>
               <div class="range-row">
@@ -704,6 +723,20 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
               </button>
             </div>
 
+            <div class="divider"></div>
+            <div class="sub-label">Active Target Overrides</div>
+            <div style="overflow:auto;max-height:220px">
+              <table class="lb-table" style="min-width:unset" id="goalOverridesTable">
+                <thead><tr>
+                  <th>Applies To</th><th>Metric</th><th>Target</th><th>From</th><th></th>
+                </tr></thead>
+                <tbody id="goalOverridesBody">
+                  <tr><td colspan="5" style="color:var(--text-3);text-align:center;padding:16px">
+                    No overrides yet — using the base target above for everyone.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
           </div>
         </div>
       </div>
@@ -725,13 +758,8 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
               </select>
             </div>
             <div class="ctrl-group">
-              <label>Shift Type</label>
-              <select class="ctrl-select" id="ctrlShiftType">
-                <option value="full">Full (400 min)</option>
-                <option value="half">Half (200 min)</option>
-                <option value="quarter">Quarter (100 min)</option>
-                <option value="off">Off</option>
-              </select>
+              <label>Shift Minutes</label>
+              <input type="number" inputmode="numeric" class="ctrl-input" id="ctrlShiftType" min="0" max="1440" step="5" placeholder="e.g. 400, or 240 with a meeting" value="400">
             </div>
             <div class="ctrl-group">
               <label>Effective Date</label>
@@ -823,7 +851,9 @@ const CAMPAIGNS = [
   { key:"lymphw", label:"Lymph Wraps",        color:"var(--amber)"  },
 ];
 
-const SHIFT_MULTI = { full:1, half:.5, quarter:.25, off:0 };
+// Shift minutes are now stored directly as numbers (e.g. 400, 180, 0 for off)
+// instead of full/half/quarter/off categories — lets you enter exact meeting-adjusted times.
+const DEFAULT_SHIFT_MINS = 400;
 
 const METRIC_FIELDS = [
   { key:"cases",     label:"Total Cases"    },
@@ -868,7 +898,7 @@ window.addEventListener("DOMContentLoaded", () => {
   updateSyncLabel();
   document.getElementById("campDayPicker").value  = today;
   document.getElementById("campWeekPicker").value = today;
-  CHASERS.forEach(n => { shiftMap[n]="full"; agentMap[n]=n; });
+  CHASERS.forEach(n => { shiftMap[n]=DEFAULT_SHIFT_MINS; agentMap[n]=n; });
   buildShiftGrid();
   buildSortBtns();
   populateCustomFieldSelects();
@@ -921,16 +951,21 @@ async function loadData() {
       shiftHistory   = settingsRes.shiftHistory || [];
       utlatelPersist = settingsRes.utlatel      || [];
 
-      // Load formula settings from special __formula__ entries
-      shiftHistory.filter(s => s.Chaser === "__formula__").forEach(s => {
-        const key = s.ShiftType;
-        const val = parseFloat(s.Notes);
-        if (!isNaN(val) && formulaSettings.hasOwnProperty(key)) {
-          formulaSettings[key] = val;
+      // Load formula settings — global base values (Chaser === "__formula__", no date suffix)
+      // and per-chaser/dated overrides (Chaser === "__formula__:<Name>" or with EffectiveDate set)
+      formulaOverrides = shiftHistory.filter(s => String(s.Chaser).startsWith("__formula__"));
+      formulaOverrides.forEach(s => {
+        // Global base entries (no specific chaser) update the default formulaSettings
+        if (s.Chaser === "__formula__") {
+          const key = s.ShiftType;
+          const val = parseFloat(s.Notes);
+          if (!isNaN(val) && formulaSettings.hasOwnProperty(key)) {
+            formulaSettings[key] = val;
+          }
         }
       });
       // Remove formula entries from shift history display
-      shiftHistory = shiftHistory.filter(s => s.Chaser !== "__formula__");
+      shiftHistory = shiftHistory.filter(s => !String(s.Chaser).startsWith("__formula__"));
 
       applyShiftHistory(d);
       applyUtlatelPersist();
@@ -1473,7 +1508,7 @@ function renderLeaderboard() {
   setEl("leaderboardEl",`<table class="lb-table"><thead><tr>
     <th>#</th><th>Chaser</th>
     ${LB_COLS.map(c=>`<th class="${thC(c.key)}" onclick="setSortCol('${c.key}')" title="${c.tip}">${c.label}</th>`).join("")}
-    <th>Shift</th></tr></thead><tbody>
+    <th title="Shift length in minutes — edit to adjust for meetings, leave, etc.">Shift (min)</th></tr></thead><tbody>
     ${rows.map((r,i)=>`<tr>
       <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
       <td><span class="chaser-name">${r.name}</span></td>
@@ -1485,24 +1520,23 @@ function renderLeaderboard() {
       <td>${r.denialPct==="--"?"--":`<span class="pill pill-amber">${r.denialPct}%</span>`}</td>
       <td>${r.efficiency==="--"?"--":r.efficiency}</td>
       <td>${r.productivityStub?`<span class="pill pill-stub">Upload Utlatel</span>`:`<span class="pill pill-teal">${r.productivity}%</span>`}</td>
-      <td><select class="ctrl-select" style="width:88px;padding:3px 6px;font-size:11px" onchange="setShift('${r.name}',this.value)">
-        <option value="full"    ${shiftMap[r.name]==="full"   ?"selected":""}>Full</option>
-        <option value="half"    ${shiftMap[r.name]==="half"   ?"selected":""}>Half</option>
-        <option value="quarter" ${shiftMap[r.name]==="quarter"?"selected":""}>Quarter</option>
-        <option value="off"     ${shiftMap[r.name]==="off"    ?"selected":""}>Off</option>
-      </select></td>
+      <td><input type="number" inputmode="numeric" class="ctrl-input" style="width:78px;padding:4px 6px;font-size:11px" min="0" max="1440" step="5"
+        value="${shiftMap[r.name] !== undefined && shiftMap[r.name] !== null ? shiftMap[r.name] : DEFAULT_SHIFT_MINS}"
+        title="Shift minutes for today"
+        onchange="setShift('${r.name}',this.value)"></td>
     </tr>`).join("")}</tbody></table>`);
 }
 
 function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMins){
   cases=cases||0;positive=positive||0;approvals=approvals||0;denials=denials||0;
-  const shift=shiftMap[name]||"full";
-  const sm=sfm*SHIFT_MULTI[shift];
+  // shiftMap now stores exact shift minutes for the chaser (numpad-entered), falling back to sfm default
+  const shiftMinsRaw = shiftMap[name];
+  const sm = (shiftMinsRaw === undefined || shiftMinsRaw === null || shiftMinsRaw === "") ? sfm : Number(shiftMinsRaw);
   const totalResp=approvals+denials; const approvalPct=totalResp?(approvals/totalResp*100).toFixed(1):"--";
   const denialPct=totalResp?(denials/totalResp*100).toFixed(1):"--";
   const efficiency=cases?(positive/cases*100).toFixed(1):"--";
   let productivity="--",productivityStub=false;
-  if(shift==="off"){productivity="--";}
+  if(sm<=0){productivity="--";}
   else if(!utlMins){productivityStub=true;}
   else { const acw=acwMult*cases; productivity=sm>0?((utlMins+acw)/sm*100).toFixed(1):"--"; }
   return {name,cases,positive,faxes,approvals,denials,approvalPct,denialPct,efficiency,productivity,productivityStub,shiftMins:sm};
@@ -1740,7 +1774,8 @@ function applyShiftHistory(dateTab) {
       .sort((a,b) => b.date - a.date); // most recent first
 
     if (entries.length) {
-      shiftMap[name] = entries[0].ShiftType.toLowerCase();
+      const mins = Number(entries[0].ShiftType);
+      shiftMap[name] = isNaN(mins) ? DEFAULT_SHIFT_MINS : mins;
     }
   });
 
@@ -1788,19 +1823,19 @@ function applyUtlatelPersist() {
 
 // Save a shift change permanently
 async function saveShift(name, val, effectiveDate, notes) {
-  shiftMap[name] = val;
-  document.querySelectorAll(`select[onchange*="'${name}'"]`).forEach(el => el.value = val);
+  shiftMap[name] = val; // val is shift minutes (number)
+  document.querySelectorAll(`[onchange*="setShift('${name}'"]`).forEach(el => el.value = val);
   recalc();
 
-  // Persist to archive sheet
+  // Persist to archive sheet — ShiftType field now holds the raw minute count as a string
   try {
     const url = `${API_BASE}?mode=savesetting&chaser=${encodeURIComponent(name)}&shiftType=${val}&effectiveDate=${encodeURIComponent(effectiveDate)}&notes=${encodeURIComponent(notes||"")}`;
     const res = await fetch(url, { method:"GET", redirect:"follow" });
     const data = await res.json();
     if (data.success) {
       // Update local shiftHistory
-      shiftHistory.push({ Chaser:name, ShiftType:val, EffectiveDate:effectiveDate, Notes:notes||"" });
-      showToast("Shift saved for " + name);
+      shiftHistory.push({ Chaser:name, ShiftType:String(val), EffectiveDate:effectiveDate, Notes:notes||"" });
+      showToast("Shift saved for " + name + " — " + val + " min");
     }
   } catch(err) {
     console.error("Failed to save shift:", err);
@@ -1895,7 +1930,7 @@ function downloadCSV(){
   const rows=(dayData.chasers||[]).map(c=>{
     const rs=bc[c.name]||{approvals:0,denials:0};
     const r=buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name));
-    return [d,c.name,r.cases,r.positive,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,shiftMap[c.name]||"full",r.shiftMins].join(",");
+    return [d,c.name,r.cases,r.positive,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,(shiftMap[c.name] ?? DEFAULT_SHIFT_MINS),r.shiftMins].join(",");
   });
   const camps=dayData.responses?.byCampaign||mockCampaignData();
   rows.push("","Campaign,Approved,Denied,Total,Approval%");
@@ -1909,15 +1944,19 @@ function downloadCSV(){
 // ── SHIFT ─────────────────────────────────────────────────────
 function buildShiftGrid(){
   document.getElementById("shiftGrid").innerHTML=CHASERS.map(name=>`
-    <div class="ctrl-group"><label>${name}</label>
-    <select class="ctrl-select" onchange="setShift('${name}',this.value)">
-      <option value="full"    ${shiftMap[name]==="full"   ?"selected":""}>Full</option>
-      <option value="half"    ${shiftMap[name]==="half"   ?"selected":""}>Half</option>
-      <option value="quarter" ${shiftMap[name]==="quarter"?"selected":""}>Quarter</option>
-      <option value="off"     ${shiftMap[name]==="off"    ?"selected":""}>Off</option>
-    </select></div>`).join("");
+    <div class="ctrl-group"><label>${name} — Shift (min)</label>
+    <input type="number" inputmode="numeric" class="ctrl-input" min="0" max="1440" step="5"
+      value="${shiftMap[name] !== undefined && shiftMap[name] !== null ? shiftMap[name] : DEFAULT_SHIFT_MINS}"
+      onchange="setShift('${name}',this.value)"></div>`).join("");
 }
 function setShift(name, val) {
+  // val is now exact shift minutes (e.g. typed via numpad for meeting-adjusted shifts)
+  const mins = Number(val);
+  if (val === "" || isNaN(mins) || mins < 0) {
+    alert("Enter a valid number of minutes (0 or more).");
+    document.querySelectorAll(`[onchange*="setShift('${name}'"]`).forEach(el => el.value = shiftMap[name] ?? DEFAULT_SHIFT_MINS);
+    return;
+  }
   // Ask for effective date
   const today     = new Date().toISOString().slice(0,10);
   const dateInput = prompt(
@@ -1925,8 +1964,8 @@ function setShift(name, val) {
     today
   );
   if (dateInput === null) {
-    // User cancelled — revert the dropdown
-    document.querySelectorAll(`select[onchange*="'${name}'"]`).forEach(el => el.value = shiftMap[name]||"full");
+    // User cancelled — revert the input
+    document.querySelectorAll(`[onchange*="setShift('${name}'"]`).forEach(el => el.value = shiftMap[name] ?? DEFAULT_SHIFT_MINS);
     return;
   }
 
@@ -1936,7 +1975,7 @@ function setShift(name, val) {
     : getTodayTab();
 
   const notes = "";
-  saveShift(name, val, effDate, notes);
+  saveShift(name, mins, effDate, notes);
 }
 function toggleControls(){
   controlsOpen=!controlsOpen;
@@ -2681,9 +2720,9 @@ let goals = {
   efficiency:   1.5,  // ratio target (cases/positive, lower = better)
 };
 
-function getGoalStatus(metric, actual) {
+function getGoalStatus(metric, actual, chaserName, dateTab) {
   if (actual === "--" || actual === "" || isNaN(actual)) return "flat";
-  const target = goals[metric];
+  const target = getGoalTarget(metric === "efficiency" ? "goalEff" : "goalProd", chaserName, dateTab);
   if (metric === "efficiency") {
     // Higher is better — positive / cases * 100, target is a %
     if (actual >= target)               return "met";
@@ -2695,13 +2734,13 @@ function getGoalStatus(metric, actual) {
   return "miss";
 }
 
-function goalBar(metric, actual, label) {
-  const target = goals[metric];
+function goalBar(metric, actual, label, chaserName, dateTab) {
+  const target = getGoalTarget(metric === "efficiency" ? "goalEff" : "goalProd", chaserName, dateTab);
   if (!target || actual === "--") return "";
   const pct    = metric === "efficiency"
     ? Math.min(100, (target / Math.max(actual, 0.01)) * 100)
     : Math.min(100, (actual / target) * 100);
-  const status = getGoalStatus(metric, actual);
+  const status = getGoalStatus(metric, actual, chaserName, dateTab);
   const cls    = status === "met" ? "goal-met" : status === "close" ? "goal-close" : "goal-miss";
   return `<div class="goal-bar-bg"><div class="goal-bar-fill ${cls}" style="width:${pct.toFixed(0)}%"></div></div>
     <div class="goal-label"><span>${label}</span><span>Target: ${target}${metric==="productivity"?"%":""}</span></div>`;
@@ -2845,13 +2884,13 @@ function renderChaserPage() {
       <div class="goals-grid">
         <div class="goal-card">
           <div class="metric-label">Productivity</div>
-          <div class="metric-value ${getGoalStatus("productivity", parseFloat(avgProd))==="met"?"green":getGoalStatus("productivity",parseFloat(avgProd))==="close"?"amber":"red"}">${avgProd}${avgProd!=="--"?"m":""}</div>
-          ${goalBar("productivity", parseFloat(avgProd), "Avg Productive Time/Day")}
+          <div class="metric-value ${getGoalStatus("productivity", parseFloat(avgProd), activeChaserName, getTodayTab())==="met"?"green":getGoalStatus("productivity",parseFloat(avgProd),activeChaserName,getTodayTab())==="close"?"amber":"red"}">${avgProd}${avgProd!=="--"?"m":""}</div>
+          ${goalBar("productivity", parseFloat(avgProd), "Avg Productive Time/Day", activeChaserName, getTodayTab())}
         </div>
         <div class="goal-card">
           <div class="metric-label">Efficiency</div>
-          <div class="metric-value ${getGoalStatus("efficiency", parseFloat(eff))==="met"?"green":getGoalStatus("efficiency",parseFloat(eff))==="close"?"amber":"red"}">${eff}</div>
-          ${goalBar("efficiency", parseFloat(eff), "Positive ÷ Cases × 100")}
+          <div class="metric-value ${getGoalStatus("efficiency", parseFloat(eff), activeChaserName, getTodayTab())==="met"?"green":getGoalStatus("efficiency",parseFloat(eff),activeChaserName,getTodayTab())==="close"?"amber":"red"}">${eff}</div>
+          ${goalBar("efficiency", parseFloat(eff), "Positive ÷ Cases × 100", activeChaserName, getTodayTab())}
         </div>
       </div>
     </div>
@@ -3366,6 +3405,51 @@ let formulaSettings = {
   goalProd:  70,
   goalEff:   60,
 };
+// Per-chaser and/or dated overrides for goalProd / goalEff.
+// Each entry: { Chaser: "__formula__" | "__formula__:Name", ShiftType: "goalProd"|"goalEff",
+//               EffectiveDate: "M/D/YYYY", Notes: "<value>" }
+let formulaOverrides = [];
+
+// Resolve the applicable target for a metric ("goalProd" or "goalEff"), optionally
+// scoped to a chaser and/or a date. Falls back through:
+//   1. Most recent per-chaser override effective on/before dateTab
+//   2. Most recent "All chasers" override effective on/before dateTab
+//   3. Global base value in formulaSettings
+function getGoalTarget(metricKey, chaserName, dateTab) {
+  if (!formulaOverrides.length) return formulaSettings[metricKey];
+
+  const targetDate = dateTab ? parseArchiveDate(
+    String(dateTab).split("/").length >= 3 ? dateTab : dateTab + "/" + new Date().getFullYear()
+  ) : new Date();
+
+  const candidates = formulaOverrides
+    .filter(o => o.ShiftType === metricKey)
+    .map(o => ({ ...o, _date: parseArchiveDate(o.EffectiveDate) }))
+    .filter(o => !targetDate || !o._date || o._date <= targetDate);
+
+  // 1. Per-chaser, most recent
+  if (chaserName) {
+    const perChaser = candidates
+      .filter(o => o.Chaser === "__formula__:" + chaserName)
+      .sort((a,b) => (b._date||0) - (a._date||0));
+    if (perChaser.length) {
+      const v = parseFloat(perChaser[0].Notes);
+      if (!isNaN(v)) return v;
+    }
+  }
+
+  // 2. "All chasers" dated override, most recent
+  const allScoped = candidates
+    .filter(o => o.Chaser === "__formula__")
+    .sort((a,b) => (b._date||0) - (a._date||0));
+  if (allScoped.length) {
+    const v = parseFloat(allScoped[0].Notes);
+    if (!isNaN(v)) return v;
+  }
+
+  // 3. Base global value
+  return formulaSettings[metricKey];
+}
 
 function initControlsTab() {
   // Sync sliders to current values
@@ -3379,7 +3463,7 @@ function initControlsTab() {
   goals.productivity = s.goalProd;
   goals.efficiency   = s.goalEff;
 
-  // Populate chaser dropdown
+  // Populate chaser dropdown (shift history)
   const sel = document.getElementById("ctrlShiftChaser");
   if (sel && !sel.children.length) {
     getAllChasers().forEach(n => {
@@ -3389,12 +3473,28 @@ function initControlsTab() {
     });
   }
 
+  // Populate chaser dropdown for goal targets (All Chasers option already present)
+  const goalSel = document.getElementById("ctrlGoalChaser");
+  if (goalSel && goalSel.children.length <= 1) {
+    getAllChasers().forEach(n => {
+      const opt = document.createElement("option");
+      opt.value = n; opt.textContent = n;
+      goalSel.appendChild(opt);
+    });
+  }
+
   // Set default date to today
   const dateEl = document.getElementById("ctrlShiftDate");
   if (dateEl && !dateEl.value) dateEl.value = new Date().toISOString().slice(0,10);
 
+  const goalDateEl = document.getElementById("ctrlGoalDate");
+  if (goalDateEl && !goalDateEl.value) goalDateEl.value = new Date().toISOString().slice(0,10);
+
   // Render shift history table
   renderShiftHistoryTable();
+
+  // Render goal override table
+  renderGoalOverridesTable();
 
   // Render Utlatel summary from archive
   renderUtlatelSummary();
@@ -3407,30 +3507,83 @@ function setSlider(sliderId, valId, val, suffix) {
   if (vel) vel.textContent = val + suffix;
 }
 
-async function saveFormulaSetting(key, value) {
-  formulaSettings[key] = Number(value);
+// When the user changes the "Applies To" chaser or "Effective From" date in the
+// Controls tab, refresh the sliders to show whatever target is currently
+// applicable for that scope — so editing an existing override is easy.
+function syncGoalSlidersToScope() {
+  const chaserSel = document.getElementById("ctrlGoalChaser");
+  const dateSel    = document.getElementById("ctrlGoalDate");
+  const chaserName = chaserSel ? chaserSel.value : "";
+  const dateVal     = dateSel && dateSel.value ? dateSel.value : new Date().toISOString().slice(0,10);
+  const parts       = dateVal.split("-");
+  const dateTab     = parseInt(parts[1]) + "/" + parseInt(parts[2]) + "/" + parts[0];
 
-  // Apply immediately
-  if (key === "shiftMins" || key === "acwMult") {
-    // Sync the overview controls panel sliders too
-    const overviewId  = key === "shiftMins" ? "shiftMins" : "acwMult";
-    const overviewVal = key === "shiftMins" ? "shiftMinsVal" : "acwMultVal";
-    const oel = document.getElementById(overviewId);
-    const vel = document.getElementById(overviewVal);
-    if (oel) oel.value       = value;
-    if (vel) vel.textContent  = value;
+  const prodTarget = getGoalTarget("goalProd", chaserName, dateTab);
+  const effTarget  = getGoalTarget("goalEff",  chaserName, dateTab);
+
+  setSlider("ctrlGoalProd", "ctrlGoalProdVal", prodTarget, "%");
+  setSlider("ctrlGoalEff",  "ctrlGoalEffVal",  effTarget,  "%");
+}
+
+async function saveFormulaSetting(key, value) {
+  const isGoalMetric = (key === "goalProd" || key === "goalEff");
+
+  // For shiftMins / acwMult, behave exactly as before — global, immediate, today-dated
+  if (!isGoalMetric) {
+    formulaSettings[key] = Number(value);
+    if (key === "shiftMins" || key === "acwMult") {
+      const overviewId  = key === "shiftMins" ? "shiftMins" : "acwMult";
+      const overviewVal = key === "shiftMins" ? "shiftMinsVal" : "acwMultVal";
+      const oel = document.getElementById(overviewId);
+      const vel = document.getElementById(overviewVal);
+      if (oel) oel.value       = value;
+      if (vel) vel.textContent  = value;
+    }
+    recalc();
+    try {
+      const url = `${API_BASE}?mode=savesetting&chaser=__formula__&shiftType=${key}&effectiveDate=${getTodayTab()}&notes=${encodeURIComponent(String(value))}`;
+      const res  = await fetch(url, { method:"GET", redirect:"follow" });
+      const data = await res.json();
+      if (data.success) showToast("Saved: " + key + " = " + value);
+    } catch(err) {
+      showToast("Saved locally only — archive save failed", "error");
+    }
+    return;
   }
-  if (key === "goalProd") goals.productivity = Number(value);
-  if (key === "goalEff")  goals.efficiency   = Number(value);
+
+  // Productivity / Efficiency targets — support per-chaser and dated scope
+  const chaserSel = document.getElementById("ctrlGoalChaser");
+  const dateSel    = document.getElementById("ctrlGoalDate");
+  const chaserName = chaserSel ? chaserSel.value : "";          // "" = All chasers
+  const dateRaw     = dateSel && dateSel.value ? dateSel.value : new Date().toISOString().slice(0,10);
+  const parts       = dateRaw.split("-");
+  const effDate     = parseInt(parts[1]) + "/" + parseInt(parts[2]) + "/" + parts[0];
+
+  const chaserKey = chaserName ? ("__formula__:" + chaserName) : "__formula__";
+  const scopeLabel = chaserName ? chaserName : "All Chasers";
+
+  // Update session state immediately so the UI reflects it without a reload
+  formulaOverrides = formulaOverrides.filter(o =>
+    !(o.Chaser === chaserKey && o.ShiftType === key && o.EffectiveDate === effDate)
+  );
+  formulaOverrides.push({ Chaser: chaserKey, ShiftType: key, EffectiveDate: effDate, Notes: String(value) });
+
+  // If this is a global, today-dated override, also keep formulaSettings/goals in sync
+  // so unscoped UI (Overview drawer) still shows a sensible default.
+  if (!chaserName) {
+    if (key === "goalProd") { formulaSettings.goalProd = Number(value); goals.productivity = Number(value); }
+    if (key === "goalEff")  { formulaSettings.goalEff  = Number(value); goals.efficiency   = Number(value); }
+  }
 
   recalc();
+  renderGoalOverridesTable();
 
   // Persist to Settings tab
   try {
-    const url = `${API_BASE}?mode=savesetting&chaser=__formula__&shiftType=${key}&effectiveDate=${getTodayTab()}&notes=${encodeURIComponent(String(value))}`;
+    const url = `${API_BASE}?mode=savesetting&chaser=${encodeURIComponent(chaserKey)}&shiftType=${key}&effectiveDate=${encodeURIComponent(effDate)}&notes=${encodeURIComponent(String(value))}`;
     const res  = await fetch(url, { method:"GET", redirect:"follow" });
     const data = await res.json();
-    if (data.success) showToast("Saved: " + key + " = " + value);
+    if (data.success) showToast(`Saved ${key === "goalProd" ? "Productivity" : "Efficiency"} target: ${value}% for ${scopeLabel} from ${effDate}`);
   } catch(err) {
     showToast("Saved locally only — archive save failed", "error");
   }
@@ -3438,21 +3591,22 @@ async function saveFormulaSetting(key, value) {
 
 function addShiftEntry() {
   const chaser    = document.getElementById("ctrlShiftChaser").value;
-  const shiftType = document.getElementById("ctrlShiftType").value;
+  const shiftMins = Number(document.getElementById("ctrlShiftType").value);
   const dateRaw   = document.getElementById("ctrlShiftDate").value;
   const notes     = document.getElementById("ctrlShiftNotes").value.trim();
 
   if (!chaser || !dateRaw) { alert("Select a chaser and date."); return; }
+  if (isNaN(shiftMins) || shiftMins < 0) { alert("Enter a valid number of shift minutes (0 or more)."); return; }
 
   const parts   = dateRaw.split("-");
   const effDate = parseInt(parts[1]) + "/" + parseInt(parts[2]) + "/" + parts[0];
 
   // Update local shift map and history
-  shiftMap[chaser] = shiftType;
-  shiftHistory.push({ Chaser:chaser, ShiftType:shiftType, EffectiveDate:effDate, Notes:notes });
+  shiftMap[chaser] = shiftMins;
+  shiftHistory.push({ Chaser:chaser, ShiftType:String(shiftMins), EffectiveDate:effDate, Notes:notes });
 
   // Persist
-  saveShift(chaser, shiftType, effDate, notes);
+  saveShift(chaser, shiftMins, effDate, notes);
 
   // Clear notes, re-render table
   document.getElementById("ctrlShiftNotes").value = "";
@@ -3476,12 +3630,19 @@ function renderShiftHistoryTable() {
     return (db||0) - (da||0);
   });
 
-  const colorMap = { full:"var(--green)", half:"var(--amber)", quarter:"var(--text-3)", off:"var(--red)" };
+  // Color-code by minute thresholds instead of full/half/quarter/off categories
+  const shiftColor = mins => {
+    const m = Number(mins);
+    if (isNaN(m) || m <= 0)   return "var(--red)";
+    if (m >= 350)             return "var(--green)";
+    if (m >= 150)             return "var(--amber)";
+    return "var(--text-3)";
+  };
 
   tbody.innerHTML = sorted.map((s,i) => `
     <tr>
       <td><span class="chaser-name" style="color:${CHASER_COLORS[s.Chaser]||"var(--text)"}">${s.Chaser}</span></td>
-      <td><span class="pill" style="background:${colorMap[s.ShiftType?.toLowerCase()]||"var(--card)"}20;color:${colorMap[s.ShiftType?.toLowerCase()]||"var(--text-2)"}">${s.ShiftType}</span></td>
+      <td><span class="pill" style="background:${shiftColor(s.ShiftType)}20;color:${shiftColor(s.ShiftType)}">${s.ShiftType} min</span></td>
       <td style="color:var(--text-2)">${s.EffectiveDate}</td>
       <td style="color:var(--text-3);font-size:12px">${s.Notes||""}</td>
       <td><button onclick="deleteShiftEntry('${s.Chaser}','${s.ShiftType}','${s.EffectiveDate}')" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:13px" title="Delete">&#10005;</button></td>
@@ -3496,6 +3657,47 @@ async function deleteShiftEntry(chaser, shiftType, effectiveDate) {
   if (origIdx >= 0) shiftHistory.splice(origIdx, 1);
   renderShiftHistoryTable();
   showToast("Entry removed from session — reload to re-apply from archive");
+  recalc();
+}
+
+// Render the table of active Productivity/Efficiency target overrides
+function renderGoalOverridesTable() {
+  const tbody = document.getElementById("goalOverridesBody");
+  if (!tbody) return;
+
+  if (!formulaOverrides.length) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:var(--text-3);text-align:center;padding:16px">
+      No overrides yet — using the base target above for everyone.</td></tr>`;
+    return;
+  }
+
+  const metricLabel = key => key === "goalProd" ? "Productivity" : key === "goalEff" ? "Efficiency" : key;
+
+  const sorted = [...formulaOverrides].sort((a,b) => {
+    const da = parseArchiveDate(a.EffectiveDate), db = parseArchiveDate(b.EffectiveDate);
+    return (db||0) - (da||0);
+  });
+
+  tbody.innerHTML = sorted.map(o => {
+    const scopeName = o.Chaser === "__formula__" ? "All Chasers" : o.Chaser.replace("__formula__:", "");
+    const color = scopeName === "All Chasers" ? "var(--text)" : (CHASER_COLORS[scopeName] || "var(--text)");
+    return `<tr>
+      <td><span class="chaser-name" style="color:${color}">${scopeName}</span></td>
+      <td style="color:var(--text-2)">${metricLabel(o.ShiftType)}</td>
+      <td><span class="pill pill-teal">${o.Notes}%</span></td>
+      <td style="color:var(--text-2)">${o.EffectiveDate}</td>
+      <td><button onclick="deleteGoalOverride('${o.Chaser}','${o.ShiftType}','${o.EffectiveDate}')" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:13px" title="Delete">&#10005;</button></td>
+    </tr>`;
+  }).join("");
+}
+
+async function deleteGoalOverride(chaser, shiftType, effectiveDate) {
+  const origIdx = formulaOverrides.findIndex(o =>
+    o.Chaser===chaser && o.ShiftType===shiftType && o.EffectiveDate===effectiveDate
+  );
+  if (origIdx >= 0) formulaOverrides.splice(origIdx, 1);
+  renderGoalOverridesTable();
+  showToast("Override removed from session — reload to re-apply from archive");
   recalc();
 }
 
