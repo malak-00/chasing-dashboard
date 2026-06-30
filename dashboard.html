@@ -73,7 +73,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .lb-table th.sort-asc::after {
   content: " \2191";
   color: var(--teal);
-}.lb-table th.sort-desc::after{content:" \u2193";color:var(--teal)}
+}.lb-table th.sort-asc::after {
+  content: " \2193";
+  color: var(--teal);
+}
 .lb-table td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px}
 .lb-table tr:last-child td{border-bottom:none}
 .lb-table tr:hover td{background:var(--card-hover)}
