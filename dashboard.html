@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chasing Dashboard — DME Desk</title>
+<title>Chasing Dashboard </title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -367,6 +367,18 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
       <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px" onclick="refreshCampaigns()">&#8635; Refresh</button>
     </div>
 
+    <!-- Month / Quarter controls bar -->
+    <div class="lb-range-bar" style="margin-bottom:18px">
+      <label>Month</label>
+      <input type="month" class="date-input" id="campMonthPicker">
+      <button class="btn" style="padding:5px 12px;font-size:11px" onclick="loadCampaignMonth()">Load Month</button>
+      <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+      <label>Quarter</label>
+      <select class="ctrl-select" id="campQuarterSelect" style="width:90px"></select>
+      <select class="ctrl-select" id="campQuarterYear" style="width:90px"></select>
+      <button class="btn" style="padding:5px 12px;font-size:11px" onclick="loadCampaignQuarter()">Load Quarter</button>
+    </div>
+
     <div class="panels">
       <div class="panel">
         <div class="panel-header">
@@ -383,6 +395,28 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
         <div class="panel-body" id="campaignWeekPanel"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
       </div>
     </div>
+
+    <div class="panels">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Campaigns - Month</span>
+          <span class="panel-date" id="campMonthLabel">-</span>
+        </div>
+        <div class="panel-body" id="campaignMonthPanel">
+          <div class="state-block" style="color:var(--text-3)">Pick a month above and click Load Month</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Campaigns - Quarter</span>
+          <span class="panel-date" id="campQuarterLabel">-</span>
+        </div>
+        <div class="panel-body" id="campaignQuarterPanel">
+          <div class="state-block" style="color:var(--text-3)">Pick a quarter above and click Load Quarter</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Campaign Trend -->
     <div class="camp-trend-wrap" style="margin-top:4px">
       <div class="chart-title">Campaign Approval Rate Trend (Weekly)</div>
@@ -898,12 +932,42 @@ window.addEventListener("DOMContentLoaded", () => {
   updateSyncLabel();
   document.getElementById("campDayPicker").value  = today;
   document.getElementById("campWeekPicker").value = today;
+  document.getElementById("campMonthPicker").value = today.slice(0,7); // "YYYY-MM"
+  initCampaignQuarterSelectors();
   CHASERS.forEach(n => { shiftMap[n]=DEFAULT_SHIFT_MINS; agentMap[n]=n; });
   buildShiftGrid();
   buildSortBtns();
   populateCustomFieldSelects();
   loadData();
 });
+
+// Populate the Quarter and Year dropdowns in the Campaigns tab, defaulting
+// to the current quarter/year.
+function initCampaignQuarterSelectors() {
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curQ    = Math.floor(now.getMonth()/3) + 1;
+
+  const qSel = document.getElementById("campQuarterSelect");
+  if (qSel && !qSel.children.length) {
+    [1,2,3,4].forEach(q => {
+      const opt = document.createElement("option");
+      opt.value = q; opt.textContent = "Q" + q;
+      if (q === curQ) opt.selected = true;
+      qSel.appendChild(opt);
+    });
+  }
+
+  const ySel = document.getElementById("campQuarterYear");
+  if (ySel && !ySel.children.length) {
+    for (let y = curYear - 2; y <= curYear + 1; y++) {
+      const opt = document.createElement("option");
+      opt.value = y; opt.textContent = y;
+      if (y === curYear) opt.selected = true;
+      ySel.appendChild(opt);
+    }
+  }
+}
 
 // ── TABS ──────────────────────────────────────────────────────
 const TABS = ["overview","campaigns","leaderboard","custom","history","charts","chasers","compare","controls"];
@@ -1374,19 +1438,82 @@ async function loadCampaignWeek() {
   }
 }
 
+// Load campaign totals for a full calendar month. Uses the Campaign Responses
+// tab (campaignLeads) directly via buildCampaignFromLeadsDateRange — no archive
+// rows needed, since campaign totals don't depend on chaser productivity data.
+async function loadCampaignMonth() {
+  const val = document.getElementById("campMonthPicker").value; // "YYYY-MM"
+  if (!val) return;
+  const [y, m] = val.split("-").map(Number);
+  const fromDate = new Date(y, m-1, 1, 0, 0, 0);
+  const toDate   = new Date(y, m, 0, 23, 59, 59); // last day of month
+
+  const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  document.getElementById("campMonthLabel").textContent = `${monthNames[m-1]} ${y}`;
+  setEl("campaignMonthPanel", spinner());
+
+  try {
+    if (!campaignLeads) {
+      try {
+        const cr = await fetchAPI("campaignresponses", "");
+        if (cr && cr.rows) campaignLeads = cr.rows;
+      } catch(e) { /* will render zeros below if still unavailable */ }
+    }
+    const camps = buildCampaignFromLeadsDateRange(fromDate, toDate);
+    setEl("campaignMonthPanel", campaignHTML(camps, "camps"));
+  } catch(err) {
+    setEl("campaignMonthPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
+  }
+}
+
+// Load campaign totals for a full calendar quarter (Q1–Q4 of the selected year).
+async function loadCampaignQuarter() {
+  const q = Number(document.getElementById("campQuarterSelect").value);
+  const y = Number(document.getElementById("campQuarterYear").value);
+  if (!q || !y) return;
+
+  const startMonth = (q-1)*3; // 0-indexed: Q1=0, Q2=3, Q3=6, Q4=9
+  const fromDate = new Date(y, startMonth, 1, 0, 0, 0);
+  const toDate   = new Date(y, startMonth+3, 0, 23, 59, 59); // last day of quarter's 3rd month
+
+  document.getElementById("campQuarterLabel").textContent = `Q${q} ${y}`;
+  setEl("campaignQuarterPanel", spinner());
+
+  try {
+    if (!campaignLeads) {
+      try {
+        const cr = await fetchAPI("campaignresponses", "");
+        if (cr && cr.rows) campaignLeads = cr.rows;
+      } catch(e) { /* will render zeros below if still unavailable */ }
+    }
+    const camps = buildCampaignFromLeadsDateRange(fromDate, toDate);
+    setEl("campaignQuarterPanel", campaignHTML(camps, "camps"));
+  } catch(err) {
+    setEl("campaignQuarterPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
+  }
+}
+
 async function refreshCampaigns() {
   // Always re-fetch campaign responses on manual refresh so numbers stay current
   try {
     const cr = await fetchAPI("campaignresponses", "");
     if (cr && cr.rows) campaignLeads = cr.rows;
   } catch(e) { /* continue with stale or null */ }
-  await Promise.all([loadCampaignDay(), loadCampaignWeek()]);
+  const tasks = [loadCampaignDay(), loadCampaignWeek()];
+  // Only re-load Month/Quarter if the user has already picked something for them
+  if (document.getElementById("campMonthPicker").value)   tasks.push(loadCampaignMonth());
+  if (document.getElementById("campQuarterSelect").value) tasks.push(loadCampaignQuarter());
+  await Promise.all(tasks);
 }
 
 function campaignHTML(data,mode) {
-  const camps = mode==="day"
-    ? (data.responses?.byCampaign||mockCampaignData())
-    : aggWeekCampaigns(data.weekDays||[]);
+  // mode "day"/"week" read from a day/week-shaped data object as before.
+  // mode "camps" means data IS the camps object already (used by month/quarter views).
+  const camps = mode==="camps"
+    ? data
+    : mode==="day"
+      ? (data.responses?.byCampaign||mockCampaignData())
+      : aggWeekCampaigns(data.weekDays||[]);
   const totApp=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.approved||0),0);
   const totDen=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.denied||0),0);
   return `<div class="campaign-grid">${CAMPAIGNS.map(camp=>{
