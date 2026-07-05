@@ -4,6 +4,13 @@
 // Deploy as: Execute as ME, Anyone can access
 // ============================================================
 
+// Historical hardcoded roster -- kept only as a one-time seed for the
+// "Chasers" tab the first time it's created (see getOrCreateChasersTab
+// below), so existing chasers keep working the moment this deploys. From
+// then on the "Chasers" tab is the source of truth: add a new chaser or
+// repoint an existing one's tracker Sheet ID from the dashboard's
+// Settings tab, no code change or redeploy needed. Do not add new
+// chasers here -- add them from the dashboard instead.
 const CHASER_SHEETS = {
   Alex:  "1hAEVtrDXllL91lRss6O5nnaOrklaeHhaI73EkEzYnmc",
   Hope:  "1s6wgiSQkWq6D5cx_fk8oDEvG__xiQ6eQ-UcoVout9K0",
@@ -11,6 +18,95 @@ const CHASER_SHEETS = {
   Frank: "1XHX1FJ_1S6IxHjDec3OeV2wiyViRd87XfeOChLrTtl0",
   Nova:  "1O2mQvVYpy6Se2kKmubSa9WA9_scQpItzo6m0E6gmimU"
 };
+
+// ============================================================
+// CHASER ROSTER -- persisted, editable from the dashboard
+// ============================================================
+const CHASERS_TAB_HEADERS = ["Name", "SheetId", "Active"];
+
+function getOrCreateChasersTab() {
+  const ss    = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
+  let   sheet = ss.getSheetByName("Chasers");
+  if (!sheet) {
+    sheet = ss.insertSheet("Chasers");
+    sheet.appendRow(CHASERS_TAB_HEADERS);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, CHASERS_TAB_HEADERS.length).setFontWeight("bold");
+    // Seed from the legacy hardcoded roster so existing chasers are
+    // unaffected the first time this tab is created.
+    Object.entries(CHASER_SHEETS).forEach(([name, sheetId]) => {
+      sheet.appendRow([name, sheetId, true]);
+    });
+    Logger.log("Created Chasers tab, seeded " + Object.keys(CHASER_SHEETS).length + " chasers from CHASER_SHEETS");
+  }
+  return sheet;
+}
+
+// Full roster (including inactive) for the dashboard's Settings UI.
+// [{ name, sheetId, active }, ...]
+function getChasersConfig() {
+  const cached = CacheService.getScriptCache().get("chasers_config");
+  if (cached) return JSON.parse(cached);
+
+  const sheet = getOrCreateChasersTab();
+  const data  = sheet.getDataRange().getValues();
+  const roster = [];
+  for (let r = 1; r < data.length; r++) {
+    const name = String(data[r][0] || "").trim();
+    if (!name) continue;
+    roster.push({
+      name,
+      sheetId: String(data[r][1] || "").trim(),
+      active:  data[r][2] === true || String(data[r][2]).trim().toUpperCase() === "TRUE",
+    });
+  }
+  CacheService.getScriptCache().put("chasers_config", JSON.stringify(roster), 300);
+  return roster;
+}
+
+// { name: sheetId } for active chasers only -- every day/week read uses
+// this in place of the old hardcoded CHASER_SHEETS.
+function getActiveChaserSheetMap() {
+  const map = {};
+  getChasersConfig().forEach(c => { if (c.active) map[c.name] = c.sheetId; });
+  return map;
+}
+
+// Add a new chaser or update an existing one's Sheet ID / Active flag.
+// Matched by exact Name (renaming an existing chaser isn't supported here --
+// historical archive rows are keyed by name, so add a new one instead).
+// Validates the Sheet ID actually opens before saving so a typo fails loudly
+// here instead of silently producing zero data on every future sync.
+function saveChaser(params) {
+  const name    = String(params.name || "").trim();
+  const sheetId = String(params.sheetId || "").trim();
+  const active  = String(params.active) !== "false"; // default true unless explicitly "false"
+
+  if (!name)    return { success: false, error: "Chaser name is required." };
+  if (!sheetId) return { success: false, error: "Tracker Sheet ID is required." };
+
+  try {
+    SpreadsheetApp.openById(sheetId);
+  } catch (e) {
+    return { success: false, error: "Could not open that Sheet ID -- check it's correct and shared with this script: " + e.message };
+  }
+
+  const sheet = getOrCreateChasersTab();
+  const data  = sheet.getDataRange().getValues();
+  let rowNum = -1;
+  for (let r = 1; r < data.length; r++) {
+    if (String(data[r][0]).trim() === name) { rowNum = r + 1; break; }
+  }
+
+  if (rowNum > 0) {
+    sheet.getRange(rowNum, 1, 1, 3).setValues([[name, sheetId, active]]);
+  } else {
+    sheet.appendRow([name, sheetId, active]);
+  }
+
+  CacheService.getScriptCache().remove("chasers_config");
+  return { success: true, name, sheetId, active };
+}
 
 // ============================================================
 // RESPONSE SOURCES
@@ -38,6 +134,23 @@ const RESPONSE_SOURCES = [
     ]
   }
 ];
+
+// Single source of truth for the campaign roster -- add a 5th campaign
+// here and it's picked up everywhere a per-campaign totals object is
+// built (see zeroCampaignTotals below), instead of updating a dozen
+// hand-copied literals scattered through this file.
+const CAMPAIGN_LABELS = { ort: "ORT", cgm: "CGM", lymphc: "LymphC", lymphw: "LymphW" };
+
+// Returns a FRESH { ort:{approved,denied[,total]}, cgm:..., ... } object --
+// fresh on every call since callers mutate these in place (c.total++ etc.),
+// so a single shared instance would leak counts across dates/chasers.
+function zeroCampaignTotals(withTotal) {
+  const obj = {};
+  Object.keys(CAMPAIGN_LABELS).forEach(key => {
+    obj[key] = withTotal ? { approved: 0, denied: 0, total: 0 } : { approved: 0, denied: 0 };
+  });
+  return obj;
+}
 
 // ============================================================
 // APPROVAL / DENIAL MATCHERS
@@ -212,12 +325,7 @@ function archiveDayData(dateTab) {
 
     // Per-chaser per-campaign breakdown — daily counts from readChaserCampaignCountsForDate
     // Each number = how many leads this chaser was listed on for that campaign today
-    const cc = chaserCamps[c.name] || {
-      ort:    { approved:0, denied:0 },
-      cgm:    { approved:0, denied:0 },
-      lymphc: { approved:0, denied:0 },
-      lymphw: { approved:0, denied:0 },
-    };
+    const cc = chaserCamps[c.name] || zeroCampaignTotals();
 
     sheet.appendRow([
       dateTab, c.name, c.totalCases, c.totalPositive,
@@ -657,6 +765,15 @@ function doGet(e) {
     } else if (mode === "campaignresponses") {
       payload = getCachedOrFetch("campaign_responses", getArchiveCampaignResponses, 300);
 
+    } else if (mode === "chasers") {
+      // Full roster (including inactive) for the dashboard's Settings tab.
+      payload = { chasers: getChasersConfig() };
+
+    } else if (mode === "savechaser") {
+      // Add a new chaser or update an existing one's Sheet ID / Active flag.
+      // Params: name, sheetId, active ("true"/"false")
+      payload = saveChaser(params);
+
     } else if (mode === "leadconflicts") {
       // Returns all PENDING conflicts from Lead History Conflicts tab for
       // dashboard review. Defined in LeadHistory.gs.
@@ -762,7 +879,7 @@ function getDayData(dateTab) {
   const chasers    = [];
   const teamTotals = { totalCases: 0, totalPositive: 0, totalTimeMins: 0, totalFaxes: 0 };
 
-  for (const [name, sheetId] of Object.entries(CHASER_SHEETS)) {
+  for (const [name, sheetId] of Object.entries(getActiveChaserSheetMap())) {
     const data = readChaserTab(sheetId, dateTab, name);
     chasers.push(data);
     teamTotals.totalCases    += data.totalCases;
@@ -789,7 +906,7 @@ function getWeekData(dateTab) {
   };
 
   const chaserWeekMap = {};
-  for (const name of Object.keys(CHASER_SHEETS)) {
+  for (const name of Object.keys(getActiveChaserSheetMap())) {
     chaserWeekMap[name] = { name, totalCases: 0, totalPositive: 0, totalTimeMins: 0, totalFaxes: 0 };
   }
 
@@ -925,12 +1042,7 @@ function readResponsesForDate(dateTab) {
     approved: 0,
     denied: 0,
     byChaser: {},
-    byCampaign: {
-      ort:    { approved: 0, denied: 0, total: 0 },
-      cgm:    { approved: 0, denied: 0, total: 0 },
-      lymphc: { approved: 0, denied: 0, total: 0 },
-      lymphw: { approved: 0, denied: 0, total: 0 },
-    }
+    byCampaign: zeroCampaignTotals(true)
   };
 
   for (const source of RESPONSE_SOURCES) {
@@ -1006,12 +1118,7 @@ function parseResponseTab(ss, tabConfig, dateTab, result) {
         result.byChaser[chaser] = {
           approvals: 0, denials: 0,
           // per-campaign breakdown per chaser
-          campaigns: {
-            ort:    { approved: 0, denied: 0 },
-            cgm:    { approved: 0, denied: 0 },
-            lymphc: { approved: 0, denied: 0 },
-            lymphw: { approved: 0, denied: 0 },
-          }
+          campaigns: zeroCampaignTotals()
         };
       }
       if (approval) { result.byChaser[chaser].approvals++; result.approved++; }
@@ -1168,10 +1275,7 @@ function backfillDateRange_DEPRECATED() {
       responses = readResponsesForDate(dateTab);
     } catch(err) {
       Logger.log("Could not read responses for " + dateTab + ": " + err.message);
-      responses = { approved:0, denied:0, byChaser:{}, byCampaign:{
-        ort:{approved:0,denied:0,total:0}, cgm:{approved:0,denied:0,total:0},
-        lymphc:{approved:0,denied:0,total:0}, lymphw:{approved:0,denied:0,total:0}
-      }};
+      responses = { approved:0, denied:0, byChaser:{}, byCampaign: zeroCampaignTotals(true) };
     }
 
     const bc = responses.byChaser  || {};
@@ -1692,12 +1796,7 @@ function backfillCampaignColumns() {
 
         // Archive stores normalized short names; chaserCamps also uses normalized names
         const normalized = normalizeChaserName(chaserVal);
-        const cc = chaserCamps[normalized] || chaserCamps[chaserVal] || {
-          ort:    { approved:0, denied:0 },
-          cgm:    { approved:0, denied:0 },
-          lymphc: { approved:0, denied:0 },
-          lymphw: { approved:0, denied:0 },
-        };
+        const cc = chaserCamps[normalized] || chaserCamps[chaserVal] || zeroCampaignTotals();
 
         // Write all 8 campaign columns in one batch (faster than 8 individual setValue calls)
         sheet.getRange(r+1, COL.ort_approved+1, 1, 8).setValues([[
@@ -1785,12 +1884,7 @@ function getOrCreateCampaignResponsesTab() {
 // Returns aggregated counts per campaign: { ort:{approved,denied}, cgm:..., ... }
 // Each lead row counts once regardless of how many chasers are listed.
 function readCampaignTotalsForDate(dateTab) {
-  const camps = {
-    ort:    { approved: 0, denied: 0 },
-    cgm:    { approved: 0, denied: 0 },
-    lymphc: { approved: 0, denied: 0 },
-    lymphw: { approved: 0, denied: 0 },
-  };
+  const camps = zeroCampaignTotals();
 
   for (const source of RESPONSE_SOURCES) {
     let ss;
@@ -1867,12 +1961,7 @@ function readChaserCampaignCountsForDate(dateTab) {
         const chasers = chaserText.split("/").map(x => normalizeChaserName(x.trim())).filter(Boolean);
         for (const name of chasers) {
           if (!byChaser[name]) {
-            byChaser[name] = {
-              ort:    { approved:0, denied:0 },
-              cgm:    { approved:0, denied:0 },
-              lymphc: { approved:0, denied:0 },
-              lymphw: { approved:0, denied:0 },
-            };
+            byChaser[name] = zeroCampaignTotals();
           }
           if (approval) byChaser[name][campKey].approved++;
           if (denial)   byChaser[name][campKey].denied++;
@@ -1908,13 +1997,6 @@ function archiveCampaignResponses(dateTab) {
 
   // Read fresh totals from response sheets
   const camps = readCampaignTotalsForDate(dateTab);
-
-  const CAMPAIGN_LABELS = {
-    ort:    "ORT",
-    cgm:    "CGM",
-    lymphc: "LymphC",
-    lymphw: "LymphW",
-  };
 
   let written = 0;
   for (const [key, label] of Object.entries(CAMPAIGN_LABELS)) {
@@ -2080,12 +2162,7 @@ function collectDatesFromCombinedSheet() {
 // Read campaign totals (one count per lead row, chasers irrelevant) for ONE date
 // from the combined historical sheet.
 function readCombinedCampaignTotalsForDate(dateTab) {
-  const camps = {
-    ort:    { approved: 0, denied: 0 },
-    cgm:    { approved: 0, denied: 0 },
-    lymphc: { approved: 0, denied: 0 },
-    lymphw: { approved: 0, denied: 0 },
-  };
+  const camps = zeroCampaignTotals();
 
   let ss;
   try { ss = SpreadsheetApp.openById(COMBINED_HISTORICAL_SOURCE.id); }
@@ -2157,12 +2234,7 @@ function readCombinedChaserCampaignCountsForDate(dateTab) {
       const chasers = chaserText.split("/").map(x => normalizeChaserName(x.trim())).filter(Boolean);
       for (const name of chasers) {
         if (!byChaser[name]) {
-          byChaser[name] = {
-            ort:    { approved:0, denied:0 },
-            cgm:    { approved:0, denied:0 },
-            lymphc: { approved:0, denied:0 },
-            lymphw: { approved:0, denied:0 },
-          };
+          byChaser[name] = zeroCampaignTotals();
         }
         if (approval) byChaser[name][campKey].approved++;
         if (denial)   byChaser[name][campKey].denied++;
@@ -2194,8 +2266,6 @@ function writeCombinedCampaignResponses(dateTab) {
   toDelete.reverse().forEach(rowNum => sheet.deleteRow(rowNum));
 
   const camps = readCombinedCampaignTotalsForDate(dateTab);
-
-  const CAMPAIGN_LABELS = { ort: "ORT", cgm: "CGM", lymphc: "LymphC", lymphw: "LymphW" };
 
   let written = 0;
   for (const [key, label] of Object.entries(CAMPAIGN_LABELS)) {
@@ -2251,12 +2321,7 @@ function writeCombinedChaserCampaignColumns(dateTab) {
     if (rowDateStr !== dateTab) continue;
 
     const normalized = normalizeChaserName(chaserVal);
-    const cc = chaserCamps[normalized] || chaserCamps[chaserVal] || {
-      ort:    { approved:0, denied:0 },
-      cgm:    { approved:0, denied:0 },
-      lymphc: { approved:0, denied:0 },
-      lymphw: { approved:0, denied:0 },
-    };
+    const cc = chaserCamps[normalized] || chaserCamps[chaserVal] || zeroCampaignTotals();
 
     sheet.getRange(r+1, COL.ORT_Approved+1, 1, 8).setValues([[
       cc.ort.approved,    cc.ort.denied,
