@@ -1247,9 +1247,15 @@ async function refreshDay() { await loadData(); }
 // panel showing a clear error instead of "Loading..." forever with no
 // recourse but a page reload.
 const FETCH_TIMEOUT_MS = 20000;
-async function fetchWithTimeout(url) {
+// "Sync" deletes + rewrites archive rows for a day, then re-reads 5 chaser
+// sheets plus 3 response-source spreadsheets (some tabs have 1000+ rows) --
+// genuinely slower than every other request in this app, not just a cold
+// start. Giving it the same 20s budget as a plain read aborts perfectly
+// healthy syncs that just need more time.
+const SYNC_TIMEOUT_MS = 90000;
+async function fetchWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs || FETCH_TIMEOUT_MS);
   try {
     return await fetch(url, { method:"GET", redirect:"follow", signal: controller.signal });
   } catch (err) {
