@@ -762,23 +762,41 @@ function getLeadSnapshotForDate(dateStr) {
 // Responses" archive pattern (fetch the whole table once, cache it, filter
 // by date range client-side) instead of one backend call per day, which
 // would be prohibitively slow for a period spanning a month/quarter/year.
+// ByChaser breaks each day's New Leads / Concluded down per chaser (a
+// lifecycle's Chasers field can list several names -- each one gets +1,
+// same crediting rule as every other per-chaser count in this codebase)
+// so the dashboard's Compare tab can show a genuinely deduplicated
+// per-chaser Leads metric instead of reusing the raw per-chaser Cases
+// archive column under a new label.
 function getLeadActivityByDay() {
   const sheet = getOrCreateLeadHistoryTab();
   const data  = sheet.getDataRange().getValues();
-  const byDate = new Map(); // "M/D/YYYY" -> { newLeads, concluded }
+  const byDate = new Map(); // "M/D/YYYY" -> { newLeads, concluded, byChaser: {name: {newLeads,concluded}} }
 
   for (let r = 1; r < data.length; r++) {
     const fromStatus     = data[r][5];
     const toStatus       = String(data[r][6] || "");
     const transitionDate = normalizeDateCell(data[r][7]);
+    const chasersField   = String(data[r][8] || "");
     if (!transitionDate) continue;
-    if (!byDate.has(transitionDate)) byDate.set(transitionDate, { newLeads: 0, concluded: 0 });
+    if (!byDate.has(transitionDate)) byDate.set(transitionDate, { newLeads: 0, concluded: 0, byChaser: {} });
     const bucket = byDate.get(transitionDate);
-    if (!fromStatus) bucket.newLeads++;
-    if (LEAD_TERMINAL_STATES.has(toStatus)) bucket.concluded++;
+    const isNew       = !fromStatus;
+    const isConcluded = LEAD_TERMINAL_STATES.has(toStatus);
+    if (isNew) bucket.newLeads++;
+    if (isConcluded) bucket.concluded++;
+    if (isNew || isConcluded) {
+      chasersField.split("/").map(s => s.trim()).filter(Boolean).forEach(name => {
+        if (!bucket.byChaser[name]) bucket.byChaser[name] = { newLeads: 0, concluded: 0 };
+        if (isNew)       bucket.byChaser[name].newLeads++;
+        if (isConcluded) bucket.byChaser[name].concluded++;
+      });
+    }
   }
 
-  const rows = [...byDate.entries()].map(([date, v]) => ({ Date: date, NewLeads: v.newLeads, Concluded: v.concluded }));
+  const rows = [...byDate.entries()].map(([date, v]) => ({
+    Date: date, NewLeads: v.newLeads, Concluded: v.concluded, ByChaser: v.byChaser
+  }));
   return { rows };
 }
 

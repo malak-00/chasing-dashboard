@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-:root{--bg:#0A1420;--surface:#101D2E;--card:#16263A;--card-hover:#1C2F46;--border:#22384F;--teal:#2DD4BF;--teal-dim:rgba(45,212,191,.10);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#A78BFA;--purple-dim:rgba(167,139,250,.10);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);--text:#EDF3F9;--text-2:#8AA4BD;--text-3:#52708C;--radius:12px;--font:'Inter',system-ui,sans-serif;--shadow-sm:0 1px 2px rgba(0,0,0,.18);--shadow-md:0 4px 16px rgba(0,0,0,.22)}
+:root{--bg:#2C2C2C;--surface:#363636;--card:#404040;--card-hover:#4A4A4A;--border:#525252;--teal:#853953;--teal-dim:rgba(133,57,83,.20);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#612D53;--purple-dim:rgba(97,45,83,.22);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);--text:#F3F4F4;--text-2:#B7B7B7;--text-3:#8A8A8A;--radius:12px;--font:'Inter',system-ui,sans-serif;--shadow-sm:0 1px 2px rgba(0,0,0,.18);--shadow-md:0 4px 16px rgba(0,0,0,.22)}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:14px}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-variant-numeric:tabular-nums}
@@ -23,7 +23,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .btn:hover{opacity:.88;transform:translateY(-1px)}
 .btn-ghost{background:var(--card);color:var(--text-2);border:1px solid var(--border);border-radius:7px}
 .btn-ghost:hover{color:var(--text);background:var(--card-hover)}
-.status-badge{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:none;padding:4px 12px;border-radius:20px;background:var(--teal-dim);color:var(--teal);border:1px solid rgba(45,212,191,.22);white-space:nowrap}
+.status-badge{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:none;padding:4px 12px;border-radius:20px;background:var(--teal-dim);color:var(--teal);border:1px solid rgba(133,57,83,.35);white-space:nowrap}
 .pulse-bar{padding:8px 24px 0;display:flex;gap:4px}
 .pulse-segment{height:3px;border-radius:2px;flex:1;transition:opacity .3s}
 .main{padding:20px 28px 44px}
@@ -67,7 +67,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .sort-btns{display:flex;gap:5px;flex-wrap:wrap}
 .sort-btn{font-size:11px;padding:4px 10px;border-radius:6px;background:var(--card);border:1px solid var(--border);color:var(--text-3);cursor:pointer;font-family:var(--font);font-weight:500;transition:all .15s}
 .sort-btn:hover{color:var(--text-2)}
-.sort-btn.active{background:var(--teal-dim);color:var(--teal);border-color:rgba(45,212,191,.35)}
+.sort-btn.active{background:var(--teal-dim);color:var(--teal);border-color:rgba(133,57,83,.45)}
 .leaderboard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:auto;margin-bottom:22px;box-shadow:var(--shadow-sm)}
 .lb-table{width:100%;border-collapse:collapse;min-width:900px}
 .lb-table th{padding:10px 14px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);text-align:left;border-bottom:1px solid var(--border);background:var(--surface);white-space:nowrap;cursor:pointer;user-select:none;transition:color .15s}
@@ -79,7 +79,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .lb-table tr:hover td{background:var(--card-hover);transition:background .12s}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:700;background:var(--card);color:var(--text-3)}
 .rank-badge.r1{background:rgba(242,184,75,.14);color:var(--amber)}
-.rank-badge.r2{background:rgba(45,212,191,.10);color:var(--teal)}
+.rank-badge.r2{background:rgba(133,57,83,.20);color:var(--teal)}
 .rank-badge.r3{background:rgba(74,222,156,.10);color:var(--green)}
 .chaser-name{font-weight:600;font-size:13px}
 .pill{display:inline-block;font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;letter-spacing:.02em}
@@ -157,18 +157,18 @@ svg.chart{width:100%;overflow:visible}
 
 /* LIGHT MODE */
 body.light {
-  --bg:#F4F7FA;--surface:#FFFFFF;--card:#EEF2F7;--card-hover:#E3E9F0;
-  --border:#D7E0EA;--text:#16273C;--text-2:#46647E;--text-3:#7E97AC;
-  --teal:#0F9C8A;--teal-dim:rgba(15,156,138,.09);
+  --bg:#F3F4F4;--surface:#FFFFFF;--card:#EAEAEA;--card-hover:#DFDFDF;
+  --border:#D3D3D3;--text:#2C2C2C;--text-2:#5C5C5C;--text-3:#8A8A8A;
+  --teal:#853953;--teal-dim:rgba(133,57,83,.10);
   --green:#2E9E68;--green-dim:rgba(46,158,104,.09);
   --amber:#B07F12;--amber-dim:rgba(176,127,18,.09);
   --red:#C84358;--red-dim:rgba(200,67,88,.09);
-  --purple:#7456C9;--purple-dim:rgba(116,86,201,.09);
+  --purple:#612D53;--purple-dim:rgba(97,45,83,.10);
   --blue:#3373C4;--blue-dim:rgba(51,115,196,.09);
   --shadow-sm:0 1px 2px rgba(16,39,60,.06);--shadow-md:0 4px 16px rgba(16,39,60,.08);
 }
 body.light .lb-table th { background:var(--surface); }
-body.light .status-badge { border-color:rgba(15,156,138,.25); }
+body.light .status-badge { border-color:rgba(133,57,83,.25); }
 body.light .rank-badge { background:var(--border); }
 body.light .panel,body.light .leaderboard,body.light .chart-wrap,body.light .controls-panel,
 body.light .custom-metrics-section,body.light .goals-panel,body.light .compare-panel { box-shadow:var(--shadow-sm); }
@@ -984,13 +984,13 @@ const METRIC_FIELDS = [
 ];
 
 const LB_COLS = [
-  { key:"cases",        label:"Leads",       tip:"Total leads chased"               },
+  { key:"cases",        label:"Cases",       tip:"Total chased cases"               },
   { key:"positive",     label:"Positive",    tip:"Total positive outcomes"           },
   { key:"approvals",    label:"Approv.",     tip:"Approvals"                        },
   { key:"denials",      label:"Denials",     tip:"Denials"                          },
   { key:"approvalPct",  label:"Approv.%",    tip:"Approvals / (Approvals+Denials)"  },
   { key:"denialPct",    label:"Denial%",     tip:"Denials / (Approvals+Denials)"    },
-  { key:"efficiency",   label:"Efficiency",  tip:"Positive ÷ Leads × 100 (higher = better)"},
+  { key:"efficiency",   label:"Efficiency",  tip:"Positive ÷ Cases × 100 (higher = better)"},
   { key:"productivity", label:"Productivity",tip:"Productive time / shift x 100"    },
 ];
 
@@ -1111,6 +1111,12 @@ async function loadData() {
       };
       if (weekData) renderWeekPanel();
     }).catch(() => {});
+    // Fetched proactively (not just lazily inside renderHistView) so it's
+    // already available for the Compare tab's per-chaser Leads metric,
+    // which doesn't otherwise pass through the History tab first.
+    if (!leadActivityDaily) {
+      fetchAPI("leadactivity", "").then(v => { if (v && v.rows) leadActivityDaily = v.rows; }).catch(() => {});
+    }
     // Promise.allSettled never rejects, even if every request failed — without
     // this check a total backend outage falls straight through to an all-zero
     // "Archive" render with no indication anything is wrong.
@@ -1380,7 +1386,7 @@ function buildCampaignFromLeadsDateRange(fromDate, toDate) {
 // from the per-day Lead History activity table (mode=leadactivity) -- one
 // row per calendar day across the entire log, fetched/cached once and
 // filtered here client-side exactly like campaignLeads above.
-function sumLeadActivityForRange(fromDate, toDate) {
+function sumLeadActivityForRange(fromDate, toDate, chaserName) {
   const out = { newLeads: 0, concluded: 0 };
   if (!leadActivityDaily) return out;
   for (const row of leadActivityDaily) {
@@ -1388,8 +1394,13 @@ function sumLeadActivityForRange(fromDate, toDate) {
     if (!d) continue;
     if (fromDate && d < fromDate) continue;
     if (toDate   && d > toDate)   continue;
-    out.newLeads  += Number(row.NewLeads)  || 0;
-    out.concluded += Number(row.Concluded) || 0;
+    if (chaserName) {
+      const cb = (row.ByChaser || {})[chaserName];
+      if (cb) { out.newLeads += cb.newLeads || 0; out.concluded += cb.concluded || 0; }
+    } else {
+      out.newLeads  += Number(row.NewLeads)  || 0;
+      out.concluded += Number(row.Concluded) || 0;
+    }
   }
   return out;
 }
@@ -1409,6 +1420,15 @@ function getHistDateRange(view, range) {
     return { fromDate: new Date(fy, fm-1, fd, 0,0,0), toDate: new Date(ty, tm-1, td, 23,59,59) };
   }
   return { fromDate: null, toDate: null };
+}
+
+// Best-effort fetch of the Lead History as-of-date snapshot for a Date
+// object, formatted as "M/D/YYYY". Used by every Campaigns tab panel
+// (Day/Week/Month/Quarter) to add Leads/In Process/Verbal Denial stats --
+// returns null on failure so the campaign cards still render without them.
+async function fetchLeadSnapshotForDate(dateObj) {
+  const dt = `${dateObj.getMonth()+1}/${dateObj.getDate()}/${dateObj.getFullYear()}`;
+  try { return await fetchAPI("leadsnapshot", dt); } catch(e) { return null; }
 }
 
 // Build day-shaped data from archive rows for a specific date
@@ -1524,12 +1544,11 @@ function recalc() { renderAll(); }
 
 // ── PULSE BAR ─────────────────────────────────────────────────
 function renderPulseBar() {
-  const colors=["#2DD4BF","#4ADE9C","#F2B84B","#A78BFA","#F0677A"];
   const ch=(dayData.chasers||[]);
   const tot=ch.reduce((s,c)=>s+(c.totalCases||0),0)||1;
   document.getElementById("pulseBar").innerHTML=ch.map((c,i)=>`
-    <div class="pulse-segment" style="background:${colors[i%colors.length]};opacity:${c.totalCases?1:.2}"
-         title="${c.name}: ${c.totalCases||0} leads"></div>`).join("");
+    <div class="pulse-segment" style="background:${CHASER_COLORS[c.name]||"var(--teal)"};opacity:${c.totalCases?1:.2}"
+         title="${c.name}: ${c.totalCases||0} cases"></div>`).join("");
 }
 
 // ── TODAY / WEEK PANELS ────────────────────────────────────────
@@ -1638,7 +1657,12 @@ async function loadCampaignWeek() {
     } else {
       campWeekData = await fetchAPI("week", dateTab);
     }
-    setEl("campaignWeekPanel", campaignHTML(campWeekData, "week"));
+    // Range-aggregated Leads/In Process/Verbal Denial, anchored to the
+    // LAST day of the week (Friday) -- "Leads" is a cumulative snapshot
+    // concept, not a per-day flow, so a range view shows it as of the
+    // range's end rather than trying to sum it across days.
+    const leadSnap = await fetchLeadSnapshotForDate(fri);
+    setEl("campaignWeekPanel", campaignHTML(campWeekData, "week", leadSnap));
   } catch(err) {
     setEl("campaignWeekPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1666,7 +1690,8 @@ async function loadCampaignMonth() {
       } catch(e) { /* will render zeros below if still unavailable */ }
     }
     const camps = buildCampaignFromLeadsDateRange(fromDate, toDate);
-    setEl("campaignMonthPanel", campaignHTML(camps, "camps"));
+    const leadSnap = await fetchLeadSnapshotForDate(toDate);
+    setEl("campaignMonthPanel", campaignHTML(camps, "camps", leadSnap));
   } catch(err) {
     setEl("campaignMonthPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1693,7 +1718,8 @@ async function loadCampaignQuarter() {
       } catch(e) { /* will render zeros below if still unavailable */ }
     }
     const camps = buildCampaignFromLeadsDateRange(fromDate, toDate);
-    setEl("campaignQuarterPanel", campaignHTML(camps, "camps"));
+    const leadSnap = await fetchLeadSnapshotForDate(toDate);
+    setEl("campaignQuarterPanel", campaignHTML(camps, "camps", leadSnap));
   } catch(err) {
     setEl("campaignQuarterPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1722,10 +1748,13 @@ function campaignHTML(data,mode,leadSnap) {
       : aggWeekCampaigns(data.weekDays||[]);
   const totApp=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.approved||0),0);
   const totDen=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.denied||0),0);
-  // leadSnap (mode "day" only) is the deduplicated Lead History as-of-date
-  // snapshot -- one lifecycle = one Lead, counted once no matter how many
-  // chasers touched it. Independent of the approved/denied numbers above,
-  // which come from the campaign response sheets.
+  // leadSnap is the deduplicated Lead History as-of-date snapshot -- one
+  // lifecycle = one Lead, counted once no matter how many chasers touched
+  // it. Independent of the approved/denied numbers above, which come from
+  // the campaign response sheets. For Day it's as of that exact date; for
+  // Week/Month/Quarter ("range aggregated") it's as of the range's last
+  // day, since Leads/In Process/Verbal Denial are cumulative snapshot
+  // concepts rather than something you sum across days.
   const leadStats = leadSnap && leadSnap.byCampaign;
   return `<div class="campaign-grid">${CAMPAIGNS.map(camp=>{
     const d=camps[camp.key]||{approved:0,denied:0,total:0};
@@ -1748,7 +1777,8 @@ function campaignHTML(data,mode,leadSnap) {
       <div><div class="resp-label">All Campaigns Approved</div><div class="resp-value">${totApp}</div></div></div>
     <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
       <div><div class="resp-label">All Campaigns Denied</div><div class="resp-value">${totDen}</div></div></div>
-  </div>`;
+  </div>
+  ${leadSnap ? `<div style="font-size:10px;color:var(--text-3);margin-top:8px">Leads / In Process / Verbal Denial as of ${leadSnap.asOfDate}</div>` : ""}`;
 }
 
 function aggWeekCampaigns(weekDays) {
@@ -2307,7 +2337,7 @@ function downloadCSV(){
   const d=pickerToTab();
   const sfm=Number(document.getElementById("shiftMins").value);
   const acw=Number(document.getElementById("acwMult").value);
-  const headers=["Date","Chaser","Leads","Positive","Approvals","Denials","Approval%","Denial%","Efficiency","Productivity%","Shift","ShiftMins"];
+  const headers=["Date","Chaser","Cases","Positive","Approvals","Denials","Approval%","Denial%","Efficiency","Productivity%","Shift","ShiftMins"];
   const bc=(dayData.responses||{}).byChaser||{};
   const rows=(dayData.chasers||[]).map(c=>{
     const rs=bc[c.name]||{approvals:0,denials:0};
@@ -2392,10 +2422,15 @@ let histView       = "month";
 let histRange      = { from: null, to: null };
 
 const CHASER_COLORS = {
-  // Current chasers
-  Alex:"#2DD4BF", Hope:"#4ADE9C", Rose:"#F2B84B", Frank:"#A78BFA", Nova:"#F0677A",
-  // Former chasers — shown in history only
-  Nora:"#60A5E8", Jamie:"#F2A0A0", Rick:"#7DDDA8", Caroline:"#C9A8E8",
+  Nova:"#8E44AD",     // purple
+  Nora:"#F5821F",     // orange
+  Caroline:"#E53935", // red
+  Frank:"#22C55E",    // green
+  Hope:"#EC4899",     // pink
+  Rose:"#FF1493",     // hot pink
+  Alex:"#3B82F6",     // blue
+  Jamie:"#FFFFFF",    // white
+  Rick:"#FACC15",     // yellow
 };
 
 // Full name → display name mapping (mirrors Apps Script CHASER_NAME_MAP)
@@ -2508,17 +2543,17 @@ async function renderHistView() {
   setEl("histContent", `
     ${renderHistSummaryCards(summary, dedup)}
     <div class="charts-row">
-      <div class="chart-wrap"><div class="chart-title">Leads by Chaser</div><div id="barChart"></div></div>
+      <div class="chart-wrap"><div class="chart-title">Cases by Chaser</div><div id="barChart"></div></div>
       <div class="chart-wrap"><div class="chart-title">Approvals by Chaser</div><div id="barChartApprovals"></div></div>
     </div>
-    <div class="chart-wrap"><div class="chart-title">Daily Leads Trend</div><div id="lineChart"></div></div>
+    <div class="chart-wrap"><div class="chart-title">Daily Cases Trend</div><div id="lineChart"></div></div>
     <div class="chart-wrap"><div class="chart-title">Daily Approvals Trend</div><div id="lineChartApprovals"></div></div>
     ${renderHistLeaderboard(byChaserAgg)}
   `);
   requestAnimationFrame(() => {
-    drawBarChart("barChart",       byChaserAgg, "cases",     "Leads");
+    drawBarChart("barChart",       byChaserAgg, "cases",     "Cases");
     drawBarChart("barChartApprovals", byChaserAgg, "approvals", "Approvals");
-    drawLineChart("lineChart",          byDate, dates, "cases",     "Leads");
+    drawLineChart("lineChart",          byDate, dates, "cases",     "Cases");
     drawLineChart("lineChartApprovals", byDate, dates, "approvals", "Approvals");
   });
 }
@@ -2641,8 +2676,8 @@ function renderHistSummaryCards(s, dedup) {
     ${mc("Denials",              denials,     "", "red")}
     ${mc("Approval Rate",        appPct,      "%","green")}
     ${mc("Efficiency",           eff,         "", "")}
-    ${mc("Avg Time/Lead",        avgTime,     "m","")}
-    ${mc("Avg Leads/Day",        avgDay,      "", "teal")}
+    ${mc("Avg Time/Case",        avgTime,     "m","")}
+    ${mc("Avg Cases/Day",        avgDay,      "", "teal")}
     ${mc("Total Calls",          s.calls,     "", "")}
     ${mc("Call Hours",           totalH,      "h","")}
     ${mc("Avg Productive Time",  avgProd,     "m","")}
@@ -2664,9 +2699,9 @@ function renderHistLeaderboard(byChaserAgg) {
   return `<div class="chart-wrap">
     <div class="chart-title">Chaser Totals for Period</div>
     <div style="overflow:auto"><table class="lb-table" style="min-width:900px"><thead><tr>
-      <th>#</th><th>Chaser</th><th>Leads</th><th>Positive</th>
+      <th>#</th><th>Chaser</th><th>Cases</th><th>Positive</th>
       <th>Approvals</th><th>Denials</th><th>Approv.%</th><th>Efficiency</th>
-      <th>Calls</th><th>Call Hrs</th><th>Avg Prod.Time</th><th>Avg Leads/Day</th><th>Days</th>
+      <th>Calls</th><th>Call Hrs</th><th>Avg Prod.Time</th><th>Avg Cases/Day</th><th>Days</th>
     </tr></thead><tbody>
       ${rows.map((r,i)=>`<tr>
         <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
@@ -3155,7 +3190,7 @@ function selectChaser(name) {
   renderChaserPage();
 }
 
-function renderChaserPage() {
+async function renderChaserPage() {
   if (!activeChaserName) return;
   if (!archiveCache || !archiveCache.length) {
     setEl("chaserPageContent", `<div class="state-block error-msg">Load archive data first (go to Overview tab).</div>`);
@@ -3163,6 +3198,16 @@ function renderChaserPage() {
   }
 
   const pickedDate = document.getElementById("chaserDate").value || new Date().toISOString().slice(0,10);
+
+  // Real, deduplicated Lead History count for this chaser as of the picked
+  // date -- NOT a relabeled Cases number. Best-effort: renders 0 if the
+  // fetch fails rather than blocking the rest of the (archive-sourced) page.
+  const [py,pm,pd] = pickedDate.split("-");
+  const pickedDateTab = `${parseInt(pm)}/${parseInt(pd)}/${py}`;
+  let chaserLeadSnap = null;
+  try { chaserLeadSnap = await fetchAPI("leadsnapshot", pickedDateTab); } catch(e) { /* renders 0 */ }
+  const chaserLeads = (chaserLeadSnap?.byChaser?.[activeChaserName]?.leads) || 0;
+
   const rows     = getChaserRows(activeChaserName, pickedDate);
   const todayRows= archiveCache.filter(r => String(r.Chaser)===activeChaserName &&
                    String(r.Date).trim() === getTodayTab());
@@ -3230,13 +3275,14 @@ function renderChaserPage() {
 
     <!-- Summary metrics -->
     <div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
-      ${mc("Leads",        totals.cases,     "",  "teal")}
+      ${mc("Cases",        totals.cases,     "",  "teal")}
+      ${mc("Leads",        chaserLeads,      "",  "purple")}
       ${mc("Positive",     totals.positive,  "",  "green")}
       ${mc("Approvals",    totals.approvals, "",  "green")}
       ${mc("Denials",      totals.denials,   "",  "red")}
       ${mc("Approval %",   appPct,           "%", "teal")}
       ${mc("Efficiency",   eff,              "",  "")}
-      ${mc("Avg Leads/Day",avgCases,         "",  "amber")}
+      ${mc("Avg Cases/Day",avgCases,         "",  "amber")}
     </div>
 
     <!-- Goals -->
@@ -3259,7 +3305,7 @@ function renderChaserPage() {
     <!-- Trend charts -->
     <div class="charts-row">
       <div class="chart-wrap">
-        <div class="chart-title">Leads Trend — ${activeChaserName}</div>
+        <div class="chart-title">Cases Trend — ${activeChaserName}</div>
         <div id="chaserCasesChart"></div>
         <div class="rolling-legend">
           <div class="rolling-legend-item"><div class="rolling-legend-line" style="background:var(--teal)"></div>Daily</div>
@@ -3422,7 +3468,7 @@ function setComparePreset(type) {
   runComparison();
 }
 
-function runComparison() {
+async function runComparison() {
   if (!archiveCache || !archiveCache.length) {
     setEl("compareContent", `<div class="state-block error-msg">Load archive data first.</div>`);
     return;
@@ -3443,6 +3489,12 @@ function runComparison() {
     return;
   }
 
+  // Needed for the per-chaser "Leads" option below -- lazy-fetch in case
+  // the proactive loadData() fetch hasn't resolved yet or failed.
+  if (!leadActivityDaily && cmpChaserMetric === "leads") {
+    try { const la = await fetchAPI("leadactivity", ""); if (la && la.rows) leadActivityDaily = la.rows; } catch(e) { /* table renders 0 for Leads */ }
+  }
+
   const sumA = aggregateForCompare(rowsA);
   const sumB = aggregateForCompare(rowsB);
 
@@ -3452,7 +3504,7 @@ function runComparison() {
     { key:"denials",    label:"Denials"        },
     { key:"appPct",     label:"Approval %"     },
     { key:"efficiency", label:"Efficiency %"   },
-    { key:"avgCases",   label:"Avg Leads/Day"  },
+    { key:"avgCases",   label:"Avg Cases/Day"  },
   ];
 
   const changeRows = metrics.map(m => {
@@ -3476,17 +3528,32 @@ function runComparison() {
     </div>`;
   }).join("");
 
-  // Per-chaser comparison table -- metric is user-selectable (Approvals /
-  // Denials / Leads), each computed per chaser from that chaser's own
-  // archive rows. Per-chaser sums are fine here (no multi-chaser
-  // double-counting concern) -- that concern only applies to TEAM-wide
-  // totals, which is why the global "Total Cases" metric above was removed
-  // instead of just relabeled.
-  const CMP_CHASER_FIELD = { approvals:"Approvals", denials:"Denials", leads:"Cases" };
-  const archiveField = CMP_CHASER_FIELD[cmpChaserMetric] || "Cases";
+  // Per-chaser comparison table -- metric is user-selectable. Approvals/
+  // Denials come straight from that chaser's own archive rows (no
+  // duplication concern at chaser granularity). Leads is NOT the archive
+  // Cases column relabeled -- it's the real deduplicated New Leads count
+  // per chaser from the Lead History log (sumLeadActivityForRange), so it
+  // genuinely means something different from Cases.
+  const ARCHIVE_FIELD = { approvals:"Approvals", denials:"Denials" };
+  let chaserValueFn;
+  if (cmpChaserMetric === "leads") {
+    const [afy,afm,afd] = fromA.split("-").map(Number), [aty,atm,atd] = toA.split("-").map(Number);
+    const [bfy,bfm,bfd] = fromB.split("-").map(Number), [bty,btm,btd] = toB.split("-").map(Number);
+    const rangeA = [new Date(afy,afm-1,afd,0,0,0), new Date(aty,atm-1,atd,23,59,59)];
+    const rangeB = [new Date(bfy,bfm-1,bfd,0,0,0), new Date(bty,btm-1,btd,23,59,59)];
+    chaserValueFn = (name) => [
+      sumLeadActivityForRange(rangeA[0], rangeA[1], name).newLeads,
+      sumLeadActivityForRange(rangeB[0], rangeB[1], name).newLeads,
+    ];
+  } else {
+    const field = ARCHIVE_FIELD[cmpChaserMetric] || "Approvals";
+    chaserValueFn = (name) => [
+      rowsA.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
+      rowsB.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
+    ];
+  }
   const chaserRows = getAllChasers().map(name => {
-    const cA = rowsA.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[archiveField])||0),0);
-    const cB = rowsB.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[archiveField])||0),0);
+    const [cA, cB] = chaserValueFn(name);
     const diff= cB-cA;
     const cls = diff>0?"change-up":diff<0?"change-down":"change-flat";
     const arrow=diff>0?"↑":diff<0?"↓":"→";
