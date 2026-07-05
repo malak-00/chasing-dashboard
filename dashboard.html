@@ -308,7 +308,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
           <div class="upload-status" id="uploadStatus">Upload Utlatel report (any date range) — matched to dates in the archive</div>
         </div>
         <div style="margin-top:8px" id="utlatelSaveBar" class="hidden">
-          <button class="btn" style="padding:5px 14px;font-size:12px" onclick="saveUtlatelToArchive()">
+          <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, saveUtlatelToArchive)">
             &#128190; Save Utlatel to Archive
           </button>
           <span style="font-size:11px;color:var(--text-3);margin-left:8px">
@@ -692,7 +692,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
                 <span class="range-val" id="ctrlShiftMinsVal">400</span>
               </div>
               <button class="btn" style="margin-top:8px;padding:5px 14px;font-size:11px"
-                onclick="saveFormulaSetting('shiftMins', document.getElementById('ctrlShiftMins').value)">
+                onclick="withButtonGuard(this, () => saveFormulaSetting('shiftMins', document.getElementById('ctrlShiftMins').value))">
                 Save
               </button>
             </div>
@@ -705,7 +705,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
                 <span class="range-val" id="ctrlAcwMultVal">2</span>
               </div>
               <button class="btn" style="margin-top:8px;padding:5px 14px;font-size:11px"
-                onclick="saveFormulaSetting('acwMult', document.getElementById('ctrlAcwMult').value)">
+                onclick="withButtonGuard(this, () => saveFormulaSetting('acwMult', document.getElementById('ctrlAcwMult').value))">
                 Save
               </button>
             </div>
@@ -739,7 +739,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
                 <span class="range-val" id="ctrlGoalProdVal">70%</span>
               </div>
               <button class="btn" style="margin-top:8px;padding:5px 14px;font-size:11px"
-                onclick="saveFormulaSetting('goalProd', document.getElementById('ctrlGoalProd').value)">
+                onclick="withButtonGuard(this, () => saveFormulaSetting('goalProd', document.getElementById('ctrlGoalProd').value))">
                 Save
               </button>
             </div>
@@ -752,7 +752,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
                 <span class="range-val" id="ctrlGoalEffVal">60%</span>
               </div>
               <button class="btn" style="margin-top:8px;padding:5px 14px;font-size:11px"
-                onclick="saveFormulaSetting('goalEff', document.getElementById('ctrlGoalEff').value)">
+                onclick="withButtonGuard(this, () => saveFormulaSetting('goalEff', document.getElementById('ctrlGoalEff').value))">
                 Save
               </button>
             </div>
@@ -804,7 +804,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
               <input type="text" class="ctrl-input" id="ctrlShiftNotes" placeholder="e.g. annual leave">
             </div>
           </div>
-          <button class="btn" onclick="addShiftEntry()">Add Shift Entry</button>
+          <button class="btn" onclick="withButtonGuard(this, addShiftEntry)">Add Shift Entry</button>
 
           <div class="divider"></div>
 
@@ -870,13 +870,52 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
       </div>
     </div>
 
+    <!-- Chaser Roster -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">&#128101; Chaser Roster</span>
+        <span style="font-size:11px;color:var(--text-3)">Add a chaser or update their tracker Sheet ID — no code changes needed</span>
+      </div>
+      <div class="panel-body">
+        <div style="overflow:auto;max-height:320px">
+          <table class="lb-table" style="min-width:unset" id="chasterRosterTable">
+            <thead><tr>
+              <th>Name</th><th>Tracker Sheet ID</th><th>Active</th><th></th>
+            </tr></thead>
+            <tbody id="chasterRosterBody">
+              <tr><td colspan="4" style="color:var(--text-3);text-align:center;padding:20px">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="divider"></div>
+        <div class="sub-label">Add New Chaser</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div class="ctrl-group" style="margin:0">
+            <label>Name</label>
+            <input type="text" class="ctrl-input" id="newChaserName" placeholder="e.g. Jordan">
+          </div>
+          <div class="ctrl-group" style="margin:0">
+            <label>Tracker Sheet ID</label>
+            <input type="text" class="ctrl-input" id="newChaserSheetId" placeholder="Google Sheet ID from its URL">
+          </div>
+        </div>
+        <button class="btn" onclick="withButtonGuard(this, addNewChaser)">Add Chaser</button>
+        <div id="chasterRosterStatus" style="font-size:12px;margin-top:8px"></div>
+      </div>
+    </div>
+
   </div>
 
 </main>
 
 <script>
 const API_BASE = "https://script.google.com/macros/s/AKfycbzl9wrN5Ys-fz6H61G07c7Ot7daNp8JWDGh9xeuQ6fhTTkC58CJASLN8gdPaifuLuok/exec";
-const CHASERS  = ["Alex","Hope","Rose","Frank","Nova"];
+// Fallback roster used until the real one loads from the backend (and if
+// the "chasers" request ever fails) -- see loadData() and chasterRoster
+// below, which is the editable Settings-tab source of truth going forward.
+let CHASERS  = ["Alex","Hope","Rose","Frank","Nova"];
+let chasterRoster = []; // [{ name, sheetId, active }, ...] -- full detail for the Settings UI
 
 const CAMPAIGNS = [
   { key:"ort",    label:"ORT",               color:"var(--teal)"   },
@@ -884,6 +923,25 @@ const CAMPAIGNS = [
   { key:"lymphc", label:"Lymph Compression", color:"var(--blue)"   },
   { key:"lymphw", label:"Lymph Wraps",        color:"var(--amber)"  },
 ];
+const CAMPAIGN_KEYS = CAMPAIGNS.map(c=>c.key);
+
+// Archive column names per campaign -- the one place to update if a column
+// is ever renamed, instead of the same four-way mapping retyped wherever
+// campaign totals are read straight from archive rows.
+const CAMPAIGN_ARCHIVE_COLS = {
+  ort:    { app: "ORT_Approved",    den: "ORT_Denied"    },
+  cgm:    { app: "CGM_Approved",    den: "CGM_Denied"    },
+  lymphc: { app: "LymphC_Approved", den: "LymphC_Denied" },
+  lymphw: { app: "LymphW_Approved", den: "LymphW_Denied" },
+};
+
+// Fresh { ort:{approved,denied,total}, cgm:..., ... } zeroed object -- fresh
+// on every call since callers may mutate/replace fields in place.
+function zeroCampaignTotals() {
+  const obj = {};
+  CAMPAIGN_KEYS.forEach(key => { obj[key] = { approved:0, denied:0, total:0 }; });
+  return obj;
+}
 
 // Shift minutes are now stored directly as numbers (e.g. 400, 180, 0 for off)
 // instead of full/half/quarter/off categories — lets you enter exact meeting-adjusted times.
@@ -988,16 +1046,24 @@ function setTab(tab) {
 // ── DATA ──────────────────────────────────────────────────────
 async function loadData() {
   const d = pickerToTab();
+  const panelIds = ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"];
   document.getElementById("todayLabel").textContent   = d;
   document.getElementById("campDayLabel").textContent = d;
   document.getElementById("statusBadge").textContent  = "Loading...";
-  ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"].forEach(id=>setEl(id,spinner()));
+  panelIds.forEach(id=>setEl(id,spinner()));
   try {
-    const [archiveRes, settingsRes, campaignRes] = await Promise.allSettled([
+    const [archiveRes, settingsRes, campaignRes, chasersRes] = await Promise.allSettled([
       fetchAPI("archive",  ""),
       fetchAPI("settings", ""),
-      fetchAPI("campaignresponses", "")
+      fetchAPI("campaignresponses", ""),
+      fetchAPI("chasers", "")
     ]);
+    // Promise.allSettled never rejects, even if every request failed — without
+    // this check a total backend outage falls straight through to an all-zero
+    // "Archive" render with no indication anything is wrong.
+    if (archiveRes.status !== "fulfilled" && settingsRes.status !== "fulfilled" && campaignRes.status !== "fulfilled") {
+      throw new Error("Could not reach the backend — check your connection and try again.");
+    }
     const archiveData   = archiveRes.status   === "fulfilled" ? archiveRes.value   : { rows: [] };
     const settingsData  = settingsRes.status  === "fulfilled" ? settingsRes.value  : null;
     const campaignData  = campaignRes.status  === "fulfilled" ? campaignRes.value  : null;
@@ -1008,6 +1074,23 @@ async function loadData() {
     }
     archiveCache   = rows;
     archiveFetched = new Date();
+
+    // Load the persisted chaser roster (Settings tab lets you add a chaser or
+    // repoint an existing one's tracker Sheet ID without touching code). Keep
+    // the hardcoded fallback if this request fails, and never drop a chaser
+    // that's already been seeded into shiftMap/agentMap this session.
+    if (chasersRes.status === "fulfilled" && chasersRes.value && Array.isArray(chasersRes.value.chasers)) {
+      chasterRoster = chasersRes.value.chasers;
+      CHASERS = chasterRoster.filter(c=>c.active).map(c=>c.name);
+      CHASERS.forEach(n => {
+        if (!(n in shiftMap)) shiftMap[n] = DEFAULT_SHIFT_MINS;
+        if (!(n in agentMap)) agentMap[n] = n;
+      });
+      buildShiftGrid();
+      renderChasterRosterTable();
+      refreshChaserDropdowns();
+      if (activeTab === "chasers") initChaserTab();
+    }
 
     // Load persistent settings
     if (settingsData && !settingsData.error) {
@@ -1047,8 +1130,12 @@ async function loadData() {
     badge.style.borderColor = "rgba(0,194,168,.25)";
     renderAll();
   } catch(err) {
-    ["todayPanel","weekPanel"].forEach(id=>setEl(id,`<div class="state-block error-msg">Error: ${err.message}</div>`));
-    document.getElementById("statusBadge").textContent = "Error";
+    panelIds.forEach(id=>setEl(id,`<div class="state-block error-msg">Error: ${err.message}</div>`));
+    const badge = document.getElementById("statusBadge");
+    badge.textContent       = "Error";
+    badge.style.background  = "var(--red-dim)";
+    badge.style.color       = "var(--red)";
+    badge.style.borderColor = "rgba(240,103,122,.35)";
   }
 }
 
@@ -1065,7 +1152,7 @@ async function syncSelectedDate() {
 
   try {
     const url = `${API_BASE}?mode=sync&date=${encodeURIComponent(d)}`;
-    const res = await fetch(url, { method:"GET", redirect:"follow" });
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error("Sync failed: " + res.status);
     const result = await res.json();
     if (result.error) throw new Error(result.error);
@@ -1096,10 +1183,47 @@ function updateSyncLabel() {
 
 async function refreshDay() { await loadData(); }
 
+// Wrap fetch with a timeout so a stalled Apps Script cold-start leaves a
+// panel showing a clear error instead of "Loading..." forever with no
+// recourse but a page reload.
+const FETCH_TIMEOUT_MS = 20000;
+async function fetchWithTimeout(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { method:"GET", redirect:"follow", signal: controller.signal });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error("Request timed out — the backend may be slow to start, try again in a moment.");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Disable a button for the duration of an async action so rapid double-
+// clicking (Save/Add buttons that don't otherwise guard themselves, unlike
+// Sync which already does) can't fire two overlapping requests built from
+// the same stale snapshot.
+async function withButtonGuard(btn, fn) {
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.style.opacity = "0.6";
+  btn.style.cursor = "not-allowed";
+  try {
+    await fn();
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = "";
+    btn.style.cursor = "";
+  }
+}
+
 // Fetch from Apps Script API
 async function fetchAPI(mode, dateTab) {
   const url = `${API_BASE}?mode=${mode}&date=${encodeURIComponent(dateTab)}`;
-  const res = await fetch(url, { method:"GET", redirect:"follow" });
+  const res = await fetchWithTimeout(url);
   if (!res.ok) throw new Error("API error " + res.status);
   const text = await res.text();
   try {
@@ -1132,12 +1256,7 @@ function campLabelToKey(label) {
 // Build byCampaign object for a single date from the Campaign Responses tab.
 // dateTab: "M/D" or "M/D/YYYY"
 function buildCampaignFromLeads(dateTab) {
-  const camps = {
-    ort:    { approved:0, denied:0, total:0 },
-    cgm:    { approved:0, denied:0, total:0 },
-    lymphc: { approved:0, denied:0, total:0 },
-    lymphw: { approved:0, denied:0, total:0 },
-  };
+  const camps = zeroCampaignTotals();
   if (!campaignLeads) return camps;
 
   const tp       = String(dateTab).split("/");
@@ -1160,12 +1279,7 @@ function buildCampaignFromLeads(dateTab) {
 
 // Build byCampaign for a set of dates (week view etc.)
 function buildCampaignFromLeadsRange(dateTabs) {
-  const camps = {
-    ort:    { approved:0, denied:0, total:0 },
-    cgm:    { approved:0, denied:0, total:0 },
-    lymphc: { approved:0, denied:0, total:0 },
-    lymphw: { approved:0, denied:0, total:0 },
-  };
+  const camps = zeroCampaignTotals();
   if (!campaignLeads) return camps;
 
   const shortSet = new Set(dateTabs.map(dt => {
@@ -1190,12 +1304,7 @@ function buildCampaignFromLeadsRange(dateTabs) {
 
 // Build byCampaign for an arbitrary date range (Date objects)
 function buildCampaignFromLeadsDateRange(fromDate, toDate) {
-  const camps = {
-    ort:    { approved:0, denied:0, total:0 },
-    cgm:    { approved:0, denied:0, total:0 },
-    lymphc: { approved:0, denied:0, total:0 },
-    lymphw: { approved:0, denied:0, total:0 },
-  };
+  const camps = zeroCampaignTotals();
   if (!campaignLeads) return camps;
 
   for (const row of campaignLeads) {
@@ -1250,12 +1359,11 @@ function buildDayFromArchive(rows, dateTab) {
   if (campaignLeads) {
     byCampaign = buildCampaignFromLeads(dateTab);
   } else {
-    byCampaign = {
-      ort:    { approved: dayRows.reduce((s,r)=>s+(Number(r.ORT_Approved)||0),0),   denied: dayRows.reduce((s,r)=>s+(Number(r.ORT_Denied)||0),0),   total:0 },
-      cgm:    { approved: dayRows.reduce((s,r)=>s+(Number(r.CGM_Approved)||0),0),   denied: dayRows.reduce((s,r)=>s+(Number(r.CGM_Denied)||0),0),   total:0 },
-      lymphc: { approved: dayRows.reduce((s,r)=>s+(Number(r.LymphC_Approved)||0),0),denied: dayRows.reduce((s,r)=>s+(Number(r.LymphC_Denied)||0),0),total:0 },
-      lymphw: { approved: dayRows.reduce((s,r)=>s+(Number(r.LymphW_Approved)||0),0),denied: dayRows.reduce((s,r)=>s+(Number(r.LymphW_Denied)||0),0),total:0 },
-    };
+    byCampaign = zeroCampaignTotals();
+    Object.entries(CAMPAIGN_ARCHIVE_COLS).forEach(([key, cols]) => {
+      byCampaign[key].approved = dayRows.reduce((s,r)=>s+(Number(r[cols.app])||0),0);
+      byCampaign[key].denied   = dayRows.reduce((s,r)=>s+(Number(r[cols.den])||0),0);
+    });
     Object.values(byCampaign).forEach(c => { c.total = c.approved + c.denied; });
   }
 
@@ -1580,8 +1688,12 @@ function applyLbCustomRange() {
     return;
   }
 
-  const fromD = new Date(from), toD = new Date(to);
-  toD.setHours(23,59,59);
+  // Parse as local midnight (not UTC) to avoid timezone off-by-one — see the
+  // same pattern in filterArchiveRows/buildCustomChart/filterByRange.
+  const [fy,fm,fd] = from.split("-").map(Number);
+  const [ty,tm,td] = to.split("-").map(Number);
+  const fromD = new Date(fy, fm-1, fd, 0, 0, 0);
+  const toD   = new Date(ty, tm-1, td, 23, 59, 59);
   const rows = archiveCache.filter(r => {
     const d = parseArchiveDate(r.Date); return d && d >= fromD && d <= toD;
   });
@@ -1775,16 +1887,52 @@ function parseDuration(str){
 
 function buildAgentMapUI(agents){
   document.getElementById("agentMapSection").classList.remove("hidden");
-  document.getElementById("agentMapGrid").innerHTML=agents.map(agent=>{
+  const grid = document.getElementById("agentMapGrid");
+  // Built via DOM APIs (not innerHTML string interpolation) because `agent`
+  // names come from an uploaded file and could contain characters that
+  // would otherwise break out of the markup/attribute — this data also
+  // gets persisted and reloaded for every future viewer, so a raw string
+  // build here would be a stored XSS hole, not just a one-time render risk.
+  grid.innerHTML = "";
+  agents.forEach(agent=>{
     const auto=CHASERS.find(c=>agent.toLowerCase().includes(c.toLowerCase()))||"";
     if(auto)agentMap[agent]=auto;
-    return `<div class="agent-map-row">
-      <label title="${agent}">${agent}</label>
-      <span style="color:var(--text-3)">&#8594;</span>
-      <select class="ctrl-select" style="flex:1" onchange="agentMap['${agent}']=this.value;recalc()">
-        <option value="">-- ignore --</option>
-        ${CHASERS.map(c=>`<option value="${c}" ${auto===c?"selected":""}>${c}</option>`).join("")}
-      </select></div>`;}).join("");
+
+    const row = document.createElement("div");
+    row.className = "agent-map-row";
+
+    const label = document.createElement("label");
+    label.title = agent;
+    label.textContent = agent;
+
+    const arrow = document.createElement("span");
+    arrow.style.color = "var(--text-3)";
+    arrow.textContent = "→";
+
+    const select = document.createElement("select");
+    select.className = "ctrl-select";
+    select.style.flex = "1";
+
+    const ignoreOpt = document.createElement("option");
+    ignoreOpt.value = "";
+    ignoreOpt.textContent = "-- ignore --";
+    select.appendChild(ignoreOpt);
+
+    CHASERS.forEach(c=>{
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = c;
+      if (auto === c) opt.selected = true;
+      select.appendChild(opt);
+    });
+
+    select.addEventListener("change", () => { agentMap[agent] = select.value; recalc(); });
+
+    row.appendChild(label);
+    row.appendChild(arrow);
+    row.appendChild(select);
+    grid.appendChild(row);
+  });
 }
 
 // Get Utlatel minutes for a chaser — optionally filtered to a specific date
@@ -1957,7 +2105,7 @@ async function saveShift(name, val, effectiveDate, notes) {
   // Persist to archive sheet — ShiftType field now holds the raw minute count as a string
   try {
     const url = `${API_BASE}?mode=savesetting&chaser=${encodeURIComponent(name)}&shiftType=${val}&effectiveDate=${encodeURIComponent(effectiveDate)}&notes=${encodeURIComponent(notes||"")}`;
-    const res = await fetch(url, { method:"GET", redirect:"follow" });
+    const res = await fetchWithTimeout(url);
     const data = await res.json();
     if (data.success) {
       // Update local shiftHistory
@@ -2005,7 +2153,7 @@ async function saveUtlatelToArchive() {
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK);
       const url = `${API_BASE}?mode=saveutlatel&data=${encodeURIComponent(JSON.stringify(chunk))}`;
-      const res  = await fetch(url, { method:"GET", redirect:"follow" });
+      const res  = await fetchWithTimeout(url);
       const data = await res.json();
       if (data.success) {
         totalWritten += data.written || 0;
@@ -2126,22 +2274,6 @@ function updateRangeVal(s,v){document.getElementById(v).textContent=document.get
 // ── MOCK DATA ─────────────────────────────────────────────────
 function mockCampaignData(){return{ort:{approved:6,denied:2,total:10},cgm:{approved:5,denied:1,total:8},lymphc:{approved:4,denied:2,total:7},lymphw:{approved:4,denied:1,total:6}};}
 
-function mockData(mode,dateTab){
-  const ch=[
-    {name:"Alex", totalCases:18,totalPositive:12,totalTimeMins:190,totalFaxes:14},
-    {name:"Hope", totalCases:14,totalPositive:9, totalTimeMins:155,totalFaxes:11},
-    {name:"Rose", totalCases:22,totalPositive:15,totalTimeMins:210,totalFaxes:18},
-    {name:"Frank",totalCases:11,totalPositive:7, totalTimeMins:130,totalFaxes:9 },
-    {name:"Nova", totalCases:16,totalPositive:10,totalTimeMins:175,totalFaxes:13},
-  ];
-  const tt=ch.reduce((t,c)=>({totalCases:t.totalCases+c.totalCases,totalPositive:t.totalPositive+c.totalPositive,totalTimeMins:t.totalTimeMins+c.totalTimeMins,totalFaxes:t.totalFaxes+c.totalFaxes}),{totalCases:0,totalPositive:0,totalTimeMins:0,totalFaxes:0});
-  const rs={approved:19,denied:6,byChaser:{Alex:{approvals:5,denials:2},Hope:{approvals:3,denials:1},Rose:{approvals:6,denials:1},Frank:{approvals:2,denials:1},Nova:{approvals:3,denials:1}},byCampaign:mockCampaignData()};
-  if(mode==="day")return{mode:"day",date:dateTab,chasers:ch,teamTotals:tt,responses:rs};
-  const wd=[0,1,2,3,4].map(i=>({mode:"day",date:dateTab,chasers:ch.map(c=>({...c,totalCases:Math.max(c.totalCases-i,0)})),teamTotals:tt,responses:rs}));
-  return{mode:"week",weekDays:wd,weekTotals:{...tt,totalCases:tt.totalCases*5,totalPositive:tt.totalPositive*5,totalTimeMins:tt.totalTimeMins*5,totalFaxes:tt.totalFaxes*5,totalApproved:rs.approved*5,totalDenied:rs.denied*5},chaserWeekTotals:ch.map(c=>({...c,totalCases:c.totalCases*5,totalPositive:c.totalPositive*5,totalTimeMins:c.totalTimeMins*5,totalFaxes:c.totalFaxes*5}))};
-}
-
-
 // ══════════════════════════════════════════════════════════════
 // HISTORY / ARCHIVE
 // ══════════════════════════════════════════════════════════════
@@ -2177,9 +2309,15 @@ function normalizeName(name) {
 
 // All unique chasers found in archive data
 function getAllChasers() {
-  if (!archiveCache || !archiveCache.length) return CHASERS;
-  const names = [...new Set(archiveCache.map(r => r.Chaser).filter(Boolean))].sort();
-  return names;
+  // Union of the current active roster and every name that's ever appeared
+  // in the archive, so a brand-new chaser (added via Settings, zero
+  // archived days yet) shows up in dropdowns immediately instead of only
+  // after their first synced day, while former chasers with historical
+  // rows still show up too (see the "(former)" tag on the Chaser Page tab).
+  const fromArchive = (archiveCache && archiveCache.length)
+    ? archiveCache.map(r => r.Chaser).filter(Boolean)
+    : [];
+  return [...new Set([...CHASERS, ...fromArchive])].sort();
 }
 
 async function refreshArchive() {
@@ -2525,37 +2663,6 @@ function drawLineChart(containerId, byDate, dates, field, label) {
     <line x1="${PAD.l}" y1="${PAD.t}" x2="${PAD.l}" y2="${H-PAD.b}" stroke="var(--border)" stroke-width="1"/>
   </svg>`;
 }
-
-// ── MOCK ARCHIVE DATA ─────────────────────────────────────────
-function mockArchiveData() {
-  const rows = [];
-  const now  = new Date();
-  const names = CHASERS;
-  // Generate 60 weekdays of data
-  for (let daysBack=90; daysBack>=0; daysBack--) {
-    const d = new Date(now); d.setDate(now.getDate()-daysBack);
-    if (d.getDay()===0||d.getDay()===6) continue;
-    const dateStr = `${d.getMonth()+1}/${d.getDate()}/${d.getFullYear()}`;
-    names.forEach(name => {
-      const base = { Alex:18, Hope:14, Rose:22, Frank:11, Nova:16 }[name]||15;
-      const rand = n => Math.max(0, n + Math.floor((Math.random()-.4)*n*.6));
-      const cases = rand(base);
-      const pos   = Math.min(cases, rand(Math.round(cases*.65)));
-      const fax   = Math.min(cases, rand(Math.round(cases*.75)));
-      const app   = Math.min(fax, rand(Math.round(fax*.55)));
-      const den   = Math.min(fax-app, rand(Math.round(fax*.2)));
-      rows.push({ Date:dateStr, Chaser:name, Cases:cases, Positive:pos, Faxes:fax,
-                  Approvals:app, Denials:den, TimeMins:cases*11 });
-    });
-  }
-  return rows;
-}
-
-// ── AUTO-LOAD when switching to History tab ───────────────────
-// (handled inside setTab directly — no override needed)
-
-
-
 
 
 // ══════════════════════════════════════════════════════════════
@@ -3401,12 +3508,7 @@ function renderCampaignTrend() {
   if (!el) return;
 
   // Build weekly approval rate per campaign
-  const campaigns = [
-    { key:"ort",    label:"ORT",    color:"var(--teal)"   },
-    { key:"cgm",    label:"CGM",    color:"var(--purple)" },
-    { key:"lymphc", label:"LymphC", color:"var(--blue)"   },
-    { key:"lymphw", label:"LymphW", color:"var(--amber)"  },
-  ];
+  const campaigns = CAMPAIGNS;
 
   // Group by week — use Campaign Responses tab (deduplicated) when available
   const weekMap = {};
@@ -3435,11 +3537,10 @@ function renderCampaignTrend() {
       const mon = new Date(d); mon.setDate(d.getDate()-(day===0?6:day-1));
       const wk  = `${mon.getMonth()+1}/${mon.getDate()}`;
       if (!weekMap[wk]) weekMap[wk] = {};
-      const colMap = [{key:"ort",app:"ORT_Approved",den:"ORT_Denied"},{key:"cgm",app:"CGM_Approved",den:"CGM_Denied"},{key:"lymphc",app:"LymphC_Approved",den:"LymphC_Denied"},{key:"lymphw",app:"LymphW_Approved",den:"LymphW_Denied"}];
-      colMap.forEach(c => {
-        if (!weekMap[wk][c.key]) weekMap[wk][c.key]={app:0,den:0};
-        weekMap[wk][c.key].app += Number(r[c.app])||0;
-        weekMap[wk][c.key].den += Number(r[c.den])||0;
+      Object.entries(CAMPAIGN_ARCHIVE_COLS).forEach(([key, cols]) => {
+        if (!weekMap[wk][key]) weekMap[wk][key]={app:0,den:0};
+        weekMap[wk][key].app += Number(r[cols.app])||0;
+        weekMap[wk][key].den += Number(r[cols.den])||0;
       });
     });
   }
@@ -3625,6 +3726,10 @@ function initControlsTab() {
 
   // Render Utlatel summary from archive
   renderUtlatelSummary();
+
+  // Render chaser roster (idempotent -- also refreshed whenever loadData()
+  // gets a fresh copy from the backend)
+  renderChasterRosterTable();
 }
 
 function setSlider(sliderId, valId, val, suffix) {
@@ -3669,7 +3774,7 @@ async function saveFormulaSetting(key, value) {
     recalc();
     try {
       const url = `${API_BASE}?mode=savesetting&chaser=__formula__&shiftType=${key}&effectiveDate=${getTodayTab()}&notes=${encodeURIComponent(String(value))}`;
-      const res  = await fetch(url, { method:"GET", redirect:"follow" });
+      const res  = await fetchWithTimeout(url);
       const data = await res.json();
       if (data.success) showToast("Saved: " + key + " = " + value);
     } catch(err) {
@@ -3708,7 +3813,7 @@ async function saveFormulaSetting(key, value) {
   // Persist to Settings tab
   try {
     const url = `${API_BASE}?mode=savesetting&chaser=${encodeURIComponent(chaserKey)}&shiftType=${key}&effectiveDate=${encodeURIComponent(effDate)}&notes=${encodeURIComponent(String(value))}`;
-    const res  = await fetch(url, { method:"GET", redirect:"follow" });
+    const res  = await fetchWithTimeout(url);
     const data = await res.json();
     if (data.success) showToast(`Saved ${key === "goalProd" ? "Productivity" : "Efficiency"} target: ${value}% for ${scopeLabel} from ${effDate}`);
   } catch(err) {
@@ -3716,7 +3821,7 @@ async function saveFormulaSetting(key, value) {
   }
 }
 
-function addShiftEntry() {
+async function addShiftEntry() {
   const chaser    = document.getElementById("ctrlShiftChaser").value;
   const shiftMins = Number(document.getElementById("ctrlShiftType").value);
   const dateRaw   = document.getElementById("ctrlShiftDate").value;
@@ -3728,12 +3833,11 @@ function addShiftEntry() {
   const parts   = dateRaw.split("-");
   const effDate = parseInt(parts[1]) + "/" + parseInt(parts[2]) + "/" + parts[0];
 
-  // Update local shift map and history
-  shiftMap[chaser] = shiftMins;
-  shiftHistory.push({ Chaser:chaser, ShiftType:String(shiftMins), EffectiveDate:effDate, Notes:notes });
-
-  // Persist
-  saveShift(chaser, shiftMins, effDate, notes);
+  // saveShift() updates shiftMap and (once the save succeeds) pushes to
+  // shiftHistory itself -- don't also push here, or every entry shows up
+  // twice in the table. Awaited so the caller's button guard actually
+  // covers the network round trip, not just this synchronous setup.
+  await saveShift(chaser, shiftMins, effDate, notes);
 
   // Clear notes, re-render table
   document.getElementById("ctrlShiftNotes").value = "";
@@ -3816,6 +3920,165 @@ function renderGoalOverridesTable() {
       <td><button onclick="deleteGoalOverride('${o.Chaser}','${o.ShiftType}','${o.EffectiveDate}')" style="background:none;border:none;color:var(--text-3);cursor:pointer;font-size:13px" title="Delete">&#10005;</button></td>
     </tr>`;
   }).join("");
+}
+
+// ── CHASER ROSTER (Settings) ───────────────────────────────────
+// Lets someone add a new chaser or repoint an existing one's tracker Sheet
+// ID from the dashboard, instead of editing CHASER_SHEETS in Code.gs.
+// Built via DOM APIs rather than innerHTML string interpolation (same
+// reasoning as buildAgentMapUI) since Name/SheetId are free-typed here.
+function renderChasterRosterTable() {
+  const tbody = document.getElementById("chasterRosterBody");
+  if (!tbody) return;
+
+  if (!chasterRoster.length) {
+    tbody.innerHTML = `<tr><td colspan="4" style="color:var(--text-3);text-align:center;padding:20px">No chasers found.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = "";
+  chasterRoster.forEach(c => {
+    const tr = document.createElement("tr");
+
+    const nameTd = document.createElement("td");
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "chaser-name";
+    nameSpan.style.color = CHASER_COLORS[c.name] || "var(--text)";
+    nameSpan.textContent = c.name;
+    nameTd.appendChild(nameSpan);
+
+    const sheetTd = document.createElement("td");
+    const sheetInput = document.createElement("input");
+    sheetInput.type = "text";
+    sheetInput.className = "ctrl-input";
+    sheetInput.style.fontSize = "12px";
+    sheetInput.value = c.sheetId;
+    sheetInput.id = "chasterSheetId__" + c.name;
+    sheetTd.appendChild(sheetInput);
+
+    const activeTd = document.createElement("td");
+    activeTd.style.textAlign = "center";
+    const activeInput = document.createElement("input");
+    activeInput.type = "checkbox";
+    activeInput.checked = !!c.active;
+    activeInput.id = "chasterActive__" + c.name;
+    activeTd.appendChild(activeInput);
+
+    const saveTd = document.createElement("td");
+    const saveBtn = document.createElement("button");
+    saveBtn.className = "btn";
+    saveBtn.style.padding = "4px 10px";
+    saveBtn.style.fontSize = "11px";
+    saveBtn.textContent = "Save";
+    saveBtn.addEventListener("click", () => withButtonGuard(saveBtn, () => saveChasterRosterEntry(c.name)));
+    saveTd.appendChild(saveBtn);
+
+    tr.appendChild(nameTd);
+    tr.appendChild(sheetTd);
+    tr.appendChild(activeTd);
+    tr.appendChild(saveTd);
+    tbody.appendChild(tr);
+  });
+}
+
+function setChasterRosterStatus(msg, color) {
+  const el = document.getElementById("chasterRosterStatus");
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = color;
+}
+
+async function saveChasterRosterEntry(name) {
+  const sheetIdEl = document.getElementById("chasterSheetId__" + name);
+  const activeEl  = document.getElementById("chasterActive__" + name);
+  if (!sheetIdEl || !activeEl) return;
+
+  const sheetId = sheetIdEl.value.trim();
+  if (!sheetId) { setChasterRosterStatus("Sheet ID can't be blank.", "var(--red)"); return; }
+
+  setChasterRosterStatus("Saving " + name + "...", "var(--text-3)");
+  try {
+    const url = `${API_BASE}?mode=savechaser&name=${encodeURIComponent(name)}&sheetId=${encodeURIComponent(sheetId)}&active=${activeEl.checked}`;
+    const res  = await fetchWithTimeout(url);
+    const data = await res.json();
+    if (data.success) {
+      setChasterRosterStatus("Saved " + name + ".", "var(--green)");
+      await refreshChasterRoster();
+    } else {
+      setChasterRosterStatus("Error: " + (data.error || "Could not save."), "var(--red)");
+    }
+  } catch (err) {
+    setChasterRosterStatus("Error: " + err.message, "var(--red)");
+  }
+}
+
+async function addNewChaser() {
+  const nameEl    = document.getElementById("newChaserName");
+  const sheetIdEl = document.getElementById("newChaserSheetId");
+  const name    = nameEl.value.trim();
+  const sheetId = sheetIdEl.value.trim();
+
+  if (!name || !sheetId) { setChasterRosterStatus("Enter both a name and a Sheet ID.", "var(--red)"); return; }
+  if (chasterRoster.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+    setChasterRosterStatus(`A chaser named "${name}" already exists — edit their row above instead.`, "var(--red)");
+    return;
+  }
+
+  setChasterRosterStatus("Adding " + name + "...", "var(--text-3)");
+  try {
+    const url = `${API_BASE}?mode=savechaser&name=${encodeURIComponent(name)}&sheetId=${encodeURIComponent(sheetId)}&active=true`;
+    const res  = await fetchWithTimeout(url);
+    const data = await res.json();
+    if (data.success) {
+      nameEl.value = ""; sheetIdEl.value = "";
+      setChasterRosterStatus("Added " + name + ".", "var(--green)");
+      await refreshChasterRoster();
+    } else {
+      setChasterRosterStatus("Error: " + (data.error || "Could not add chaser."), "var(--red)");
+    }
+  } catch (err) {
+    setChasterRosterStatus("Error: " + err.message, "var(--red)");
+  }
+}
+
+// Re-fetch the roster from the backend and refresh every place it's used.
+async function refreshChasterRoster() {
+  try {
+    const data = await fetchAPI("chasers", "");
+    if (data && Array.isArray(data.chasers)) {
+      chasterRoster = data.chasers;
+      CHASERS = chasterRoster.filter(c=>c.active).map(c=>c.name);
+      CHASERS.forEach(n => {
+        if (!(n in shiftMap)) shiftMap[n] = DEFAULT_SHIFT_MINS;
+        if (!(n in agentMap)) agentMap[n] = n;
+      });
+      buildShiftGrid();
+      renderChasterRosterTable();
+      refreshChaserDropdowns();
+    }
+  } catch (err) {
+    // The save action itself already reported success/failure to the user;
+    // keep whichever roster is already in memory rather than surface a
+    // second error for what's just a post-save refresh.
+  }
+}
+
+// initControlsTab() only populates these dropdowns once (guarded on
+// children.length), so a chaser added while already on the Controls tab
+// needs to be appended here directly instead of waiting for a re-visit.
+function refreshChaserDropdowns() {
+  ["ctrlShiftChaser","ctrlGoalChaser"].forEach(id => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const existing = new Set([...sel.options].map(o=>o.value));
+    getAllChasers().forEach(n => {
+      if (!existing.has(n)) {
+        const opt = document.createElement("option");
+        opt.value = n; opt.textContent = n;
+        sel.appendChild(opt);
+      }
+    });
+  });
 }
 
 async function deleteGoalOverride(chaser, shiftType, effectiveDate) {
