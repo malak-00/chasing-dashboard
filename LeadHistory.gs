@@ -596,7 +596,15 @@ function upsertCurrentLeadStates(rows) {
   const sheet = getOrCreateCurrentLeadStateTab();
   const rowIndex = getCurrentLeadStateRowIndex();
 
-  const toAppend = [];
+  // Keyed by lifecycle key so multiple rows in THIS SAME BATCH that target
+  // the same lifecycle (e.g. a lead born and then immediately superseded
+  // within one sync run -- the exact sequence a first-ever sync produces)
+  // collapse onto one queued append instead of producing duplicate rows.
+  // rowIndex above is a snapshot taken before this loop starts, so it can
+  // never see a row this same batch is about to append -- without this map,
+  // the birth row and the supersede row for the same lifecycle both miss
+  // rowIndex and both get appended.
+  const toAppendByKey = new Map();
 
   rows.forEach(r => {
     const [mbi, campaign, idn, submissionDate, lifecycle, fromStatus, toStatus, transitionDate, chasers] = r;
@@ -609,10 +617,11 @@ function upsertCurrentLeadStates(rows) {
         mbi, campaign, idn, submissionDate, lc, toStatus, transitionDate, chasers
       ]]);
     } else {
-      toAppend.push([mbi, campaign, idn, submissionDate, lc, toStatus, transitionDate, chasers]);
+      toAppendByKey.set(key, [mbi, campaign, idn, submissionDate, lc, toStatus, transitionDate, chasers]);
     }
   });
 
+  const toAppend = [...toAppendByKey.values()];
   if (toAppend.length) {
     const startRow = sheet.getLastRow() + 1;
     sheet.getRange(startRow, 1, toAppend.length, CURRENT_LEAD_STATE_HEADERS.length).setValues(toAppend);
