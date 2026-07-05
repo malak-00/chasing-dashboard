@@ -664,55 +664,56 @@ function getActiveLeadStatesForDashboard() {
 }
 
 // ============================================================
-// AS-OF-DATE SNAPSHOT — dashboard aggregation queries
+// DATE SNAPSHOT — dashboard aggregation queries
 // ============================================================
-// Reconstructs "what was each lifecycle's status as of end of dateStr"
-// straight from the permanent Lead History event log -- NOT Current Lead
-// State, which only holds the LATEST known truth and prunes old terminal
-// lifecycles after TERMINAL_RETENTION_DAYS, so it can't answer for a past
-// date. Rows are always appended to Lead History in true chronological
-// order (see syncLeadHistoryForCampaign), so scanning top-to-bottom and
-// keeping the last row at-or-before dateStr per lifecycle key gives the
-// correct as-of-date state.
+// IMPORTANT DATA LIMITATION: TransitionDate on every Lead History row
+// (daily sync AND one-time backfill alike) is stamped as the day the
+// SCRIPT WAS RUN, not the day the transition actually happened
+// historically. That makes it useless for reconstructing "what a lead's
+// status truly was on an arbitrary past date" -- there is no field in
+// this data model that records that. What IS a real historical fact,
+// unaffected by when any script happened to run, is SubmissionDate --
+// read once directly from the source sheet.
 //
-// dateStr must already be a full "M/D/YYYY" string so it compares
-// correctly against TransitionDate cells (see dateTabToFullDate in Code.gs).
-function getLeadStatesAsOfDate(dateStr) {
-  const targetKey = dateSortKey(dateStr);
-  const sheet     = getOrCreateLeadHistoryTab();
-  const data      = sheet.getDataRange().getValues();
-  const states    = new Map();
+// So "Leads" for a chosen date means "how many leads had been submitted
+// on or before that date" (genuinely accurate, past or present). "In
+// Process" / "Verbal Denial" for that date are the CURRENT (latest known)
+// status of those same submitted-by-then leads -- not a true historical
+// snapshot of what their status was back then, since that isn't
+// reconstructable. For "today" this is exactly correct (current = as of
+// now); for past dates it's the best available honest approximation.
+//
+// Reads the permanent Lead History log (not Current Lead State, which
+// prunes old terminal lifecycles after TERMINAL_RETENTION_DAYS and so
+// can't cover lifecycles older than that) and keeps the LAST row seen per
+// lifecycle key -- rows are always appended in true chronological order,
+// so the last one is simply that lifecycle's current status.
+function getAllLifecyclesLatest() {
+  const sheet = getOrCreateLeadHistoryTab();
+  const data  = sheet.getDataRange().getValues();
+  const lifecycles = new Map(); // "MBI|Campaign|SubmissionDate|Lifecycle" -> latest row
 
   for (let r = 1; r < data.length; r++) {
     const [mbi, campaign, idn, submissionDate, lifecycle, fromStatus, toStatus, transitionDate, chasers] = data[r];
     if (!mbi) continue;
-    const transDate = normalizeDateCell(transitionDate);
-    if (dateSortKey(transDate) > targetKey) continue; // happened after the requested date
-
     const lc  = Number(lifecycle) || 1;
-    const key = mbi + "|" + campaign + "|" + normalizeDateCell(submissionDate) + "|" + lc;
-    states.set(key, {
-      mbi, campaign, idn,
-      submissionDate: normalizeDateCell(submissionDate),
-      lifecycle: lc,
-      status: toStatus,
-      transitionDate: transDate,
-      chasers: chasers || "",
-    });
+    const sub = normalizeDateCell(submissionDate);
+    const key = mbi + "|" + campaign + "|" + sub + "|" + lc;
+    lifecycles.set(key, { mbi, campaign, idn, submissionDate: sub, lifecycle: lc, status: toStatus, chasers: chasers || "" });
   }
-  return states;
+  return lifecycles;
 }
 
-// Aggregates the as-of-date lifecycle snapshot into everything the
-// dashboard needs in one call: per-campaign totals (Campaigns tab),
-// per-chaser active-lead counts (Chasers/Leaderboard tab), and same-day
-// activity counts (Overview tab). One lifecycle = one "Lead", counted
-// once no matter how many chasers are listed on it -- that's the whole
-// point, as opposed to the old per-chaser-row "Cases" count which
-// double-counted any lead worked by more than one chaser.
+// Aggregates into everything the dashboard needs in one call: per-campaign
+// totals (Campaigns tab), per-chaser active-lead counts (Chasers/
+// Leaderboard tab), and same-day activity counts (Overview tab). One
+// lifecycle = one "Lead", counted once no matter how many chasers are
+// listed on it -- as opposed to the old per-chaser-row "Cases" count,
+// which double-counted any lead worked by more than one chaser.
 function getLeadSnapshotForDate(dateStr) {
-  const asOf   = normalizeDateCell(dateStr);
-  const states = getLeadStatesAsOfDate(asOf);
+  const asOf      = normalizeDateCell(dateStr);
+  const targetKey = dateSortKey(asOf);
+  const lifecycles = getAllLifecyclesLatest();
 
   const byCampaign = {};
   Object.keys(LEAD_STATE_SOURCES).forEach(k => {
@@ -721,7 +722,8 @@ function getLeadSnapshotForDate(dateStr) {
 
   const byChaser = {}; // name -> { leads: N } -- currently in-process leads assigned to this chaser
 
-  states.forEach(v => {
+  lifecycles.forEach(v => {
+    if (dateSortKey(v.submissionDate) > targetKey) return; // not yet submitted as of this date
     const isSuperseded = String(v.status).indexOf("SUPERSEDED") === 0;
     if (byCampaign[v.campaign]) {
       byCampaign[v.campaign].leads++;
@@ -739,9 +741,10 @@ function getLeadSnapshotForDate(dateStr) {
   let activeLeads = 0;
   Object.values(byCampaign).forEach(c => activeLeads += c.inProcess);
 
-  // Same-day activity (new leads born / leads concluded) -- scans the full
-  // log for rows whose TransitionDate is EXACTLY dateStr, independent of
-  // the as-of-date reconstruction above.
+  // Same-day activity (new leads born / leads concluded) is intentionally
+  // still TransitionDate-exact -- "the day the sync/backfill observed
+  // this" IS the intended meaning here (matches Overview's New Leads /
+  // Leads Concluded), unlike the status-breakdown fields above.
   const sheet = getOrCreateLeadHistoryTab();
   const data  = sheet.getDataRange().getValues();
   let newLeads = 0, concluded = 0;

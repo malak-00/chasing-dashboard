@@ -1748,13 +1748,16 @@ function campaignHTML(data,mode,leadSnap) {
       : aggWeekCampaigns(data.weekDays||[]);
   const totApp=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.approved||0),0);
   const totDen=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.denied||0),0);
-  // leadSnap is the deduplicated Lead History as-of-date snapshot -- one
-  // lifecycle = one Lead, counted once no matter how many chasers touched
-  // it. Independent of the approved/denied numbers above, which come from
-  // the campaign response sheets. For Day it's as of that exact date; for
-  // Week/Month/Quarter ("range aggregated") it's as of the range's last
-  // day, since Leads/In Process/Verbal Denial are cumulative snapshot
-  // concepts rather than something you sum across days.
+  // leadSnap is the deduplicated Lead History snapshot -- one lifecycle =
+  // one Lead, counted once no matter how many chasers touched it.
+  // Independent of the approved/denied numbers above, which come from the
+  // campaign response sheets. "Leads" = submitted on/before the chosen
+  // date (SubmissionDate is a real historical fact); "In Process"/"Verbal
+  // Denial" = the CURRENT status of those leads, not a true historical
+  // snapshot of what they were on that exact date -- Lead History has no
+  // field that records that (see getLeadSnapshotForDate in LeadHistory.gs).
+  // For Day it's gated at that exact date; for Week/Month/Quarter ("range
+  // aggregated") it's gated at the range's last day.
   const leadStats = leadSnap && leadSnap.byCampaign;
   return `<div class="campaign-grid">${CAMPAIGNS.map(camp=>{
     const d=camps[camp.key]||{approved:0,denied:0,total:0};
@@ -1778,7 +1781,7 @@ function campaignHTML(data,mode,leadSnap) {
     <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
       <div><div class="resp-label">All Campaigns Denied</div><div class="resp-value">${totDen}</div></div></div>
   </div>
-  ${leadSnap ? `<div style="font-size:10px;color:var(--text-3);margin-top:8px">Leads / In Process / Verbal Denial as of ${leadSnap.asOfDate}</div>` : ""}`;
+  ${leadSnap ? `<div style="font-size:10px;color:var(--text-3);margin-top:8px">Leads = submitted through ${leadSnap.asOfDate}; In Process / Verbal Denial = their current status</div>` : ""}`;
 }
 
 function aggWeekCampaigns(weekDays) {
