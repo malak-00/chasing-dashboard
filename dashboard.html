@@ -1212,7 +1212,7 @@ async function syncSelectedDate() {
 
   try {
     const url = `${API_BASE}?mode=sync&date=${encodeURIComponent(d)}`;
-    const res = await fetchWithTimeout(url);
+    const res = await fetchWithTimeout(url, SYNC_TIMEOUT_MS);
     if (!res.ok) throw new Error("Sync failed: " + res.status);
     const result = await res.json();
     if (result.error) throw new Error(result.error);
