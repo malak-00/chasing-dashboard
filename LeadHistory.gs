@@ -193,6 +193,22 @@ function forcePlainTextColumns(sheet, headers, fieldNames) {
 
 const LEAD_HISTORY_HEADERS = ["MBI","Campaign","IDN","SubmissionDate","Lifecycle","FromStatus","ToStatus","TransitionDate","Chasers"];
 
+// Terminal vs non-terminal state sets, shared across the daily sync,
+// conflict resolution, and the dashboard's as-of-date snapshot queries.
+const LEAD_TERMINAL_STATES    = new Set(["Approved","Denied","VerbalDenial","BTO","Disregarded","Frozen"]);
+const LEAD_NONTERMINAL_STATES = new Set(["InProcess","Yellow","Hold"]);
+
+// Chronological sort key for "M/D/YYYY" date strings (as stored in
+// SubmissionDate/TransitionDate columns) -- unparseable dates sort last.
+// Shared by the SUPERSEDED-direction check in syncLeadHistoryForCampaign
+// and by the as-of-date snapshot reconstruction further down.
+function dateSortKey(s) {
+  if (!s) return 99999999;
+  const p = String(s).trim().split("/");
+  if (p.length !== 3) return 99999999;
+  const m = parseInt(p[0]), d = parseInt(p[1]), y = parseInt(p[2]);
+  return isNaN(m) || isNaN(d) || isNaN(y) ? 99999999 : y * 10000 + m * 100 + d;
+}
 
 function getOrCreateLeadHistoryTab() {
   const ss    = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
@@ -354,8 +370,10 @@ function getPendingLeadConflictsForDashboard() {
 //     "dismiss"           — known bad data, stop tracking; Status -> "Dismissed"
 //   Review conflicts:
 //     "acknowledge"       — everything is fine, mark Resolved, no new rows
-//     "pick:<StateName>"  — something was actually wrong, write corrective row
 //     "dismiss"           — permanently suppress
+//     ("pick" does NOT apply here -- every lifecycle in a Review conflict was
+//      already written to Lead History normally, so there's nothing held
+//      back to pick a resolution for. See the type guard below.)
 function resolveLeadConflict(conflictId, action, resolvedBy) {
   const sheet   = getOrCreateLeadConflictsTab();
   const data    = sheet.getDataRange().getValues();
@@ -643,6 +661,125 @@ function getActiveLeadStatesForDashboard() {
     active.set(key, v);
   });
   return active;
+}
+
+// ============================================================
+// AS-OF-DATE SNAPSHOT — dashboard aggregation queries
+// ============================================================
+// Reconstructs "what was each lifecycle's status as of end of dateStr"
+// straight from the permanent Lead History event log -- NOT Current Lead
+// State, which only holds the LATEST known truth and prunes old terminal
+// lifecycles after TERMINAL_RETENTION_DAYS, so it can't answer for a past
+// date. Rows are always appended to Lead History in true chronological
+// order (see syncLeadHistoryForCampaign), so scanning top-to-bottom and
+// keeping the last row at-or-before dateStr per lifecycle key gives the
+// correct as-of-date state.
+//
+// dateStr must already be a full "M/D/YYYY" string so it compares
+// correctly against TransitionDate cells (see dateTabToFullDate in Code.gs).
+function getLeadStatesAsOfDate(dateStr) {
+  const targetKey = dateSortKey(dateStr);
+  const sheet     = getOrCreateLeadHistoryTab();
+  const data      = sheet.getDataRange().getValues();
+  const states    = new Map();
+
+  for (let r = 1; r < data.length; r++) {
+    const [mbi, campaign, idn, submissionDate, lifecycle, fromStatus, toStatus, transitionDate, chasers] = data[r];
+    if (!mbi) continue;
+    const transDate = normalizeDateCell(transitionDate);
+    if (dateSortKey(transDate) > targetKey) continue; // happened after the requested date
+
+    const lc  = Number(lifecycle) || 1;
+    const key = mbi + "|" + campaign + "|" + normalizeDateCell(submissionDate) + "|" + lc;
+    states.set(key, {
+      mbi, campaign, idn,
+      submissionDate: normalizeDateCell(submissionDate),
+      lifecycle: lc,
+      status: toStatus,
+      transitionDate: transDate,
+      chasers: chasers || "",
+    });
+  }
+  return states;
+}
+
+// Aggregates the as-of-date lifecycle snapshot into everything the
+// dashboard needs in one call: per-campaign totals (Campaigns tab),
+// per-chaser active-lead counts (Chasers/Leaderboard tab), and same-day
+// activity counts (Overview tab). One lifecycle = one "Lead", counted
+// once no matter how many chasers are listed on it -- that's the whole
+// point, as opposed to the old per-chaser-row "Cases" count which
+// double-counted any lead worked by more than one chaser.
+function getLeadSnapshotForDate(dateStr) {
+  const asOf   = normalizeDateCell(dateStr);
+  const states = getLeadStatesAsOfDate(asOf);
+
+  const byCampaign = {};
+  Object.keys(LEAD_STATE_SOURCES).forEach(k => {
+    byCampaign[k] = { leads: 0, inProcess: 0, verbalDenial: 0 };
+  });
+
+  const byChaser = {}; // name -> { leads: N } -- currently in-process leads assigned to this chaser
+
+  states.forEach(v => {
+    const isSuperseded = String(v.status).indexOf("SUPERSEDED") === 0;
+    if (byCampaign[v.campaign]) {
+      byCampaign[v.campaign].leads++;
+      if (!isSuperseded && LEAD_NONTERMINAL_STATES.has(v.status)) byCampaign[v.campaign].inProcess++;
+      if (v.status === "VerbalDenial") byCampaign[v.campaign].verbalDenial++;
+    }
+    if (!isSuperseded && LEAD_NONTERMINAL_STATES.has(v.status)) {
+      String(v.chasers).split("/").map(s => s.trim()).filter(Boolean).forEach(name => {
+        if (!byChaser[name]) byChaser[name] = { leads: 0 };
+        byChaser[name].leads++;
+      });
+    }
+  });
+
+  let activeLeads = 0;
+  Object.values(byCampaign).forEach(c => activeLeads += c.inProcess);
+
+  // Same-day activity (new leads born / leads concluded) -- scans the full
+  // log for rows whose TransitionDate is EXACTLY dateStr, independent of
+  // the as-of-date reconstruction above.
+  const sheet = getOrCreateLeadHistoryTab();
+  const data  = sheet.getDataRange().getValues();
+  let newLeads = 0, concluded = 0;
+  for (let r = 1; r < data.length; r++) {
+    const fromStatus     = data[r][5];
+    const toStatus       = String(data[r][6] || "");
+    const transitionDate = normalizeDateCell(data[r][7]);
+    if (transitionDate !== asOf) continue;
+    if (!fromStatus) newLeads++;
+    if (LEAD_TERMINAL_STATES.has(toStatus)) concluded++;
+  }
+
+  return { asOfDate: asOf, byCampaign, byChaser, activeLeads, newLeads, concluded };
+}
+
+// Returns New Leads / Leads Concluded counts for EVERY day that appears in
+// the Lead History log, in one single pass -- mirrors the "Campaign
+// Responses" archive pattern (fetch the whole table once, cache it, filter
+// by date range client-side) instead of one backend call per day, which
+// would be prohibitively slow for a period spanning a month/quarter/year.
+function getLeadActivityByDay() {
+  const sheet = getOrCreateLeadHistoryTab();
+  const data  = sheet.getDataRange().getValues();
+  const byDate = new Map(); // "M/D/YYYY" -> { newLeads, concluded }
+
+  for (let r = 1; r < data.length; r++) {
+    const fromStatus     = data[r][5];
+    const toStatus       = String(data[r][6] || "");
+    const transitionDate = normalizeDateCell(data[r][7]);
+    if (!transitionDate) continue;
+    if (!byDate.has(transitionDate)) byDate.set(transitionDate, { newLeads: 0, concluded: 0 });
+    const bucket = byDate.get(transitionDate);
+    if (!fromStatus) bucket.newLeads++;
+    if (LEAD_TERMINAL_STATES.has(toStatus)) bucket.concluded++;
+  }
+
+  const rows = [...byDate.entries()].map(([date, v]) => ({ Date: date, NewLeads: v.newLeads, Concluded: v.concluded }));
+  return { rows };
 }
 
 // Remove terminal/superseded lifecycles from Current Lead State once they're
@@ -1124,7 +1261,6 @@ function syncLeadHistoryForCampaign(campaignKey) {
     lifecyclesByMbi.get(v.mbi).push(v);
   });
 
-  const TERMINAL_STATES = new Set(["Approved","Denied","VerbalDenial","BTO","Disregarded","Frozen"]);
   const pendingConflictKeys = getPendingConflictKeys();
 
   const newRows      = [];
@@ -1158,17 +1294,11 @@ function syncLeadHistoryForCampaign(campaignKey) {
   // in the correct order, so the main loop's computeLifecycleNumber() call
   // always sees the full, correctly-ordered picture no matter which date
   // it happens to process first.
-  // Shared chronological sort key for "M/D/YYYY" SubmissionDate strings —
-  // used both to pre-order same-batch births below and to make sure the
+  // dateSortKey (file-scope, defined near LEAD_HISTORY_HEADERS) gives a
+  // chronological sort key for "M/D/YYYY" SubmissionDate strings — used
+  // both to pre-order same-batch births below and to make sure the
   // SUPERSEDED check further down only ever fires against a genuinely
   // OLDER submission date, not just a "different" one.
-  const dateSortKey = s => {
-    if (!s) return 99999999;
-    const p = String(s).trim().split("/");
-    if (p.length !== 3) return 99999999;
-    const m = parseInt(p[0]), d = parseInt(p[1]), y = parseInt(p[2]);
-    return isNaN(m) || isNaN(d) || isNaN(y) ? 99999999 : y * 10000 + m * 100 + d;
-  };
 
   const reservedLifecycles = new Map(); // "MBI|SubmissionDate" -> reserved lifecycle number
   todayOccurrences.forEach((occurrences, mbi) => {
@@ -1284,7 +1414,6 @@ function syncLeadHistoryForCampaign(campaignKey) {
         // completed on its own; it was never preempted by anything, so
         // marking it "superseded" would be semantically wrong and just adds
         // noise. Terminal lifecycles are left exactly as they are.
-        const NON_TERMINAL = new Set(["InProcess","Yellow","Hold"]);
         const otherLifecycles = allKnownLifecycles;
         otherLifecycles.forEach(older => {
           if (older.submissionDate === submissionDate) return;
@@ -1297,7 +1426,7 @@ function syncLeadHistoryForCampaign(campaignKey) {
           // after, instead of the other way around.
           if (dateSortKey(older.submissionDate) >= dateSortKey(submissionDate)) return;
           if (String(older.status).indexOf("SUPERSEDED") === 0) return; // already marked
-          if (!NON_TERMINAL.has(older.status)) return; // terminal -- completed on its own, leave it
+          if (!LEAD_NONTERMINAL_STATES.has(older.status)) return; // terminal -- completed on its own, leave it
 
           newRows.push([
             mbi, campaignKey, older.idn, older.submissionDate, older.lifecycle || 1,
@@ -1381,7 +1510,7 @@ function syncLeadHistoryForCampaign(campaignKey) {
   // -- Step 5: lifecycles known previously, non-terminal, missing today -> Unknown --
   currentForCampaign.forEach((prior, lifecycleKey) => {
     if (seenLifecycleKeysToday.has(lifecycleKey)) return; // accounted for above (including conflicts)
-    if (TERMINAL_STATES.has(prior.status)) return; // terminal leads disappearing is expected, not an issue
+    if (LEAD_TERMINAL_STATES.has(prior.status)) return; // terminal leads disappearing is expected, not an issue
     if (String(prior.status).indexOf("Unknown") === 0) return; // already marked unknown, don't re-mark every day
     if (String(prior.status).indexOf("SUPERSEDED") === 0) return; // superseded lifecycles are closed, leave them be
 
@@ -1583,7 +1712,6 @@ function processBackfillRows(rows, currentStates, todayStr) {
   const newRows      = [];
   const conflictRows = [];
   const pendingKeys  = getPendingConflictKeys();
-  const TERMINAL_STATES = new Set(["Approved","Denied","VerbalDenial","BTO","Disregarded","Frozen"]);
 
   // Group rows by MBI+Campaign to detect within-source conflicts
   const byMbiCampaign = new Map();
