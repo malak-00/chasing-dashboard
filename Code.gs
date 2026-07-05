@@ -206,6 +206,16 @@ function monthTabName(dateStr) {
   return months[d.getMonth()] + " " + d.getFullYear();
 }
 
+// Converts a dashboard dateTab ("M/D" or "M/D/YYYY") into a full "M/D/YYYY"
+// string for comparison against Lead History log dates, which always carry
+// an explicit year. Bare "M/D" is assumed to be the current year, same
+// year-inference rule as monthTabName() above.
+function dateTabToFullDate(dateTab) {
+  const parts = String(dateTab).split("/");
+  const yr    = parts[2] ? parseInt(parts[2], 10) : new Date().getFullYear();
+  return parseInt(parts[0], 10) + "/" + parseInt(parts[1], 10) + "/" + yr;
+}
+
 // Normalize an archive Date-column cell to "M/D" so it matches a dateTab
 // like "6/25" whether or not Google Sheets has auto-converted the cell from
 // plain text into a real Date value (Sheets does this silently for any
@@ -773,6 +783,19 @@ function doGet(e) {
       // Add a new chaser or update an existing one's Sheet ID / Active flag.
       // Params: name, sheetId, active ("true"/"false")
       payload = saveChaser(params);
+
+    } else if (mode === "leadsnapshot") {
+      // Deduplicated Lead History snapshot as of the chosen date: per-campaign
+      // leads/inProcess/verbalDenial, per-chaser active-lead counts, and
+      // that day's new/concluded leads. Defined in LeadHistory.gs.
+      const mdY = dateTabToFullDate(date);
+      payload = getCachedOrFetch("leadsnapshot_" + mdY, () => getLeadSnapshotForDate(mdY), 300);
+
+    } else if (mode === "leadactivity") {
+      // Per-day New Leads / Leads Concluded across the whole Lead History
+      // log, for the History tab to filter/sum over any date range
+      // client-side. Defined in LeadHistory.gs.
+      payload = getCachedOrFetch("lead_activity_daily", getLeadActivityByDay, 300);
 
     } else if (mode === "leadconflicts") {
       // Returns all PENDING conflicts from Lead History Conflicts tab for

@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-:root{--bg:#0A1420;--surface:#101D2E;--card:#16263A;--card-hover:#1C2F46;--border:#22384F;--teal:#2DD4BF;--teal-dim:rgba(45,212,191,.10);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#A78BFA;--purple-dim:rgba(167,139,250,.10);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);--text:#EDF3F9;--text-2:#8AA4BD;--text-3:#52708C;--radius:12px;--font:'Inter',system-ui,sans-serif;--shadow-sm:0 1px 2px rgba(0,0,0,.18);--shadow-md:0 4px 16px rgba(0,0,0,.22)}
+:root{--bg:#2C2C2C;--surface:#363636;--card:#404040;--card-hover:#4A4A4A;--border:#525252;--teal:#853953;--teal-dim:rgba(133,57,83,.20);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#612D53;--purple-dim:rgba(97,45,83,.22);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);--text:#F3F4F4;--text-2:#B7B7B7;--text-3:#8A8A8A;--radius:12px;--font:'Inter',system-ui,sans-serif;--shadow-sm:0 1px 2px rgba(0,0,0,.18);--shadow-md:0 4px 16px rgba(0,0,0,.22)}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:14px}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-variant-numeric:tabular-nums}
@@ -23,7 +23,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .btn:hover{opacity:.88;transform:translateY(-1px)}
 .btn-ghost{background:var(--card);color:var(--text-2);border:1px solid var(--border);border-radius:7px}
 .btn-ghost:hover{color:var(--text);background:var(--card-hover)}
-.status-badge{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:none;padding:4px 12px;border-radius:20px;background:var(--teal-dim);color:var(--teal);border:1px solid rgba(45,212,191,.22);white-space:nowrap}
+.status-badge{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:none;padding:4px 12px;border-radius:20px;background:var(--teal-dim);color:var(--teal);border:1px solid rgba(133,57,83,.35);white-space:nowrap}
 .pulse-bar{padding:8px 24px 0;display:flex;gap:4px}
 .pulse-segment{height:3px;border-radius:2px;flex:1;transition:opacity .3s}
 .main{padding:20px 28px 44px}
@@ -67,7 +67,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .sort-btns{display:flex;gap:5px;flex-wrap:wrap}
 .sort-btn{font-size:11px;padding:4px 10px;border-radius:6px;background:var(--card);border:1px solid var(--border);color:var(--text-3);cursor:pointer;font-family:var(--font);font-weight:500;transition:all .15s}
 .sort-btn:hover{color:var(--text-2)}
-.sort-btn.active{background:var(--teal-dim);color:var(--teal);border-color:rgba(45,212,191,.35)}
+.sort-btn.active{background:var(--teal-dim);color:var(--teal);border-color:rgba(133,57,83,.45)}
 .leaderboard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:auto;margin-bottom:22px;box-shadow:var(--shadow-sm)}
 .lb-table{width:100%;border-collapse:collapse;min-width:900px}
 .lb-table th{padding:10px 14px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);text-align:left;border-bottom:1px solid var(--border);background:var(--surface);white-space:nowrap;cursor:pointer;user-select:none;transition:color .15s}
@@ -79,7 +79,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .lb-table tr:hover td{background:var(--card-hover);transition:background .12s}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:700;background:var(--card);color:var(--text-3)}
 .rank-badge.r1{background:rgba(242,184,75,.14);color:var(--amber)}
-.rank-badge.r2{background:rgba(45,212,191,.10);color:var(--teal)}
+.rank-badge.r2{background:rgba(133,57,83,.20);color:var(--teal)}
 .rank-badge.r3{background:rgba(74,222,156,.10);color:var(--green)}
 .chaser-name{font-weight:600;font-size:13px}
 .pill{display:inline-block;font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;letter-spacing:.02em}
@@ -157,18 +157,18 @@ svg.chart{width:100%;overflow:visible}
 
 /* LIGHT MODE */
 body.light {
-  --bg:#F4F7FA;--surface:#FFFFFF;--card:#EEF2F7;--card-hover:#E3E9F0;
-  --border:#D7E0EA;--text:#16273C;--text-2:#46647E;--text-3:#7E97AC;
-  --teal:#0F9C8A;--teal-dim:rgba(15,156,138,.09);
+  --bg:#F3F4F4;--surface:#FFFFFF;--card:#EAEAEA;--card-hover:#DFDFDF;
+  --border:#D3D3D3;--text:#2C2C2C;--text-2:#5C5C5C;--text-3:#8A8A8A;
+  --teal:#853953;--teal-dim:rgba(133,57,83,.10);
   --green:#2E9E68;--green-dim:rgba(46,158,104,.09);
   --amber:#B07F12;--amber-dim:rgba(176,127,18,.09);
   --red:#C84358;--red-dim:rgba(200,67,88,.09);
-  --purple:#7456C9;--purple-dim:rgba(116,86,201,.09);
+  --purple:#612D53;--purple-dim:rgba(97,45,83,.10);
   --blue:#3373C4;--blue-dim:rgba(51,115,196,.09);
   --shadow-sm:0 1px 2px rgba(16,39,60,.06);--shadow-md:0 4px 16px rgba(16,39,60,.08);
 }
 body.light .lb-table th { background:var(--surface); }
-body.light .status-badge { border-color:rgba(15,156,138,.25); }
+body.light .status-badge { border-color:rgba(133,57,83,.25); }
 body.light .rank-badge { background:var(--border); }
 body.light .panel,body.light .leaderboard,body.light .chart-wrap,body.light .controls-panel,
 body.light .custom-metrics-section,body.light .goals-panel,body.light .compare-panel { box-shadow:var(--shadow-sm); }
@@ -243,7 +243,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
 @media print {
   .header, .tab-nav, .controls-panel, .hist-cache-bar, .hist-subnav,
   .lb-range-bar, .sort-btns, .btn, .theme-btn, .pulse-bar,
-  #tab-charts, #tab-chasers, #tab-compare, #tab-custom,
+  #tab-charts, #tab-chasers, #tab-compare, #tab-custom, #tab-conflicts,
   #tab-leaderboard .section-header > div:last-child { display:none !important; }
   body { background:#fff !important; color:#000 !important; }
   .panel, .chart-wrap, .leaderboard, .metric, .resp-card, .campaign-card,
@@ -289,6 +289,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
     <button class="tab-btn" onclick="setTab('charts')">Charts</button>
     <button class="tab-btn" onclick="setTab('chasers')">Chasers</button>
     <button class="tab-btn" onclick="setTab('compare')">Compare</button>
+    <button class="tab-btn" onclick="setTab('conflicts')">Conflicts</button>
     <button class="tab-btn" onclick="setTab('controls')">Controls</button>
   </div>
 
@@ -629,14 +630,8 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
     <div class="lb-range-bar" style="margin-bottom:18px">
       <label>Select Chaser</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap" id="chaserSelectorBtns"></div>
-      <label style="margin-left:12px">Period</label>
-      <select class="ctrl-select" style="width:140px" id="chaserPeriod" onchange="renderChaserPage()">
-        <option value="today">Today</option>
-        <option value="week">This Week</option>
-        <option value="month" selected>This Month</option>
-        <option value="quarter">This Quarter</option>
-        <option value="year">This Year</option>
-      </select>
+      <label style="margin-left:12px">Date</label>
+      <input type="date" class="date-input" id="chaserDate" onchange="renderChaserPage()">
     </div>
     <div id="chaserPageContent">
       <div class="state-block" style="color:var(--text-3)">
@@ -665,6 +660,38 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal);
       <div class="state-block" style="color:var(--text-3)">
         <div style="font-size:32px;margin-bottom:10px">⚖️</div>
         Select two date ranges above and click Compare
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══ CONFLICTS TAB ══ -->
+  <div id="tab-conflicts" class="hidden">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">&#9888; Lead History Conflicts</span>
+        <div style="display:flex;gap:10px;align-items:center">
+          <label style="font-size:11px;color:var(--text-3)">Resolved By</label>
+          <input type="text" class="ctrl-input" id="conflictResolverName" style="width:140px;font-size:12px" placeholder="Your name">
+          <button class="btn btn-ghost" onclick="withButtonGuard(this, refreshConflicts)">&#8635; Refresh</button>
+        </div>
+      </div>
+      <div class="panel-body">
+        <div id="conflictsSummary" style="display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap"></div>
+        <div id="conflictsStatus" style="font-size:12px;margin-bottom:10px;min-height:16px"></div>
+        <div style="overflow-x:auto">
+          <table class="lb-table" style="min-width:900px" id="conflictsTable">
+            <thead>
+              <tr>
+                <th>ID</th><th>Type</th><th>MBI</th><th>Campaign</th>
+                <th>Submission Date(s)</th><th>Detail</th><th>Detected</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="conflictsBody">
+              <tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-3)">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -983,6 +1010,9 @@ let utlatelPersist = [];    // [{ Date, Agent, DurationMins, Calls }]
 let settingsLoaded = false;
 let campDayData   = null;  // separate campaign day data
 let campWeekData  = null;  // separate campaign week data
+let leadSnapToday = null;  // Lead History as-of-date snapshot for the selected day (Overview Today panel)
+let leadSnapWeek  = null;  // { activeLeads, newLeads, concluded } aggregated across the selected week (Overview Week panel)
+let cmpChaserMetric = "leads"; // "approvals" | "denials" | "leads" -- Compare tab's per-chaser Period B vs A metric
 
 window.addEventListener("DOMContentLoaded", () => {
   const today = new Date().toISOString().slice(0,10);
@@ -991,12 +1021,19 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("campDayPicker").value  = today;
   document.getElementById("campWeekPicker").value = today;
   document.getElementById("campMonthPicker").value = today.slice(0,7); // "YYYY-MM"
+  document.getElementById("chaserDate").value = today;
   initCampaignQuarterSelectors();
   CHASERS.forEach(n => { shiftMap[n]=DEFAULT_SHIFT_MINS; agentMap[n]=n; });
   buildShiftGrid();
   buildSortBtns();
   populateCustomFieldSelects();
   loadData();
+
+  const resolverEl = document.getElementById("conflictResolverName");
+  if (resolverEl) {
+    resolverEl.value = localStorage.getItem("conflictResolverName") || "";
+    resolverEl.addEventListener("change", () => localStorage.setItem("conflictResolverName", resolverEl.value.trim()));
+  }
 });
 
 // Populate the Quarter and Year dropdowns in the Campaigns tab, defaulting
@@ -1028,7 +1065,7 @@ function initCampaignQuarterSelectors() {
 }
 
 // ── TABS ──────────────────────────────────────────────────────
-const TABS = ["overview","campaigns","leaderboard","custom","history","charts","chasers","compare","controls"];
+const TABS = ["overview","campaigns","leaderboard","custom","history","charts","chasers","compare","conflicts","controls"];
 function setTab(tab) {
   activeTab = tab;
   TABS.forEach(t => document.getElementById("tab-"+t).classList.toggle("hidden", t!==tab));
@@ -1041,6 +1078,7 @@ function setTab(tab) {
   if (tab === "compare")  initCompareDefaults();
   if (tab === "campaigns") setTimeout(renderCampaignTrend, 200);
   if (tab === "controls")  setTimeout(initControlsTab, 100);
+  if (tab === "conflicts") refreshConflicts();
 }
 
 // ── DATA ──────────────────────────────────────────────────────
@@ -1058,6 +1096,27 @@ async function loadData() {
       fetchAPI("campaignresponses", ""),
       fetchAPI("chasers", "")
     ]);
+    // Lead History snapshot for Overview's Leads/New Leads/Leads Concluded --
+    // fetched separately (not part of the outage check above) since it's
+    // additive: if it fails, Overview still renders, just without these 3
+    // stats until the next successful load.
+    fetchAPI("leadsnapshot", d).then(v => { leadSnapToday = v; if (dayData) renderTodayPanel(); }).catch(() => {});
+    Promise.all(getWeekTabsJS(d).map(tab => fetchAPI("leadsnapshot", tab).catch(() => null))).then(snaps => {
+      const valid = snaps.filter(Boolean);
+      if (!valid.length) return;
+      leadSnapWeek = {
+        activeLeads: (valid[valid.length-1] || {}).activeLeads || 0,
+        newLeads:    valid.reduce((s,v)=>s+(v.newLeads||0),0),
+        concluded:   valid.reduce((s,v)=>s+(v.concluded||0),0),
+      };
+      if (weekData) renderWeekPanel();
+    }).catch(() => {});
+    // Fetched proactively (not just lazily inside renderHistView) so it's
+    // already available for the Compare tab's per-chaser Leads metric,
+    // which doesn't otherwise pass through the History tab first.
+    if (!leadActivityDaily) {
+      fetchAPI("leadactivity", "").then(v => { if (v && v.rows) leadActivityDaily = v.rows; }).catch(() => {});
+    }
     // Promise.allSettled never rejects, even if every request failed — without
     // this check a total backend outage falls straight through to an all-zero
     // "Archive" render with no indication anything is wrong.
@@ -1323,6 +1382,55 @@ function buildCampaignFromLeadsDateRange(fromDate, toDate) {
   return camps;
 }
 
+// Deduplicated New Leads / Leads Concluded across a Date range, sourced
+// from the per-day Lead History activity table (mode=leadactivity) -- one
+// row per calendar day across the entire log, fetched/cached once and
+// filtered here client-side exactly like campaignLeads above.
+function sumLeadActivityForRange(fromDate, toDate, chaserName) {
+  const out = { newLeads: 0, concluded: 0 };
+  if (!leadActivityDaily) return out;
+  for (const row of leadActivityDaily) {
+    const d = parseArchiveDate(row.Date);
+    if (!d) continue;
+    if (fromDate && d < fromDate) continue;
+    if (toDate   && d > toDate)   continue;
+    if (chaserName) {
+      const cb = (row.ByChaser || {})[chaserName];
+      if (cb) { out.newLeads += cb.newLeads || 0; out.concluded += cb.concluded || 0; }
+    } else {
+      out.newLeads  += Number(row.NewLeads)  || 0;
+      out.concluded += Number(row.Concluded) || 0;
+    }
+  }
+  return out;
+}
+
+// Mirrors filterArchiveRows()'s view/range date-window logic but returns
+// {fromDate,toDate} Date objects instead of filtering rows, so the same
+// window can be reused against campaignLeads / leadActivityDaily.
+function getHistDateRange(view, range) {
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth(), q = Math.floor(month/3);
+  if (view === "month")   return { fromDate: new Date(year, month, 1, 0,0,0),   toDate: new Date(year, month+1, 0, 23,59,59) };
+  if (view === "quarter") return { fromDate: new Date(year, q*3, 1, 0,0,0),     toDate: new Date(year, q*3+3, 0, 23,59,59) };
+  if (view === "year")    return { fromDate: new Date(year, 0, 1, 0,0,0),       toDate: new Date(year, 11, 31, 23,59,59) };
+  if (view === "custom" && range && range.from && range.to) {
+    const [fy,fm,fd] = range.from.split("-").map(Number);
+    const [ty,tm,td] = range.to.split("-").map(Number);
+    return { fromDate: new Date(fy, fm-1, fd, 0,0,0), toDate: new Date(ty, tm-1, td, 23,59,59) };
+  }
+  return { fromDate: null, toDate: null };
+}
+
+// Best-effort fetch of the Lead History as-of-date snapshot for a Date
+// object, formatted as "M/D/YYYY". Used by every Campaigns tab panel
+// (Day/Week/Month/Quarter) to add Leads/In Process/Verbal Denial stats --
+// returns null on failure so the campaign cards still render without them.
+async function fetchLeadSnapshotForDate(dateObj) {
+  const dt = `${dateObj.getMonth()+1}/${dateObj.getDate()}/${dateObj.getFullYear()}`;
+  try { return await fetchAPI("leadsnapshot", dt); } catch(e) { return null; }
+}
+
 // Build day-shaped data from archive rows for a specific date
 function buildDayFromArchive(rows, dateTab) {
   // Match by M/D ignoring year — dateTab is "6/25", archive may store "6/25/2026"
@@ -1436,11 +1544,10 @@ function recalc() { renderAll(); }
 
 // ── PULSE BAR ─────────────────────────────────────────────────
 function renderPulseBar() {
-  const colors=["#2DD4BF","#4ADE9C","#F2B84B","#A78BFA","#F0677A"];
   const ch=(dayData.chasers||[]);
   const tot=ch.reduce((s,c)=>s+(c.totalCases||0),0)||1;
   document.getElementById("pulseBar").innerHTML=ch.map((c,i)=>`
-    <div class="pulse-segment" style="background:${colors[i%colors.length]};opacity:${c.totalCases?1:.2}"
+    <div class="pulse-segment" style="background:${CHASER_COLORS[c.name]||"var(--teal)"};opacity:${c.totalCases?1:.2}"
          title="${c.name}: ${c.totalCases||0} cases"></div>`).join("");
 }
 
@@ -1448,10 +1555,12 @@ function renderPulseBar() {
 function renderTodayPanel() {
   const t=dayData.teamTotals||{}, r=dayData.responses||{};
   const totalResp=(r.approved||0)+(r.denied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
+  const ls = leadSnapToday || {};
   setEl("todayPanel",`
     <div class="metric-grid">
-      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",totalResp,"","")}
+      ${mc("Leads",ls.activeLeads||0,"","teal")}${mc("Responses",totalResp,"","")}
       ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
+      ${mc("New Leads",ls.newLeads||0,"","")}${mc("Leads Concluded",ls.concluded||0,"","")}
     </div>
     <div class="response-row">
       <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
@@ -1466,10 +1575,12 @@ function renderTodayPanel() {
 function renderWeekPanel() {
   const t=weekData.weekTotals||{};
   const totalResp=(t.totalApproved||0)+(t.totalDenied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
+  const ls = leadSnapWeek || {};
   setEl("weekPanel",`
     <div class="metric-grid">
-      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",totalResp,"","")}
+      ${mc("Leads",ls.activeLeads||0,"","teal")}${mc("Responses",totalResp,"","")}
       ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
+      ${mc("New Leads",ls.newLeads||0,"","")}${mc("Leads Concluded",ls.concluded||0,"","")}
     </div>
     <div class="response-row">
       <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
@@ -1509,7 +1620,13 @@ async function loadCampaignDay() {
     } else {
       campDayData = await fetchAPI("day", dateTab);
     }
-    setEl("campaignTodayPanel", campaignHTML(campDayData, "day"));
+    // Deduplicated Leads / In Process / Verbal Denial counts as of this
+    // exact date, reconstructed from the Lead History log -- independent
+    // of the archive-based approved/denied numbers above. Best-effort:
+    // if it fails, the campaign cards still render without these 3 stats.
+    let leadSnap = null;
+    try { leadSnap = await fetchAPI("leadsnapshot", dateTab); } catch(e) { /* omit lead stats */ }
+    setEl("campaignTodayPanel", campaignHTML(campDayData, "day", leadSnap));
   } catch(err) {
     setEl("campaignTodayPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1540,7 +1657,12 @@ async function loadCampaignWeek() {
     } else {
       campWeekData = await fetchAPI("week", dateTab);
     }
-    setEl("campaignWeekPanel", campaignHTML(campWeekData, "week"));
+    // Range-aggregated Leads/In Process/Verbal Denial, anchored to the
+    // LAST day of the week (Friday) -- "Leads" is a cumulative snapshot
+    // concept, not a per-day flow, so a range view shows it as of the
+    // range's end rather than trying to sum it across days.
+    const leadSnap = await fetchLeadSnapshotForDate(fri);
+    setEl("campaignWeekPanel", campaignHTML(campWeekData, "week", leadSnap));
   } catch(err) {
     setEl("campaignWeekPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1568,7 +1690,8 @@ async function loadCampaignMonth() {
       } catch(e) { /* will render zeros below if still unavailable */ }
     }
     const camps = buildCampaignFromLeadsDateRange(fromDate, toDate);
-    setEl("campaignMonthPanel", campaignHTML(camps, "camps"));
+    const leadSnap = await fetchLeadSnapshotForDate(toDate);
+    setEl("campaignMonthPanel", campaignHTML(camps, "camps", leadSnap));
   } catch(err) {
     setEl("campaignMonthPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1595,7 +1718,8 @@ async function loadCampaignQuarter() {
       } catch(e) { /* will render zeros below if still unavailable */ }
     }
     const camps = buildCampaignFromLeadsDateRange(fromDate, toDate);
-    setEl("campaignQuarterPanel", campaignHTML(camps, "camps"));
+    const leadSnap = await fetchLeadSnapshotForDate(toDate);
+    setEl("campaignQuarterPanel", campaignHTML(camps, "camps", leadSnap));
   } catch(err) {
     setEl("campaignQuarterPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1614,7 +1738,7 @@ async function refreshCampaigns() {
   await Promise.all(tasks);
 }
 
-function campaignHTML(data,mode) {
+function campaignHTML(data,mode,leadSnap) {
   // mode "day"/"week" read from a day/week-shaped data object as before.
   // mode "camps" means data IS the camps object already (used by month/quarter views).
   const camps = mode==="camps"
@@ -1624,9 +1748,18 @@ function campaignHTML(data,mode) {
       : aggWeekCampaigns(data.weekDays||[]);
   const totApp=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.approved||0),0);
   const totDen=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.denied||0),0);
+  // leadSnap is the deduplicated Lead History as-of-date snapshot -- one
+  // lifecycle = one Lead, counted once no matter how many chasers touched
+  // it. Independent of the approved/denied numbers above, which come from
+  // the campaign response sheets. For Day it's as of that exact date; for
+  // Week/Month/Quarter ("range aggregated") it's as of the range's last
+  // day, since Leads/In Process/Verbal Denial are cumulative snapshot
+  // concepts rather than something you sum across days.
+  const leadStats = leadSnap && leadSnap.byCampaign;
   return `<div class="campaign-grid">${CAMPAIGNS.map(camp=>{
     const d=camps[camp.key]||{approved:0,denied:0,total:0};
     const campTotal=(d.approved||0)+(d.denied||0); const pct=campTotal?(d.approved/campTotal*100).toFixed(1):"--";
+    const ls = leadStats ? (leadStats[camp.key]||{leads:0,inProcess:0,verbalDenial:0}) : null;
     return `<div class="campaign-card">
       <div class="campaign-name" style="color:${camp.color}">${camp.label}</div>
       <div class="campaign-stats">
@@ -1634,6 +1767,9 @@ function campaignHTML(data,mode) {
         <div class="cstat"><div class="cstat-val" style="color:var(--red)">${d.denied||0}</div><div class="cstat-lbl">Denied</div></div>
         <div class="cstat"><div class="cstat-val" style="color:var(--text-2)">${d.total||0}</div><div class="cstat-lbl">Total</div></div>
         <div class="cstat"><div class="cstat-val" style="color:${camp.color}">${pct}${pct!=="--"?"%":""}</div><div class="cstat-lbl">Approv%</div></div>
+        ${ls ? `<div class="cstat"><div class="cstat-val" style="color:var(--teal)">${ls.leads}</div><div class="cstat-lbl">Leads</div></div>
+        <div class="cstat"><div class="cstat-val" style="color:var(--amber)">${ls.inProcess}</div><div class="cstat-lbl">In Process</div></div>
+        <div class="cstat"><div class="cstat-val" style="color:var(--text-2)">${ls.verbalDenial}</div><div class="cstat-lbl">Verbal Denial</div></div>` : ""}
       </div></div>`;}).join("")}
   </div><div class="divider"></div>
   <div class="response-row">
@@ -1641,7 +1777,8 @@ function campaignHTML(data,mode) {
       <div><div class="resp-label">All Campaigns Approved</div><div class="resp-value">${totApp}</div></div></div>
     <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
       <div><div class="resp-label">All Campaigns Denied</div><div class="resp-value">${totDen}</div></div></div>
-  </div>`;
+  </div>
+  ${leadSnap ? `<div style="font-size:10px;color:var(--text-3);margin-top:8px">Leads / In Process / Verbal Denial as of ${leadSnap.asOfDate}</div>` : ""}`;
 }
 
 function aggWeekCampaigns(weekDays) {
@@ -2280,14 +2417,20 @@ function mockCampaignData(){return{ort:{approved:6,denied:2,total:10},cgm:{appro
 let archiveCache   = null;   // raw rows from archive sheet
 let archiveFetched = null;   // Date object of last fetch
 let campaignLeads  = null;   // rows from Campaign Responses tab (one row = Date+Campaign aggregate)
+let leadActivityDaily = null; // rows from getLeadActivityByDay (one row per day: {Date, NewLeads, Concluded})
 let histView       = "month";
 let histRange      = { from: null, to: null };
 
 const CHASER_COLORS = {
-  // Current chasers
-  Alex:"#2DD4BF", Hope:"#4ADE9C", Rose:"#F2B84B", Frank:"#A78BFA", Nova:"#F0677A",
-  // Former chasers — shown in history only
-  Nora:"#60A5E8", Jamie:"#F2A0A0", Rick:"#7DDDA8", Caroline:"#C9A8E8",
+  Nova:"#8E44AD",     // purple
+  Nora:"#F5821F",     // orange
+  Caroline:"#E53935", // red
+  Frank:"#22C55E",    // green
+  Hope:"#EC4899",     // pink
+  Rose:"#FF1493",     // hot pink
+  Alex:"#3B82F6",     // blue
+  Jamie:"#FFFFFF",    // white
+  Rick:"#FACC15",     // yellow
 };
 
 // Full name → display name mapping (mirrors Apps Script CHASER_NAME_MAP)
@@ -2364,7 +2507,7 @@ function applyCustomRange() {
   renderHistView();
 }
 
-function renderHistView() {
+async function renderHistView() {
   if (!archiveCache) {
     // Auto-load mock data for demo
     refreshArchive();
@@ -2375,12 +2518,30 @@ function renderHistView() {
     setEl("histContent", `<div class="no-archive">No data found for this period.</div>`);
     return;
   }
+
+  // Deduplicated sources for the team-wide headline stats -- campaign
+  // response totals (one count per lead, chasers irrelevant) instead of
+  // summing every chaser-row's own Approvals/Denials, which would count a
+  // lead once per chaser it's assigned to. Same for New Leads: one count
+  // per lifecycle birth, regardless of how many chasers are on it.
+  if (!campaignLeads) { try { const cr = await fetchAPI("campaignresponses", ""); if (cr && cr.rows) campaignLeads = cr.rows; } catch(e) { /* cards render 0 */ } }
+  if (!leadActivityDaily) { try { const la = await fetchAPI("leadactivity", ""); if (la && la.rows) leadActivityDaily = la.rows; } catch(e) { /* cards render 0 */ } }
+
+  const { fromDate, toDate } = getHistDateRange(histView, histRange);
+  const campTotals = buildCampaignFromLeadsDateRange(fromDate, toDate);
+  const leadTotals = sumLeadActivityForRange(fromDate, toDate);
+  const dedup = {
+    leads:     leadTotals.newLeads,
+    approvals: CAMPAIGN_KEYS.reduce((s,k)=>s+(campTotals[k]?.approved||0),0),
+    denials:   CAMPAIGN_KEYS.reduce((s,k)=>s+(campTotals[k]?.denied||0),0),
+  };
+
   const summary  = aggregateArchiveRows(rows);
   const byDate   = groupByDate(rows);
   const byChaserAgg = groupByChaser(rows);
   const dates    = Object.keys(byDate).sort();
   setEl("histContent", `
-    ${renderHistSummaryCards(summary)}
+    ${renderHistSummaryCards(summary, dedup)}
     <div class="charts-row">
       <div class="chart-wrap"><div class="chart-title">Cases by Chaser</div><div id="barChart"></div></div>
       <div class="chart-wrap"><div class="chart-title">Approvals by Chaser</div><div id="barChartApprovals"></div></div>
@@ -2500,18 +2661,19 @@ function groupByChaser(rows) {
 }
 
 // ── SUMMARY CARDS ────────────────────────────────────────────
-function renderHistSummaryCards(s) {
+function renderHistSummaryCards(s, dedup) {
   const label   = { month:"Month", quarter:"Quarter", year:"Year", custom:"Period" }[histView]||"";
-  const totalR  = (s.approvals||0)+(s.denials||0); const appPct = totalR ? (s.approvals/totalR*100).toFixed(1) : "--";
+  const approvals = dedup.approvals, denials = dedup.denials;
+  const totalR  = approvals + denials; const appPct = totalR ? (approvals/totalR*100).toFixed(1) : "--";
   const eff     = s.cases    ? (s.positive/s.cases*100).toFixed(1)   : "--";
   const avgTime = s.cases    ? (s.timeMins/s.cases).toFixed(1)        : "--";
   const avgDay  = s.days     ? (s.cases/s.days).toFixed(1)            : "--";
   const avgProd = s.days     ? (s.productiveTime/s.days).toFixed(1)   : "--";
   const totalH  = s.durationMins ? (s.durationMins/60).toFixed(1)     : "--";
   return `<div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
-    ${mc("Cases ("+label+")",    s.cases,     "", "teal")}
-    ${mc("Approvals",            s.approvals, "", "green")}
-    ${mc("Denials",              s.denials,   "", "red")}
+    ${mc("Leads ("+label+")",    dedup.leads, "", "teal")}
+    ${mc("Approvals",            approvals,   "", "green")}
+    ${mc("Denials",              denials,     "", "red")}
     ${mc("Approval Rate",        appPct,      "%","green")}
     ${mc("Efficiency",           eff,         "", "")}
     ${mc("Avg Time/Case",        avgTime,     "m","")}
@@ -3028,21 +3190,31 @@ function selectChaser(name) {
   renderChaserPage();
 }
 
-function renderChaserPage() {
+async function renderChaserPage() {
   if (!activeChaserName) return;
   if (!archiveCache || !archiveCache.length) {
     setEl("chaserPageContent", `<div class="state-block error-msg">Load archive data first (go to Overview tab).</div>`);
     return;
   }
 
-  const period   = document.getElementById("chaserPeriod").value;
-  const rows     = getChaserRows(activeChaserName, period);
+  const pickedDate = document.getElementById("chaserDate").value || new Date().toISOString().slice(0,10);
+
+  // Real, deduplicated Lead History count for this chaser as of the picked
+  // date -- NOT a relabeled Cases number. Best-effort: renders 0 if the
+  // fetch fails rather than blocking the rest of the (archive-sourced) page.
+  const [py,pm,pd] = pickedDate.split("-");
+  const pickedDateTab = `${parseInt(pm)}/${parseInt(pd)}/${py}`;
+  let chaserLeadSnap = null;
+  try { chaserLeadSnap = await fetchAPI("leadsnapshot", pickedDateTab); } catch(e) { /* renders 0 */ }
+  const chaserLeads = (chaserLeadSnap?.byChaser?.[activeChaserName]?.leads) || 0;
+
+  const rows     = getChaserRows(activeChaserName, pickedDate);
   const todayRows= archiveCache.filter(r => String(r.Chaser)===activeChaserName &&
                    String(r.Date).trim() === getTodayTab());
   const color    = CHASER_COLORS[activeChaserName] || "var(--teal)";
 
   if (!rows.length) {
-    setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">No data for ${activeChaserName} in this period.</div>`);
+    setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">No data for ${activeChaserName} on ${pickedDate}.</div>`);
     return;
   }
 
@@ -3068,7 +3240,7 @@ function renderChaserPage() {
   // Rank in leaderboard
   const allChaserTotals = getAllChasers().map(n => ({
     name: n,
-    cases: archiveCache.filter(r=>String(r.Chaser)===n&&filterByPeriod(r,period))
+    cases: archiveCache.filter(r=>String(r.Chaser)===n&&filterByChaserDate(r,pickedDate))
                        .reduce((s,r)=>s+(Number(r.Cases)||0),0)
   })).sort((a,b)=>b.cases-a.cases);
   const rank = allChaserTotals.findIndex(c=>c.name===activeChaserName)+1;
@@ -3096,7 +3268,7 @@ function renderChaserPage() {
         <div class="chaser-avatar" style="background:${color}">${activeChaserName[0]}</div>
         <div>
           <div class="chaser-hero-name" style="color:${color}">${activeChaserName}</div>
-          <div class="chaser-hero-sub">Rank #${rank} · ${totals.days} active days · ${period.charAt(0).toUpperCase()+period.slice(1)}</div>
+          <div class="chaser-hero-sub">Rank #${rank} · ${totals.days} active days · ${pickedDate}</div>
         </div>
       </div>
     </div>
@@ -3104,6 +3276,7 @@ function renderChaserPage() {
     <!-- Summary metrics -->
     <div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
       ${mc("Cases",        totals.cases,     "",  "teal")}
+      ${mc("Leads",        chaserLeads,      "",  "purple")}
       ${mc("Positive",     totals.positive,  "",  "green")}
       ${mc("Approvals",    totals.approvals, "",  "green")}
       ${mc("Denials",      totals.denials,   "",  "red")}
@@ -3162,36 +3335,22 @@ function renderChaserPage() {
   });
 }
 
-function getChaserRows(name, period) {
+function getChaserRows(name, isoDate) {
   return (archiveCache||[]).filter(r =>
-    String(r.Chaser) === name && filterByPeriod(r, period)
+    String(r.Chaser) === name && filterByChaserDate(r, isoDate)
   );
 }
 
-function filterByPeriod(r, period) {
-  const d   = parseArchiveDate(r.Date);
+// isoDate: "YYYY-MM-DD" from the Chaser tab's <input type="date">. Compares
+// at day granularity so it matches archive rows stored as M/D, M/D/YYYY, or
+// YYYY-MM-DD alike (all normalized through parseArchiveDate first).
+function filterByChaserDate(r, isoDate) {
+  const d = parseArchiveDate(r.Date);
   if (!d) return false;
-  const now = new Date();
-  const yr  = now.getFullYear();
-  const mo  = now.getMonth();
-
-  if (period === "today") {
-    // Compare parsed dates to handle M/D, M/D/YYYY, and YYYY-MM-DD in archive
-    const today = new Date(); today.setHours(0,0,0,0);
-    const rd    = new Date(d); rd.setHours(0,0,0,0);
-    return rd.getTime() === today.getTime();
-  }
-  if (period === "week") {
-    // Build the current week's M/D short strings and compare against parsed date
-    const todayTab = getTodayTab();
-    const tabs     = getWeekTabsJS(todayTab);
-    const rShort   = (d.getMonth()+1) + "/" + d.getDate();
-    return tabs.includes(rShort);
-  }
-  if (period === "month")   return d.getFullYear()===yr && d.getMonth()===mo;
-  if (period === "quarter") return d.getFullYear()===yr && Math.floor(d.getMonth()/3)===Math.floor(mo/3);
-  if (period === "year")    return d.getFullYear()===yr;
-  return true;
+  const [y,m,day] = isoDate.split("-").map(Number);
+  const picked = new Date(y, m-1, day); picked.setHours(0,0,0,0);
+  const rd     = new Date(d); rd.setHours(0,0,0,0);
+  return rd.getTime() === picked.getTime();
 }
 
 function renderChaserCampaigns(rows) {
@@ -3309,7 +3468,7 @@ function setComparePreset(type) {
   runComparison();
 }
 
-function runComparison() {
+async function runComparison() {
   if (!archiveCache || !archiveCache.length) {
     setEl("compareContent", `<div class="state-block error-msg">Load archive data first.</div>`);
     return;
@@ -3330,17 +3489,22 @@ function runComparison() {
     return;
   }
 
+  // Needed for the per-chaser "Leads" option below -- lazy-fetch in case
+  // the proactive loadData() fetch hasn't resolved yet or failed.
+  if (!leadActivityDaily && cmpChaserMetric === "leads") {
+    try { const la = await fetchAPI("leadactivity", ""); if (la && la.rows) leadActivityDaily = la.rows; } catch(e) { /* table renders 0 for Leads */ }
+  }
+
   const sumA = aggregateForCompare(rowsA);
   const sumB = aggregateForCompare(rowsB);
 
   const metrics = [
-    { key:"cases",      label:"Total Cases"  },
-    { key:"positive",   label:"Positive"     },
-      { key:"approvals",  label:"Approvals"    },
-    { key:"denials",    label:"Denials"      },
-    { key:"appPct",     label:"Approval %"   },
-    { key:"efficiency", label:"Efficiency %" },
-    { key:"avgCases",   label:"Avg Cases/Day"},
+    { key:"positive",   label:"Positive"       },
+    { key:"approvals",  label:"Approvals"      },
+    { key:"denials",    label:"Denials"        },
+    { key:"appPct",     label:"Approval %"     },
+    { key:"efficiency", label:"Efficiency %"   },
+    { key:"avgCases",   label:"Avg Cases/Day"  },
   ];
 
   const changeRows = metrics.map(m => {
@@ -3364,10 +3528,32 @@ function runComparison() {
     </div>`;
   }).join("");
 
-  // Per-chaser comparison table
+  // Per-chaser comparison table -- metric is user-selectable. Approvals/
+  // Denials come straight from that chaser's own archive rows (no
+  // duplication concern at chaser granularity). Leads is NOT the archive
+  // Cases column relabeled -- it's the real deduplicated New Leads count
+  // per chaser from the Lead History log (sumLeadActivityForRange), so it
+  // genuinely means something different from Cases.
+  const ARCHIVE_FIELD = { approvals:"Approvals", denials:"Denials" };
+  let chaserValueFn;
+  if (cmpChaserMetric === "leads") {
+    const [afy,afm,afd] = fromA.split("-").map(Number), [aty,atm,atd] = toA.split("-").map(Number);
+    const [bfy,bfm,bfd] = fromB.split("-").map(Number), [bty,btm,btd] = toB.split("-").map(Number);
+    const rangeA = [new Date(afy,afm-1,afd,0,0,0), new Date(aty,atm-1,atd,23,59,59)];
+    const rangeB = [new Date(bfy,bfm-1,bfd,0,0,0), new Date(bty,btm-1,btd,23,59,59)];
+    chaserValueFn = (name) => [
+      sumLeadActivityForRange(rangeA[0], rangeA[1], name).newLeads,
+      sumLeadActivityForRange(rangeB[0], rangeB[1], name).newLeads,
+    ];
+  } else {
+    const field = ARCHIVE_FIELD[cmpChaserMetric] || "Approvals";
+    chaserValueFn = (name) => [
+      rowsA.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
+      rowsB.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
+    ];
+  }
   const chaserRows = getAllChasers().map(name => {
-    const cA = rowsA.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r.Cases)||0),0);
-    const cB = rowsB.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r.Cases)||0),0);
+    const [cA, cB] = chaserValueFn(name);
     const diff= cB-cA;
     const cls = diff>0?"change-up":diff<0?"change-down":"change-flat";
     const arrow=diff>0?"↑":diff<0?"↓":"→";
@@ -3377,6 +3563,7 @@ function runComparison() {
       <td><span class="change-badge ${cls}">${arrow} ${Math.abs(diff)}</span></td>
     </tr>`;
   }).join("");
+  const CMP_METRIC_LABELS = { approvals:"Approvals", denials:"Denials", leads:"Leads" };
 
   setEl("compareContent", `
     <div class="compare-grid">
@@ -3387,7 +3574,14 @@ function runComparison() {
       <div class="compare-panel">
         <div class="compare-panel-header">Period B vs A — Changes</div>
         <div style="padding:16px">
-          <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Per Chaser — Cases</div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)">Per Chaser — ${CMP_METRIC_LABELS[cmpChaserMetric]}</div>
+            <select class="ctrl-select" style="width:120px;font-size:11px" onchange="cmpChaserMetric=this.value;runComparison();">
+              <option value="leads"     ${cmpChaserMetric==="leads"?"selected":""}>Leads</option>
+              <option value="approvals" ${cmpChaserMetric==="approvals"?"selected":""}>Approvals</option>
+              <option value="denials"   ${cmpChaserMetric==="denials"?"selected":""}>Denials</option>
+            </select>
+          </div>
           <table class="lb-table" style="min-width:unset"><thead><tr>
             <th>Chaser</th><th>Period A</th><th>Period B</th><th>Change</th>
           </tr></thead><tbody>${chaserRows}</tbody></table>
@@ -3398,7 +3592,6 @@ function runComparison() {
   `);
 
   requestAnimationFrame(() => {
-    drawCompareChart("cmpCasesChart", rowsA, rowsB, "cases", "Cases", fromA, fromB);
     drawCompareChart("cmpAppChart",   rowsA, rowsB, "approvals", "Approvals", fromA, fromB);
   });
 }
@@ -3406,16 +3599,12 @@ function runComparison() {
 function renderComparisonCharts(rowsA, rowsB, fromA, toA, fromB, toB) {
   return `<div class="charts-row">
     <div class="chart-wrap">
-      <div class="chart-title">Cases — Period A vs B</div>
-      <div id="cmpCasesChart"></div>
+      <div class="chart-title">Approvals — Period A vs B</div>
+      <div id="cmpAppChart"></div>
       <div class="rolling-legend">
         <div class="rolling-legend-item"><div class="rolling-legend-line" style="background:var(--teal)"></div>Period A (${fromA})</div>
         <div class="rolling-legend-item"><div class="rolling-legend-line" style="background:var(--amber)"></div>Period B (${fromB})</div>
       </div>
-    </div>
-    <div class="chart-wrap">
-      <div class="chart-title">Approvals — Period A vs B</div>
-      <div id="cmpAppChart"></div>
     </div>
   </div>`;
 }
@@ -4060,6 +4249,170 @@ async function refreshChasterRoster() {
     // The save action itself already reported success/failure to the user;
     // keep whichever roster is already in memory rather than surface a
     // second error for what's just a post-save refresh.
+  }
+}
+
+// ── LEAD HISTORY CONFLICTS TAB ──────────────────────────────────
+let leadConflicts = [];
+
+function setConflictsStatus(msg, color) {
+  const el = document.getElementById("conflictsStatus");
+  if (!el) return;
+  el.textContent = msg || "";
+  el.style.color = color || "var(--text-3)";
+}
+
+function getConflictResolverName() {
+  const el = document.getElementById("conflictResolverName");
+  return el ? el.value.trim() : "";
+}
+
+async function refreshConflicts() {
+  setConflictsStatus("Loading conflicts...", "var(--text-3)");
+  try {
+    const data = await fetchAPI("leadconflicts", "");
+    leadConflicts = Array.isArray(data.conflicts) ? data.conflicts : [];
+    renderConflictsSummary();
+    renderConflictsTable();
+    setConflictsStatus("", "");
+  } catch (err) {
+    setConflictsStatus("Error loading conflicts: " + err.message, "var(--red)");
+    const tbody = document.getElementById("conflictsBody");
+    if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="state-block error-msg">Error: ${err.message}</td></tr>`;
+  }
+}
+
+function renderConflictsSummary() {
+  const el = document.getElementById("conflictsSummary");
+  if (!el) return;
+  const blocking = leadConflicts.filter(c => c.ConflictType === "Blocking" && c.Status === "Pending").length;
+  const review   = leadConflicts.filter(c => c.ConflictType === "Review"   && c.Status === "Pending").length;
+  const errored  = leadConflicts.filter(c => c.Status === "DataError - Pending Fix").length;
+  el.innerHTML = "";
+  [
+    ["Blocking (held from Lead History)", blocking, "var(--red)"],
+    ["Review (informational)", review, "var(--amber)"],
+    ["Data Error — Pending Fix", errored, "var(--text-3)"],
+  ].forEach(([label, val, color]) => {
+    const box = document.createElement("div");
+    box.className = "metric";
+    const l = document.createElement("div"); l.className = "metric-label"; l.textContent = label;
+    const v = document.createElement("div"); v.className = "metric-value"; v.style.color = color; v.textContent = val;
+    box.appendChild(l); box.appendChild(v);
+    el.appendChild(box);
+  });
+}
+
+function renderConflictsTable() {
+  const tbody = document.getElementById("conflictsBody");
+  if (!tbody) return;
+  tbody.innerHTML = "";
+
+  if (!leadConflicts.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-3)">No pending conflicts. &#9989;</td></tr>`;
+    return;
+  }
+
+  // Blocking first, then Review, then DataError -- most actionable on top.
+  const order = { "Blocking": 0, "Review": 1 };
+  const sorted = [...leadConflicts].sort((a, b) => (order[a.ConflictType] ?? 2) - (order[b.ConflictType] ?? 2));
+
+  sorted.forEach(c => {
+    const tr = document.createElement("tr");
+
+    const td = (text) => { const el = document.createElement("td"); el.textContent = text == null ? "" : text; return el; };
+
+    tr.appendChild(td(c.ConflictID));
+
+    const typeTd = document.createElement("td");
+    const typePill = document.createElement("span");
+    typePill.className = "pill " + (c.ConflictType === "Blocking" ? "pill-red" : "pill-amber");
+    typePill.textContent = c.ConflictType;
+    typeTd.appendChild(typePill);
+    tr.appendChild(typeTd);
+
+    tr.appendChild(td(c.MBI));
+    tr.appendChild(td(String(c.Campaign || "").toUpperCase()));
+    tr.appendChild(td(c.SubmissionDate));
+    tr.appendChild(td(c.TabsFound));
+    tr.appendChild(td(c.DateDetected));
+
+    const statusTd = document.createElement("td");
+    const statusPill = document.createElement("span");
+    statusPill.className = "pill " + (c.Status === "Pending" ? "pill-teal" : "pill-stub");
+    statusPill.textContent = c.Status;
+    statusTd.appendChild(statusPill);
+    tr.appendChild(statusTd);
+
+    const actionsTd = document.createElement("td");
+    actionsTd.style.display = "flex";
+    actionsTd.style.flexWrap = "wrap";
+    actionsTd.style.gap = "6px";
+    buildConflictActions(c).forEach(btn => actionsTd.appendChild(btn));
+    tr.appendChild(actionsTd);
+
+    tbody.appendChild(tr);
+  });
+}
+
+function makeConflictActionButton(label, onClick, danger) {
+  const btn = document.createElement("button");
+  btn.className = "btn btn-ghost";
+  btn.style.padding = "4px 9px";
+  btn.style.fontSize = "11px";
+  if (danger) btn.style.color = "var(--red)";
+  btn.textContent = label;
+  btn.addEventListener("click", () => withButtonGuard(btn, onClick));
+  return btn;
+}
+
+// Builds the action buttons valid for this conflict's ConflictType/Status,
+// matching exactly what resolveLeadConflict() in LeadHistory.gs accepts --
+// "pick"/"bothvalid" only for Blocking, "acknowledge" only for Review.
+function buildConflictActions(c) {
+  const buttons = [];
+
+  if (c.Status === "DataError - Pending Fix") {
+    buttons.push(makeConflictActionButton("Ready to Retry", () => resolveConflict(c.ConflictID, "readytoretry")));
+    buttons.push(makeConflictActionButton("Dismiss", () => resolveConflict(c.ConflictID, "dismiss"), true));
+    return buttons;
+  }
+
+  if (c.ConflictType === "Blocking") {
+    // TabsFound is a plain comma-separated list of state names for Blocking, e.g. "InProcess, BTO"
+    const states = String(c.TabsFound || "").split(",").map(s => s.trim()).filter(Boolean);
+    states.forEach(state => {
+      buttons.push(makeConflictActionButton("Pick: " + state, () => resolveConflict(c.ConflictID, "pick:" + state)));
+    });
+    buttons.push(makeConflictActionButton("Both Valid", () => resolveConflict(c.ConflictID, "bothvalid")));
+    buttons.push(makeConflictActionButton("Data Error", () => resolveConflict(c.ConflictID, "dataerror")));
+    buttons.push(makeConflictActionButton("Dismiss", () => resolveConflict(c.ConflictID, "dismiss"), true));
+  } else if (c.ConflictType === "Review") {
+    buttons.push(makeConflictActionButton("Acknowledge", () => resolveConflict(c.ConflictID, "acknowledge")));
+    buttons.push(makeConflictActionButton("Dismiss", () => resolveConflict(c.ConflictID, "dismiss"), true));
+  }
+
+  return buttons;
+}
+
+async function resolveConflict(conflictId, action) {
+  const resolvedBy = getConflictResolverName();
+  if (!resolvedBy) { setConflictsStatus("Enter your name in \"Resolved By\" first.", "var(--red)"); return; }
+
+  setConflictsStatus("Resolving conflict #" + conflictId + "...", "var(--text-3)");
+  try {
+    const url = `${API_BASE}?mode=resolveconflict&conflictId=${encodeURIComponent(conflictId)}`
+      + `&action=${encodeURIComponent(action)}&resolvedBy=${encodeURIComponent(resolvedBy)}`;
+    const res  = await fetchWithTimeout(url);
+    const data = await res.json();
+    if (data.success) {
+      setConflictsStatus("Conflict #" + conflictId + " resolved.", "var(--green)");
+      await refreshConflicts();
+    } else {
+      setConflictsStatus("Error: " + (data.error || "Could not resolve conflict."), "var(--red)");
+    }
+  } catch (err) {
+    setConflictsStatus("Error: " + err.message, "var(--red)");
   }
 }
 
