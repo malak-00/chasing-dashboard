@@ -306,6 +306,7 @@ function archiveDayData(dateTab) {
 
   let written = 0;
   const missingTabChasers = [];
+  const readErrorChasers  = [];
   for (const c of data.chasers) {
     const key = dateTab + "|" + c.name;
     if (existing.has(key)) {
@@ -319,8 +320,17 @@ function archiveDayData(dateTab) {
     // genuinely means "no data yet", not "check the other tab". Writing zeros would
     // be indistinguishable from a real zero-case day and would corrupt the archive
     // permanently. Skip and leave it for a later Sync once the tab exists.
+    //
+    // readChaserTab() also sets tabFound=false when openById/getSheetByName threw
+    // (permissions, bad sheet ID, transient API error) — that is NOT "no data yet",
+    // so it's tracked and logged separately instead of being lumped in with a
+    // genuinely missing tab, which would send troubleshooting in the wrong direction.
     if (!c.tabFound) {
-      missingTabChasers.push(c.name);
+      if (c.error) {
+        readErrorChasers.push(c.name + " (" + c.error + ")");
+      } else {
+        missingTabChasers.push(c.name);
+      }
       continue;
     }
     // Total approvals/denials across all campaigns for this chaser
@@ -360,6 +370,12 @@ function archiveDayData(dateTab) {
       ".\" found for: " + missingTabChasers.join(", ") +
       " — their tracker tab for today may not exist yet. No row was written for them " +
       "(zeros were NOT recorded). Re-run Sync for " + dateTab + " once the tab exists.");
+  }
+  if (readErrorChasers.length) {
+    Logger.log("*** ARCHIVE INCOMPLETE for " + dateTab + " *** could not read tracker sheet for: " +
+      readErrorChasers.join(", ") + " — this is NOT a missing tab, the sheet read itself " +
+      "threw an error (see parenthetical above). No row was written for them. Re-run Sync for " +
+      dateTab + " once the underlying error is fixed.");
   }
 
   // Add bottom border to the last chaser row for this date
@@ -812,6 +828,12 @@ function doGet(e) {
       );
       CacheService.getScriptCache().remove("lead_conflicts");
 
+    } else if (mode === "debug") {
+      // Diagnostic view of exactly what a Sync would see for one date —
+      // see getDebugInfoForDate() for what this exposes and why it exists
+      // (no Execution Log access needed; visible via the Network tab).
+      payload = getDebugInfoForDate(date);
+
     } else if (mode === "day") {
       // Legacy support — still works if called directly
       payload = getDayData(date);
@@ -1162,6 +1184,96 @@ function parseResponseTab(ss, tabConfig, dateTab, result) {
       if (denial)   camp.denied++;
     }
   }
+}
+
+// ============================================================
+// DEBUG — surfaces exactly what a Sync would see for one date,
+// without needing Apps Script Execution Log access (Editor > Executions).
+// Hit ?mode=debug&date=M/D directly in the browser (or via the Network
+// tab like the other modes) to inspect: whether each chaser's tracker
+// tab was found (and the real error if openById/getSheetByName threw,
+// instead of that being silently reported as "tab not found"); which
+// chasers already have an archive row for this date (archiveDayData
+// silently skips writing for anyone already in that set, so a re-Sync
+// looks like a no-op for them); and, per RESPONSE_SOURCES tab, every
+// row the code currently sees as date-matching, regardless of whether
+// it passed the approval/denial text check.
+// ============================================================
+function getDebugInfoForDate(dateTab) {
+  const chaserSheets = getActiveChaserSheetMap();
+  const chasers = Object.entries(chaserSheets).map(([name, sheetId]) => {
+    const r = readChaserTab(sheetId, dateTab, name);
+    return {
+      name, sheetId, tabFound: r.tabFound, error: r.error || null,
+      totalCases: r.totalCases, totalPositive: r.totalPositive, totalTimeMins: r.totalTimeMins
+    };
+  });
+
+  // Chasers who already have a row for this date — archiveDayData skips
+  // these as duplicates on the next Sync instead of refreshing them.
+  const existingArchiveChasers = [];
+  try {
+    const ss      = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
+    const tabName = monthTabName(dateTab);
+    const sheet   = ss.getSheetByName(tabName);
+    if (sheet) {
+      const data = sheet.getDataRange().getValues();
+      for (let r = 1; r < data.length; r++) {
+        if (normalizeDateCellToTab(data[r][0]) === dateTab) {
+          existingArchiveChasers.push(String(data[r][1]));
+        }
+      }
+    }
+  } catch (err) { /* leave existingArchiveChasers empty */ }
+
+  const responseSources = [];
+  for (const source of RESPONSE_SOURCES) {
+    let ss;
+    try { ss = SpreadsheetApp.openById(source.id); }
+    catch (err) {
+      for (const tabConfig of source.tabs) {
+        responseSources.push({ tab: tabConfig.name, error: "Could not open spreadsheet: " + err.message });
+      }
+      continue;
+    }
+
+    for (const tabConfig of source.tabs) {
+      const sheet = ss.getSheetByName(tabConfig.name);
+      if (!sheet) { responseSources.push({ tab: tabConfig.name, error: "Tab not found" }); continue; }
+
+      const data    = sheet.getDataRange().getValues();
+      const headers = data[0] ? data[0].map(h => String(h).trim().toUpperCase()) : [];
+      const feedbackCol = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
+      const chaserCol   = headers.indexOf(tabConfig.chaserCol.toUpperCase());
+
+      const entry = {
+        tab: tabConfig.name,
+        headersRaw: data[0] || [],
+        feedbackColConfigured: tabConfig.feedbackCol,
+        feedbackColFound: feedbackCol >= 0,
+        chaserColConfigured: tabConfig.chaserCol,
+        chaserColFound: chaserCol >= 0,
+        totalDataRows: Math.max(0, data.length - 1),
+        matchingDateRows: []
+      };
+
+      if (feedbackCol >= 0 && chaserCol >= 0) {
+        for (let r = 1; r < data.length; r++) {
+          const feedback = String(data[r][feedbackCol] || "").trim();
+          const chaser   = String(data[r][chaserCol]   || "").trim();
+          if (!feedback || !feedbackMatchesDate(feedback, dateTab)) continue;
+          entry.matchingDateRows.push({
+            row: r + 1, feedback, chaser,
+            isApproval: isApproval(feedback), isDenial: isDenial(feedback)
+          });
+        }
+      }
+
+      responseSources.push(entry);
+    }
+  }
+
+  return { date: dateTab, chasers, existingArchiveChasers, responseSources };
 }
 
 // ============================================================
