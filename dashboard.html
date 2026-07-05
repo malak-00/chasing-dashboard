@@ -8,7 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-:root{--bg:#2C2C2C;--surface:#363636;--card:#404040;--card-hover:#4A4A4A;--border:#525252;--teal:#853953;--teal-dim:rgba(133,57,83,.20);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#612D53;--purple-dim:rgba(97,45,83,.22);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);--text:#F3F4F4;--text-2:#B7B7B7;--text-3:#8A8A8A;--radius:12px;--font:'Inter',system-ui,sans-serif;--shadow-sm:0 1px 2px rgba(0,0,0,.18);--shadow-md:0 4px 16px rgba(0,0,0,.22)}
+:root{--bg:#1A1A1A;--surface:#242424;--card:#2E2E2E;--card-hover:#383838;--border:#454545;--teal:#004D61;--teal-dim:rgba(0,77,97,.35);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#822659;--purple-dim:rgba(130,38,89,.30);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);--btn:#3E5641;--btn-text:#F0F0F0;--text:#F0F0F0;--text-2:#B8B8B8;--text-3:#868686;--radius:12px;--font:'Inter',system-ui,sans-serif;--shadow-sm:0 1px 2px rgba(0,0,0,.18);--shadow-md:0 4px 16px rgba(0,0,0,.22)}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:14px}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-variant-numeric:tabular-nums}
@@ -19,11 +19,11 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .date-input{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 11px;font-family:var(--font);font-size:13px;transition:border-color .15s}
 .date-input:focus{outline:1px solid var(--teal);border-color:var(--teal)}
-.btn{background:var(--teal);color:#0A1420;border:none;border-radius:7px;padding:6px 16px;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn{background:var(--btn);color:var(--btn-text);border:none;border-radius:7px;padding:6px 16px;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
 .btn:hover{opacity:.88;transform:translateY(-1px)}
 .btn-ghost{background:var(--card);color:var(--text-2);border:1px solid var(--border);border-radius:7px}
 .btn-ghost:hover{color:var(--text);background:var(--card-hover)}
-.status-badge{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:none;padding:4px 12px;border-radius:20px;background:var(--teal-dim);color:var(--teal);border:1px solid rgba(133,57,83,.35);white-space:nowrap}
+.status-badge{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:none;padding:4px 12px;border-radius:20px;background:var(--teal-dim);color:var(--teal);border:1px solid rgba(0,77,97,.45);white-space:nowrap}
 .pulse-bar{padding:8px 24px 0;display:flex;gap:4px}
 .pulse-segment{height:3px;border-radius:2px;flex:1;transition:opacity .3s}
 .main{padding:20px 28px 44px}
@@ -67,7 +67,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .sort-btns{display:flex;gap:5px;flex-wrap:wrap}
 .sort-btn{font-size:11px;padding:4px 10px;border-radius:6px;background:var(--card);border:1px solid var(--border);color:var(--text-3);cursor:pointer;font-family:var(--font);font-weight:500;transition:all .15s}
 .sort-btn:hover{color:var(--text-2)}
-.sort-btn.active{background:var(--teal-dim);color:var(--teal);border-color:rgba(133,57,83,.45)}
+.sort-btn.active{background:var(--teal-dim);color:var(--teal);border-color:rgba(0,77,97,.55)}
 .leaderboard{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:auto;margin-bottom:22px;box-shadow:var(--shadow-sm)}
 .lb-table{width:100%;border-collapse:collapse;min-width:900px}
 .lb-table th{padding:10px 14px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);text-align:left;border-bottom:1px solid var(--border);background:var(--surface);white-space:nowrap;cursor:pointer;user-select:none;transition:color .15s}
@@ -79,7 +79,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .lb-table tr:hover td{background:var(--card-hover);transition:background .12s}
 .rank-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:700;background:var(--card);color:var(--text-3)}
 .rank-badge.r1{background:rgba(242,184,75,.14);color:var(--amber)}
-.rank-badge.r2{background:rgba(133,57,83,.20);color:var(--teal)}
+.rank-badge.r2{background:rgba(0,77,97,.30);color:var(--teal)}
 .rank-badge.r3{background:rgba(74,222,156,.10);color:var(--green)}
 .chaser-name{font-weight:600;font-size:13px}
 .pill{display:inline-block;font-size:10px;font-weight:600;padding:3px 8px;border-radius:20px;letter-spacing:.02em}
@@ -157,18 +157,19 @@ svg.chart{width:100%;overflow:visible}
 
 /* LIGHT MODE */
 body.light {
-  --bg:#F3F4F4;--surface:#FFFFFF;--card:#EAEAEA;--card-hover:#DFDFDF;
-  --border:#D3D3D3;--text:#2C2C2C;--text-2:#5C5C5C;--text-3:#8A8A8A;
-  --teal:#853953;--teal-dim:rgba(133,57,83,.10);
+  --bg:#F0F0F0;--surface:#FFFFFF;--card:#E6E6E6;--card-hover:#DADADA;
+  --border:#CFCFCF;--text:#1A1A1A;--text-2:#4A4A4A;--text-3:#787878;
+  --teal:#004D61;--teal-dim:rgba(0,77,97,.10);
   --green:#2E9E68;--green-dim:rgba(46,158,104,.09);
   --amber:#B07F12;--amber-dim:rgba(176,127,18,.09);
   --red:#C84358;--red-dim:rgba(200,67,88,.09);
-  --purple:#612D53;--purple-dim:rgba(97,45,83,.10);
+  --purple:#822659;--purple-dim:rgba(130,38,89,.10);
   --blue:#3373C4;--blue-dim:rgba(51,115,196,.09);
+  --btn:#3E5641;--btn-text:#F0F0F0;
   --shadow-sm:0 1px 2px rgba(16,39,60,.06);--shadow-md:0 4px 16px rgba(16,39,60,.08);
 }
 body.light .lb-table th { background:var(--surface); }
-body.light .status-badge { border-color:rgba(133,57,83,.25); }
+body.light .status-badge { border-color:rgba(0,77,97,.30); }
 body.light .rank-badge { background:var(--border); }
 body.light .panel,body.light .leaderboard,body.light .chart-wrap,body.light .controls-panel,
 body.light .custom-metrics-section,body.light .goals-panel,body.light .compare-panel { box-shadow:var(--shadow-sm); }
