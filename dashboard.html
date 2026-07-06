@@ -244,7 +244,6 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
 @media print {
   .header, .tab-nav, .controls-panel, .hist-cache-bar, .hist-subnav,
   .lb-range-bar, .sort-btns, .btn, .theme-btn, .pulse-bar,
-  #tab-charts, #tab-chasers, #tab-compare, #tab-custom, #tab-conflicts,
   #tab-leaderboard .section-header > div:last-child { display:none !important; }
   body { background:#fff !important; color:#000 !important; }
   .panel, .chart-wrap, .leaderboard, .metric, .resp-card, .campaign-card,
@@ -3783,12 +3782,8 @@ function renderCampaignTrend() {
 // EXPORT PDF
 // ══════════════════════════════════════════════════════════════
 function exportPDF() {
-  // Switch to overview tab for best print layout
-  setTab("overview");
-  setTimeout(() => {
-    document.title = "Chasing Dashboard — " + pickerToTab();
-    window.print();
-  }, 300);
+  document.title = "Chasing Dashboard — " + pickerToTab();
+  window.print();
 }
 
 // ══════════════════════════════════════════════════════════════
