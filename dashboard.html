@@ -333,7 +333,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
             </div>
           </div>
           <div class="range-group">
-            <label>ACW Multiplier (mins per case)</label>
+            <label>ACW Multiplier (mins per call)</label>
             <div class="range-row">
               <input type="range" id="acwMult" min="0.5" max="10" value="2" step="0.5" oninput="updateRangeVal('acwMult','acwMultVal');recalc()">
               <span class="range-val" id="acwMultVal">2</span>
@@ -726,7 +726,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
             </div>
 
             <div class="ctrl-group">
-              <label>ACW Multiplier (mins added per case)</label>
+              <label>ACW Multiplier (mins added per call)</label>
               <div class="range-row">
                 <input type="range" id="ctrlAcwMult" min="0.5" max="10" value="2" step="0.5"
                   oninput="document.getElementById('ctrlAcwMultVal').textContent=this.value">
@@ -863,7 +863,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
           <div>
             <div class="sub-label">How productivity is calculated</div>
             <div style="font-size:13px;color:var(--text-2);line-height:1.8">
-              <div>Productive Time = <span style="color:var(--teal-text)">Call Duration (mins)</span> + (ACW × Cases)</div>
+              <div>Productive Time = <span style="color:var(--teal-text)">Call Duration (mins)</span> + (ACW × Calls)</div>
               <div>Productivity % = Productive Time ÷ Shift Mins × 100</div>
               <div style="margin-top:10px;color:var(--text-3);font-size:12px;line-height:1.6">
                 <strong style="color:var(--text-2)">Data source priority:</strong><br>
@@ -885,6 +885,14 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
                      onchange="handleCtrlFileUpload(event)">
               <div class="upload-label">Drop Utlatel export or <span>browse</span></div>
               <div class="upload-status" id="ctrlUploadStatus">No override loaded</div>
+            </div>
+            <div style="margin-top:8px" id="ctrlUtlatelSaveBar" class="hidden">
+              <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, saveUtlatelToArchive)">
+                &#128190; Save Utlatel to Archive
+              </button>
+              <span style="font-size:11px;color:var(--text-3);margin-left:8px">
+                Updates just the date(s) in this file — everything else in the archive stays as-is
+              </span>
             </div>
           </div>
         </div>
@@ -1869,7 +1877,7 @@ function renderLeaderboard() {
   if (lbView==="custom") {
     if (!lbCustomData) { setEl("leaderboardEl",`<div class="state-block" style="color:var(--text-3)">Pick a date range above and click Apply.</div>`); return; }
     rows = Object.entries(lbCustomData).map(([name,d]) =>
-      buildRow(name, d.cases, d.positive, d.faxes, d.approvals, d.denials, sfm*d.days, acw, 0)
+      buildRow(name, d.cases, d.positive, d.faxes, d.approvals, d.denials, sfm*d.days, acw, 0, d.calls)
     );
   } else {
     const source=lbView==="week"?weekData:dayData;
@@ -1878,13 +1886,13 @@ function renderLeaderboard() {
       const bc=(dayData.responses||{}).byChaser||{};
       rows=(dayData.chasers||[]).map(c=>{
         const rs=bc[c.name]||{approvals:0,denials:0};
-        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMinsForDate(c.name,pickerToTab()));
+        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMinsForDate(c.name,pickerToTab()),getUtlCallsForDate(c.name,pickerToTab()));
       });
     } else {
       const bc=mergeWeekResp(weekData.weekDays||[]);
       rows=(weekData.chaserWeekTotals||[]).map(c=>{
         const rs=bc[c.name]||{approvals:0,denials:0};
-        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm*5,acw,getUtlMins(c.name)*5);
+        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm*5,acw,getUtlMins(c.name)*5,getUtlCalls(c.name)*5);
       });
     }
   }
@@ -1918,8 +1926,8 @@ function renderLeaderboard() {
     </tr>`).join("")}</tbody></table>`);
 }
 
-function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMins){
-  cases=cases||0;positive=positive||0;approvals=approvals||0;denials=denials||0;
+function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMins,calls){
+  cases=cases||0;positive=positive||0;approvals=approvals||0;denials=denials||0;calls=calls||0;
   // shiftMap now stores exact shift minutes for the chaser (numpad-entered), falling back to sfm default
   const shiftMinsRaw = shiftMap[name];
   const sm = (shiftMinsRaw === undefined || shiftMinsRaw === null || shiftMinsRaw === "") ? sfm : Number(shiftMinsRaw);
@@ -1929,7 +1937,7 @@ function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMin
   let productivity="--",productivityStub=false;
   if(sm<=0){productivity="--";}
   else if(!utlMins){productivityStub=true;}
-  else { const acw=acwMult*cases; productivity=sm>0?((utlMins+acw)/sm*100).toFixed(1):"--"; }
+  else { const acw=acwMult*calls; productivity=sm>0?((utlMins+acw)/sm*100).toFixed(1):"--"; }
   return {name,cases,positive,faxes,approvals,denials,approvalPct,denialPct,efficiency,productivity,productivityStub,shiftMins:sm};
 }
 
@@ -1970,7 +1978,15 @@ function parseCSV(text){
   return lines.slice(1).map(line=>{const vals=line.split(",").map(v=>v.trim().replace(/^"|"$/g,""));const o={};headers.forEach((h,i)=>o[h]=vals[i]||"");return o;});
 }
 
-function processUtlatelRows(rows,fileName,setS){
+// merge=false (Overview tab, the default): full replace -- utlatelData becomes
+// exactly what's in this file, a scratch/session-only preview that is never
+// auto-persisted.
+// merge=true (Controls tab "override" upload): the dashboard already reads
+// Utlatel from the archive by default (see applyUtlatelPersist, called on every
+// load), so a re-upload here should only correct the specific agent+date combos
+// present in this file, on top of whatever is already loaded -- not wipe out
+// every other date's data for the rest of the session.
+function processUtlatelRows(rows,fileName,setS,merge,saveBarId){
   if(!rows.length){setS("File is empty.","err");return;}
   const keys=Object.keys(rows[0]);
   const agentCol =keys.find(k=>/agent|name|user/i.test(k));
@@ -1980,7 +1996,8 @@ function processUtlatelRows(rows,fileName,setS){
   if(!agentCol){setS("Cannot find Agent Name column.","err");return;}
   if(!durCol){setS("Cannot find Total Duration column.","err");return;}
 
-  utlatelData={};  // { agentName: { totalDurationMins, totalCalls, byDate: { "6/25": {mins,calls} } } }
+  if(!merge) utlatelData={};  // { agentName: { totalDurationMins, totalCalls, byDate: { "6/25": {mins,calls} } } }
+  const touched=new Set(); // "agent|date" (or "agent|") already reset by this file
 
   for(const row of rows){
     const agent=String(row[agentCol]||"").trim();
@@ -1989,13 +2006,11 @@ function processUtlatelRows(rows,fileName,setS){
     const calls=parseInt(row[callsCol]||0)||0;
 
     if(!utlatelData[agent]) utlatelData[agent]={totalDurationMins:0,totalCalls:0,byDate:{}};
-    utlatelData[agent].totalDurationMins+=dur;
-    utlatelData[agent].totalCalls+=calls;
 
     // If the file has a date column, group by date too
+    let dateStr="";
     if(dateCol){
       const rawDate=row[dateCol];
-      let dateStr="";
       if(rawDate instanceof Date && !isNaN(rawDate)){
         dateStr=(rawDate.getMonth()+1)+"/"+rawDate.getDate();
       } else {
@@ -2009,11 +2024,38 @@ function processUtlatelRows(rows,fileName,setS){
           dateStr=parseInt(p[0])+"/"+parseInt(p[1]);
         }
       }
-      if(dateStr){
-        if(!utlatelData[agent].byDate[dateStr]) utlatelData[agent].byDate[dateStr]={mins:0,calls:0};
-        utlatelData[agent].byDate[dateStr].mins +=dur;
-        utlatelData[agent].byDate[dateStr].calls+=calls;
-      }
+    }
+
+    // On merge, the first row this file has for a given agent+date replaces
+    // whatever was already loaded for it (a re-upload corrects that date)
+    // rather than adding on top of it; later rows for the same agent+date
+    // within this same file still accumulate normally.
+    const touchKey=agent+"|"+dateStr;
+    if(merge && !touched.has(touchKey)){
+      if(dateStr) utlatelData[agent].byDate[dateStr]={mins:0,calls:0};
+      else { utlatelData[agent].totalDurationMins=0; utlatelData[agent].totalCalls=0; }
+      touched.add(touchKey);
+    }
+
+    if(dateStr){
+      if(!utlatelData[agent].byDate[dateStr]) utlatelData[agent].byDate[dateStr]={mins:0,calls:0};
+      utlatelData[agent].byDate[dateStr].mins +=dur;
+      utlatelData[agent].byDate[dateStr].calls+=calls;
+    } else {
+      utlatelData[agent].totalDurationMins+=dur;
+      utlatelData[agent].totalCalls+=calls;
+    }
+  }
+
+  // Re-derive each agent's running totals from its byDate breakdown so a
+  // corrected date's new value replaces the old one instead of being added
+  // on top of it.
+  for(const agent of Object.keys(utlatelData)){
+    const byDate=utlatelData[agent].byDate;
+    const dates=Object.keys(byDate);
+    if(dates.length){
+      utlatelData[agent].totalDurationMins=dates.reduce((s,d)=>s+byDate[d].mins,0);
+      utlatelData[agent].totalCalls       =dates.reduce((s,d)=>s+byDate[d].calls,0);
     }
   }
 
@@ -2026,7 +2068,7 @@ function processUtlatelRows(rows,fileName,setS){
 
   setS("Loaded "+fileName+" — "+agents.length+" agent(s)"+(hasDateCol?" across "+dateCount+" date(s)":"")+" · click Save to persist","ok");
   buildAgentMapUI(agents);
-  document.getElementById("utlatelSaveBar").classList.remove("hidden");
+  document.getElementById(saveBarId||"utlatelSaveBar").classList.remove("hidden");
   recalc();
 }
 
@@ -2098,6 +2140,21 @@ function getUtlMins(chaserName, dateTab){
     } else {
       // Fall back to total (e.g. file has no date column)
       tot+=utlatelData[agent].totalDurationMins||0;
+    }
+  }
+  return tot;
+}
+
+// Get Utlatel call count for a chaser — optionally filtered to a specific date.
+// Mirrors getUtlMins(); ACW duration is multiplier x calls, not x cases.
+function getUtlCalls(chaserName, dateTab){
+  let tot=0;
+  for(const[agent,mapped]of Object.entries(agentMap)){
+    if(mapped!==chaserName||!utlatelData[agent]) continue;
+    if(dateTab && utlatelData[agent].byDate && Object.keys(utlatelData[agent].byDate).length){
+      tot+=utlatelData[agent].byDate[dateTab]?.calls||0;
+    } else {
+      tot+=utlatelData[agent].totalCalls||0;
     }
   }
   return tot;
@@ -2356,7 +2413,7 @@ function downloadCSV(){
   const bc=(dayData.responses||{}).byChaser||{};
   const rows=(dayData.chasers||[]).map(c=>{
     const rs=bc[c.name]||{approvals:0,denials:0};
-    const r=buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name));
+    const r=buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name),getUtlCalls(c.name));
     return [d,c.name,r.cases,r.positive,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,(shiftMap[c.name] ?? DEFAULT_SHIFT_MINS),r.shiftMins].join(",");
   });
   const camps=dayData.responses?.byCampaign||mockCampaignData();
@@ -4512,7 +4569,7 @@ function handleCtrlFileUploadFile(file) {
   const ext = file.name.split(".").pop().toLowerCase();
   if (ext === "csv") {
     const r = new FileReader();
-    r.onload = e => processUtlatelRows(parseCSV(e.target.result), file.name, setS);
+    r.onload = e => processUtlatelRows(parseCSV(e.target.result), file.name, setS, true, "ctrlUtlatelSaveBar");
     r.readAsText(file);
   } else if (["xlsx","xls"].includes(ext)) {
     const r = new FileReader();
@@ -4520,7 +4577,7 @@ function handleCtrlFileUploadFile(file) {
       try {
         const wb = XLSX.read(e.target.result,{type:"array"});
         const ws = wb.Sheets[wb.SheetNames[0]];
-        processUtlatelRows(XLSX.utils.sheet_to_json(ws,{defval:""}), file.name, setS);
+        processUtlatelRows(XLSX.utils.sheet_to_json(ws,{defval:""}), file.name, setS, true, "ctrlUtlatelSaveBar");
       } catch(err) { setS("Error: "+err.message,"err"); }
     };
     r.readAsArrayBuffer(file);
@@ -4551,6 +4608,26 @@ function getUtlMinsForDate(chaserName, dateTab) {
   }
 
   // 3. No data — productivity will show as stub
+  return 0;
+}
+
+// Get Utlatel call count for a chaser on a specific date. Mirrors
+// getUtlMinsForDate(); used for ACW = multiplier x calls, not x cases.
+function getUtlCallsForDate(chaserName, dateTab) {
+  const uploaded = getUtlCalls(chaserName, dateTab);
+  if (uploaded > 0) return uploaded;
+
+  if (archiveCache) {
+    const row = archiveCache.find(r => {
+      const d = parseArchiveDate(r.Date);
+      if (!d) return false;
+      const rTab = (d.getMonth()+1) + "/" + d.getDate();
+      return rTab === dateTab && r.Chaser === chaserName;
+    });
+    const archiveCalls = Number(row?.TotalCalls) || 0;
+    if (archiveCalls > 0) return archiveCalls;
+  }
+
   return 0;
 }
 
