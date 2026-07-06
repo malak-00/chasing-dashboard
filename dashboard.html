@@ -1907,11 +1907,14 @@ function parseCSV(text){
 function processUtlatelRows(rows,fileName,setS,merge,saveBarId){
   if(!rows.length){setS("File is empty.","err");return;}
   const keys=Object.keys(rows[0]);
-  const agentCol =keys.find(k=>/agent|name|user/i.test(k));
+  // Extension column holds the actual chaser name in this Utlatel export
+  // (unlike Agent/Name/User, which don't reliably match a chaser) -- prefer
+  // it, but fall back to the old name-ish columns for exports that lack it.
+  const agentCol =keys.find(k=>/extensions?/i.test(k)) || keys.find(k=>/agent|name|user/i.test(k));
   const durCol   =keys.find(k=>/duration|total.?dur/i.test(k));
   const callsCol =keys.find(k=>/total.?calls?/i.test(k));
   const dateCol  =keys.find(k=>/^date$/i.test(k));
-  if(!agentCol){setS("Cannot find Agent Name column.","err");return;}
+  if(!agentCol){setS("Cannot find Extension or Agent Name column.","err");return;}
   if(!durCol){setS("Cannot find Total Duration column.","err");return;}
 
   if(!merge) utlatelData={};  // { agentName: { totalDurationMins, totalCalls, byDate: { "6/25": {mins,calls} } } }
