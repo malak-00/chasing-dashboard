@@ -632,7 +632,14 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
       <label>Select Chaser</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap" id="chaserSelectorBtns"></div>
       <label style="margin-left:12px">Date</label>
-      <input type="date" class="date-input" id="chaserDate" onchange="renderChaserPage()">
+      <input type="date" class="date-input" id="chaserDate">
+      <button class="btn" style="padding:5px 12px;font-size:11px" onclick="setChaserRangeMode(false)">Load Day</button>
+      <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+      <label>From</label>
+      <input type="date" class="date-input" id="chaserFrom">
+      <label>To</label>
+      <input type="date" class="date-input" id="chaserTo">
+      <button class="btn" style="padding:5px 12px;font-size:11px" onclick="setChaserRangeMode(true)">Load Range</button>
     </div>
     <div id="chaserPageContent">
       <div class="state-block" style="color:var(--text-3)">
@@ -1019,9 +1026,7 @@ let utlatelPersist = [];    // [{ Date, Agent, DurationMins, Calls }]
 let settingsLoaded = false;
 let campDayData   = null;  // separate campaign day data
 let campWeekData  = null;  // separate campaign week data
-let leadSnapToday = null;  // Lead History as-of-date snapshot for the selected day (Overview Today panel)
-let leadSnapWeek  = null;  // { activeLeads, newLeads, concluded } aggregated across the selected week (Overview Week panel)
-let cmpChaserMetric = "leads"; // "approvals" | "denials" | "leads" -- Compare tab's per-chaser Period B vs A metric
+let cmpChaserMetric = "approvals"; // "approvals" | "denials" -- Compare tab's per-chaser Period B vs A metric
 
 window.addEventListener("DOMContentLoaded", () => {
   const today = new Date().toISOString().slice(0,10);
@@ -1105,27 +1110,6 @@ async function loadData() {
       fetchAPI("campaignresponses", ""),
       fetchAPI("chasers", "")
     ]);
-    // Lead History snapshot for Overview's Leads/New Leads/Leads Concluded --
-    // fetched separately (not part of the outage check above) since it's
-    // additive: if it fails, Overview still renders, just without these 3
-    // stats until the next successful load.
-    fetchAPI("leadsnapshot", d).then(v => { leadSnapToday = v; if (dayData) renderTodayPanel(); }).catch(() => {});
-    Promise.all(getWeekTabsJS(d).map(tab => fetchAPI("leadsnapshot", tab).catch(() => null))).then(snaps => {
-      const valid = snaps.filter(Boolean);
-      if (!valid.length) return;
-      leadSnapWeek = {
-        activeLeads: (valid[valid.length-1] || {}).activeLeads || 0,
-        newLeads:    valid.reduce((s,v)=>s+(v.newLeads||0),0),
-        concluded:   valid.reduce((s,v)=>s+(v.concluded||0),0),
-      };
-      if (weekData) renderWeekPanel();
-    }).catch(() => {});
-    // Fetched proactively (not just lazily inside renderHistView) so it's
-    // already available for the Compare tab's per-chaser Leads metric,
-    // which doesn't otherwise pass through the History tab first.
-    if (!leadActivityDaily) {
-      fetchAPI("leadactivity", "").then(v => { if (v && v.rows) leadActivityDaily = v.rows; }).catch(() => {});
-    }
     // Promise.allSettled never rejects, even if every request failed — without
     // this check a total backend outage falls straight through to an all-zero
     // "Archive" render with no indication anything is wrong.
@@ -1399,32 +1383,9 @@ function buildCampaignFromLeadsDateRange(fromDate, toDate) {
   return camps;
 }
 
-// Deduplicated New Leads / Leads Concluded across a Date range, sourced
-// from the per-day Lead History activity table (mode=leadactivity) -- one
-// row per calendar day across the entire log, fetched/cached once and
-// filtered here client-side exactly like campaignLeads above.
-function sumLeadActivityForRange(fromDate, toDate, chaserName) {
-  const out = { newLeads: 0, concluded: 0 };
-  if (!leadActivityDaily) return out;
-  for (const row of leadActivityDaily) {
-    const d = parseArchiveDate(row.Date);
-    if (!d) continue;
-    if (fromDate && d < fromDate) continue;
-    if (toDate   && d > toDate)   continue;
-    if (chaserName) {
-      const cb = (row.ByChaser || {})[chaserName];
-      if (cb) { out.newLeads += cb.newLeads || 0; out.concluded += cb.concluded || 0; }
-    } else {
-      out.newLeads  += Number(row.NewLeads)  || 0;
-      out.concluded += Number(row.Concluded) || 0;
-    }
-  }
-  return out;
-}
-
 // Mirrors filterArchiveRows()'s view/range date-window logic but returns
 // {fromDate,toDate} Date objects instead of filtering rows, so the same
-// window can be reused against campaignLeads / leadActivityDaily.
+// window can be reused against campaignLeads.
 function getHistDateRange(view, range) {
   const now = new Date();
   const year = now.getFullYear(), month = now.getMonth(), q = Math.floor(month/3);
@@ -1563,12 +1524,10 @@ function renderPulseBar() {
 function renderTodayPanel() {
   const t=dayData.teamTotals||{}, r=dayData.responses||{};
   const totalResp=(r.approved||0)+(r.denied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
-  const ls = leadSnapToday || {};
   setEl("todayPanel",`
     <div class="metric-grid">
-      ${mc("Leads",ls.activeLeads||0,"","teal")}${mc("Responses",totalResp,"","")}
+      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",totalResp,"","")}
       ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
-      ${mc("New Leads",ls.newLeads||0,"","")}${mc("Leads Concluded",ls.concluded||0,"","")}
     </div>
     <div class="response-row">
       <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
@@ -1583,12 +1542,10 @@ function renderTodayPanel() {
 function renderWeekPanel() {
   const t=weekData.weekTotals||{};
   const totalResp=(t.totalApproved||0)+(t.totalDenied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
-  const ls = leadSnapWeek || {};
   setEl("weekPanel",`
     <div class="metric-grid">
-      ${mc("Leads",ls.activeLeads||0,"","teal")}${mc("Responses",totalResp,"","")}
+      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",totalResp,"","")}
       ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
-      ${mc("New Leads",ls.newLeads||0,"","")}${mc("Leads Concluded",ls.concluded||0,"","")}
     </div>
     <div class="response-row">
       <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
@@ -2454,7 +2411,6 @@ function mockCampaignData(){return{ort:{approved:6,denied:2,total:10},cgm:{appro
 let archiveCache   = null;   // raw rows from archive sheet
 let archiveFetched = null;   // Date object of last fetch
 let campaignLeads  = null;   // rows from Campaign Responses tab (one row = Date+Campaign aggregate)
-let leadActivityDaily = null; // rows from getLeadActivityByDay (one row per day: {Date, NewLeads, Concluded})
 let histView       = "month";
 let histRange      = { from: null, to: null };
 
@@ -2556,19 +2512,15 @@ async function renderHistView() {
     return;
   }
 
-  // Deduplicated sources for the team-wide headline stats -- campaign
+  // Deduplicated source for the team-wide headline stats -- campaign
   // response totals (one count per lead, chasers irrelevant) instead of
   // summing every chaser-row's own Approvals/Denials, which would count a
-  // lead once per chaser it's assigned to. Same for New Leads: one count
-  // per lifecycle birth, regardless of how many chasers are on it.
+  // lead once per chaser it's assigned to.
   if (!campaignLeads) { try { const cr = await fetchAPI("campaignresponses", ""); if (cr && cr.rows) campaignLeads = cr.rows; } catch(e) { /* cards render 0 */ } }
-  if (!leadActivityDaily) { try { const la = await fetchAPI("leadactivity", ""); if (la && la.rows) leadActivityDaily = la.rows; } catch(e) { /* cards render 0 */ } }
 
   const { fromDate, toDate } = getHistDateRange(histView, histRange);
   const campTotals = buildCampaignFromLeadsDateRange(fromDate, toDate);
-  const leadTotals = sumLeadActivityForRange(fromDate, toDate);
   const dedup = {
-    leads:     leadTotals.newLeads,
     approvals: CAMPAIGN_KEYS.reduce((s,k)=>s+(campTotals[k]?.approved||0),0),
     denials:   CAMPAIGN_KEYS.reduce((s,k)=>s+(campTotals[k]?.denied||0),0),
   };
@@ -2699,7 +2651,6 @@ function groupByChaser(rows) {
 
 // ── SUMMARY CARDS ────────────────────────────────────────────
 function renderHistSummaryCards(s, dedup) {
-  const label   = { month:"Month", quarter:"Quarter", year:"Year", custom:"Period" }[histView]||"";
   const approvals = dedup.approvals, denials = dedup.denials;
   const totalR  = approvals + denials; const appPct = totalR ? (approvals/totalR*100).toFixed(1) : "--";
   const eff     = s.cases    ? (s.positive/s.cases*100).toFixed(1)   : "--";
@@ -2708,7 +2659,6 @@ function renderHistSummaryCards(s, dedup) {
   const avgProd = s.days     ? (s.productiveTime/s.days).toFixed(1)   : "--";
   const totalH  = s.durationMins ? (s.durationMins/60).toFixed(1)     : "--";
   return `<div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
-    ${mc("Leads ("+label+")",    dedup.leads, "", "teal")}
     ${mc("Approvals",            approvals,   "", "green")}
     ${mc("Denials",              denials,     "", "red")}
     ${mc("Approval Rate",        appPct,      "%","green")}
@@ -3220,6 +3170,13 @@ function initChaserTab() {
   if (activeChaserName) renderChaserPage();
 }
 
+let chaserRangeMode = false; // false = specific date, true = date range
+
+function setChaserRangeMode(isRange) {
+  chaserRangeMode = isRange;
+  renderChaserPage();
+}
+
 function selectChaser(name) {
   activeChaserName = name;
   document.querySelectorAll(".chaser-btn").forEach(b =>
@@ -3234,24 +3191,28 @@ async function renderChaserPage() {
     return;
   }
 
-  const pickedDate = document.getElementById("chaserDate").value || new Date().toISOString().slice(0,10);
+  let rows, periodLabel, matchesPeriod;
+  if (chaserRangeMode) {
+    const from = document.getElementById("chaserFrom").value;
+    const to   = document.getElementById("chaserTo").value;
+    if (!from || !to) {
+      setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">Pick a From and To date, then click Load Range.</div>`);
+      return;
+    }
+    rows = getChaserRowsRange(activeChaserName, from, to);
+    periodLabel = `${from} → ${to}`;
+    matchesPeriod = r => filterByChaserDateRange(r, from, to);
+  } else {
+    const pickedDate = document.getElementById("chaserDate").value || new Date().toISOString().slice(0,10);
+    rows = getChaserRows(activeChaserName, pickedDate);
+    periodLabel = pickedDate;
+    matchesPeriod = r => filterByChaserDate(r, pickedDate);
+  }
 
-  // Real, deduplicated Lead History count for this chaser as of the picked
-  // date -- NOT a relabeled Cases number. Best-effort: renders 0 if the
-  // fetch fails rather than blocking the rest of the (archive-sourced) page.
-  const [py,pm,pd] = pickedDate.split("-");
-  const pickedDateTab = `${parseInt(pm)}/${parseInt(pd)}/${py}`;
-  let chaserLeadSnap = null;
-  try { chaserLeadSnap = await fetchAPI("leadsnapshot", pickedDateTab); } catch(e) { /* renders 0 */ }
-  const chaserLeads = (chaserLeadSnap?.byChaser?.[activeChaserName]?.leads) || 0;
-
-  const rows     = getChaserRows(activeChaserName, pickedDate);
-  const todayRows= archiveCache.filter(r => String(r.Chaser)===activeChaserName &&
-                   String(r.Date).trim() === getTodayTab());
   const color    = CHASER_COLORS[activeChaserName] || "var(--teal-text)";
 
   if (!rows.length) {
-    setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">No data for ${activeChaserName} on ${pickedDate}.</div>`);
+    setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">No data for ${activeChaserName} on ${periodLabel}.</div>`);
     return;
   }
 
@@ -3277,7 +3238,7 @@ async function renderChaserPage() {
   // Rank in leaderboard
   const allChaserTotals = getAllChasers().map(n => ({
     name: n,
-    cases: archiveCache.filter(r=>String(r.Chaser)===n&&filterByChaserDate(r,pickedDate))
+    cases: archiveCache.filter(r=>String(r.Chaser)===n&&matchesPeriod(r))
                        .reduce((s,r)=>s+(Number(r.Cases)||0),0)
   })).sort((a,b)=>b.cases-a.cases);
   const rank = allChaserTotals.findIndex(c=>c.name===activeChaserName)+1;
@@ -3305,7 +3266,7 @@ async function renderChaserPage() {
         <div class="chaser-avatar" style="background:${color}">${activeChaserName[0]}</div>
         <div>
           <div class="chaser-hero-name" style="color:${color}">${activeChaserName}</div>
-          <div class="chaser-hero-sub">Rank #${rank} · ${totals.days} active days · ${pickedDate}</div>
+          <div class="chaser-hero-sub">Rank #${rank} · ${totals.days} active days · ${periodLabel}</div>
         </div>
       </div>
     </div>
@@ -3313,7 +3274,6 @@ async function renderChaserPage() {
     <!-- Summary metrics -->
     <div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
       ${mc("Cases",        totals.cases,     "",  "teal")}
-      ${mc("Leads",        chaserLeads,      "",  "purple")}
       ${mc("Positive",     totals.positive,  "",  "green")}
       ${mc("Approvals",    totals.approvals, "",  "green")}
       ${mc("Denials",      totals.denials,   "",  "red")}
@@ -3388,6 +3348,25 @@ function filterByChaserDate(r, isoDate) {
   const picked = new Date(y, m-1, day); picked.setHours(0,0,0,0);
   const rd     = new Date(d); rd.setHours(0,0,0,0);
   return rd.getTime() === picked.getTime();
+}
+
+function getChaserRowsRange(name, fromIso, toIso) {
+  return (archiveCache||[]).filter(r =>
+    String(r.Chaser) === name && filterByChaserDateRange(r, fromIso, toIso)
+  );
+}
+
+// fromIso/toIso: "YYYY-MM-DD" from the Chaser tab's From/To pickers. Parsed
+// as local midnight (not UTC) to avoid the off-by-one bug fixed elsewhere
+// in the Leaderboard/History custom ranges -- see applyLbCustomRange.
+function filterByChaserDateRange(r, fromIso, toIso) {
+  const d = parseArchiveDate(r.Date);
+  if (!d) return false;
+  const [fy,fm,fd] = fromIso.split("-").map(Number);
+  const [ty,tm,td] = toIso.split("-").map(Number);
+  const from = new Date(fy, fm-1, fd, 0, 0, 0);
+  const to   = new Date(ty, tm-1, td, 23, 59, 59);
+  return d >= from && d <= to;
 }
 
 function renderChaserCampaigns(rows) {
@@ -3526,12 +3505,6 @@ async function runComparison() {
     return;
   }
 
-  // Needed for the per-chaser "Leads" option below -- lazy-fetch in case
-  // the proactive loadData() fetch hasn't resolved yet or failed.
-  if (!leadActivityDaily && cmpChaserMetric === "leads") {
-    try { const la = await fetchAPI("leadactivity", ""); if (la && la.rows) leadActivityDaily = la.rows; } catch(e) { /* table renders 0 for Leads */ }
-  }
-
   const sumA = aggregateForCompare(rowsA);
   const sumB = aggregateForCompare(rowsB);
 
@@ -3567,28 +3540,13 @@ async function runComparison() {
 
   // Per-chaser comparison table -- metric is user-selectable. Approvals/
   // Denials come straight from that chaser's own archive rows (no
-  // duplication concern at chaser granularity). Leads is NOT the archive
-  // Cases column relabeled -- it's the real deduplicated New Leads count
-  // per chaser from the Lead History log (sumLeadActivityForRange), so it
-  // genuinely means something different from Cases.
+  // duplication concern at chaser granularity).
   const ARCHIVE_FIELD = { approvals:"Approvals", denials:"Denials" };
-  let chaserValueFn;
-  if (cmpChaserMetric === "leads") {
-    const [afy,afm,afd] = fromA.split("-").map(Number), [aty,atm,atd] = toA.split("-").map(Number);
-    const [bfy,bfm,bfd] = fromB.split("-").map(Number), [bty,btm,btd] = toB.split("-").map(Number);
-    const rangeA = [new Date(afy,afm-1,afd,0,0,0), new Date(aty,atm-1,atd,23,59,59)];
-    const rangeB = [new Date(bfy,bfm-1,bfd,0,0,0), new Date(bty,btm-1,btd,23,59,59)];
-    chaserValueFn = (name) => [
-      sumLeadActivityForRange(rangeA[0], rangeA[1], name).newLeads,
-      sumLeadActivityForRange(rangeB[0], rangeB[1], name).newLeads,
-    ];
-  } else {
-    const field = ARCHIVE_FIELD[cmpChaserMetric] || "Approvals";
-    chaserValueFn = (name) => [
-      rowsA.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
-      rowsB.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
-    ];
-  }
+  const field = ARCHIVE_FIELD[cmpChaserMetric] || "Approvals";
+  const chaserValueFn = (name) => [
+    rowsA.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
+    rowsB.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
+  ];
   const chaserRows = getAllChasers().map(name => {
     const [cA, cB] = chaserValueFn(name);
     const diff= cB-cA;
@@ -3600,7 +3558,7 @@ async function runComparison() {
       <td><span class="change-badge ${cls}">${arrow} ${Math.abs(diff)}</span></td>
     </tr>`;
   }).join("");
-  const CMP_METRIC_LABELS = { approvals:"Approvals", denials:"Denials", leads:"Leads" };
+  const CMP_METRIC_LABELS = { approvals:"Approvals", denials:"Denials" };
 
   setEl("compareContent", `
     <div class="compare-grid">
@@ -3614,7 +3572,6 @@ async function runComparison() {
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-3)">Per Chaser — ${CMP_METRIC_LABELS[cmpChaserMetric]}</div>
             <select class="ctrl-select" style="width:120px;font-size:11px" onchange="cmpChaserMetric=this.value;runComparison();">
-              <option value="leads"     ${cmpChaserMetric==="leads"?"selected":""}>Leads</option>
               <option value="approvals" ${cmpChaserMetric==="approvals"?"selected":""}>Approvals</option>
               <option value="denials"   ${cmpChaserMetric==="denials"?"selected":""}>Denials</option>
             </select>
