@@ -1203,9 +1203,13 @@ async function syncSelectedDate() {
   // Sync whatever date is currently selected in the date picker (defaults to today)
   const d   = pickerToTab();
   const btn = document.getElementById("syncBtn");
-  const label = document.getElementById("syncDateLabel");
 
-  const prevLabel = label.textContent;
+  // Save the button's real markup (including the #syncDateLabel span) so it can be
+  // restored afterward -- overwriting innerHTML with a plain string destroys that
+  // span, which made updateSyncLabel()'s getElementById("syncDateLabel") come back
+  // null and silently no-op, leaving the button stuck on "Syncing..." forever.
+  const originalHTML = btn.innerHTML;
+  btn.disabled = true;
   btn.innerHTML = "Syncing...";
   btn.classList.add("btn-syncing");
   document.getElementById("statusBadge").textContent = `Syncing ${d}...`;
@@ -1220,14 +1224,15 @@ async function syncSelectedDate() {
     setTimeout(() => {
       document.getElementById("statusBadge").textContent = "Live";
     }, 3000);
-    updateSyncLabel();
-    btn.classList.remove("btn-syncing");
     await loadData();
   } catch(err) {
-    updateSyncLabel();
-    btn.classList.remove("btn-syncing");
     document.getElementById("statusBadge").textContent = "Sync Error";
     alert("Sync failed: " + err.message);
+  } finally {
+    btn.innerHTML = originalHTML;
+    btn.classList.remove("btn-syncing");
+    btn.disabled = false;
+    updateSyncLabel();
   }
 }
 
