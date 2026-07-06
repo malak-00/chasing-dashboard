@@ -244,7 +244,6 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
 @media print {
   .header, .tab-nav, .controls-panel, .hist-cache-bar, .hist-subnav,
   .lb-range-bar, .sort-btns, .btn, .theme-btn, .pulse-bar,
-  #tab-charts, #tab-chasers, #tab-compare, #tab-custom, #tab-conflicts,
   #tab-leaderboard .section-header > div:last-child { display:none !important; }
   body { background:#fff !important; color:#000 !important; }
   .panel, .chart-wrap, .leaderboard, .metric, .resp-card, .campaign-card,
@@ -309,8 +308,12 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
           <div class="upload-label">Drop Utlatel export here or <span>browse</span></div>
           <div class="upload-status" id="uploadStatus">Upload Utlatel report (any date range) — matched to dates in the archive</div>
         </div>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+          <label style="font-size:11px;color:var(--text-3)" for="utlatelUploadDate" title="Only used if the uploaded file has no Date column of its own">Save under date (if file has none)</label>
+          <input type="date" class="date-input" id="utlatelUploadDate">
+        </div>
         <div style="margin-top:8px" id="utlatelSaveBar" class="hidden">
-          <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, saveUtlatelToArchive)">
+          <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, () => saveUtlatelToArchive('utlatelUploadDate'))">
             &#128190; Save Utlatel to Archive
           </button>
           <span style="font-size:11px;color:var(--text-3);margin-left:8px">
@@ -893,8 +896,12 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
               <div class="upload-label">Drop Utlatel export or <span>browse</span></div>
               <div class="upload-status" id="ctrlUploadStatus">No override loaded</div>
             </div>
+            <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+              <label style="font-size:11px;color:var(--text-3)" for="ctrlUtlatelUploadDate" title="Only used if the uploaded file has no Date column of its own">Save under date (if file has none)</label>
+              <input type="date" class="date-input" id="ctrlUtlatelUploadDate">
+            </div>
             <div style="margin-top:8px" id="ctrlUtlatelSaveBar" class="hidden">
-              <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, saveUtlatelToArchive)">
+              <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, () => saveUtlatelToArchive('ctrlUtlatelUploadDate'))">
                 &#128190; Save Utlatel to Archive
               </button>
               <span style="font-size:11px;color:var(--text-3);margin-left:8px">
@@ -1036,6 +1043,8 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("campWeekPicker").value = today;
   document.getElementById("campMonthPicker").value = today.slice(0,7); // "YYYY-MM"
   document.getElementById("chaserDate").value = today;
+  document.getElementById("utlatelUploadDate").value = today;
+  document.getElementById("ctrlUtlatelUploadDate").value = today;
   initCampaignQuarterSelectors();
   CHASERS.forEach(n => { shiftMap[n]=DEFAULT_SHIFT_MINS; agentMap[n]=n; });
   buildShiftGrid();
@@ -1908,11 +1917,14 @@ function parseCSV(text){
 function processUtlatelRows(rows,fileName,setS,merge,saveBarId){
   if(!rows.length){setS("File is empty.","err");return;}
   const keys=Object.keys(rows[0]);
-  const agentCol =keys.find(k=>/agent|name|user/i.test(k));
+  // Extension column holds the actual chaser name in this Utlatel export
+  // (unlike Agent/Name/User, which don't reliably match a chaser) -- prefer
+  // it, but fall back to the old name-ish columns for exports that lack it.
+  const agentCol =keys.find(k=>/extensions?/i.test(k)) || keys.find(k=>/agent|name|user/i.test(k));
   const durCol   =keys.find(k=>/duration|total.?dur/i.test(k));
   const callsCol =keys.find(k=>/total.?calls?/i.test(k));
   const dateCol  =keys.find(k=>/^date$/i.test(k));
-  if(!agentCol){setS("Cannot find Agent Name column.","err");return;}
+  if(!agentCol){setS("Cannot find Extension or Agent Name column.","err");return;}
   if(!durCol){setS("Cannot find Total Duration column.","err");return;}
 
   if(!merge) utlatelData={};  // { agentName: { totalDurationMins, totalCalls, byDate: { "6/25": {mins,calls} } } }
@@ -2248,9 +2260,16 @@ async function saveShift(name, val, effectiveDate, notes) {
   }
 }
 
-// Save Utlatel data permanently after upload
-async function saveUtlatelToArchive() {
+// dateFieldId: id of the <input type="date"> next to whichever upload zone
+// triggered this save. Only consulted when the uploaded file had no Date
+// column of its own -- otherwise defaulted to today, which silently
+// misfiled dateless reports (e.g. a single day's export) under whatever day
+// happened to be current when the button was clicked.
+async function saveUtlatelToArchive(dateFieldId) {
   if (!Object.keys(utlatelData).length) return;
+
+  const pickedVal = dateFieldId && document.getElementById(dateFieldId)?.value;
+  const fallbackDate = pickedVal ? isoToTab(pickedVal) : getTodayTab();
 
   const rows = [];
   for (const [agent, data] of Object.entries(utlatelData)) {
@@ -2260,9 +2279,9 @@ async function saveUtlatelToArchive() {
         rows.push({ date, agent, durationMins: vals.mins, calls: vals.calls });
       }
     } else {
-      // No date breakdown — save as total with today's date
+      // No date breakdown — save under the picked date (defaults to today)
       rows.push({
-        date: getTodayTab(),
+        date: fallbackDate,
         agent,
         durationMins: data.totalDurationMins,
         calls: data.totalCalls
@@ -2397,6 +2416,8 @@ function toggleControls(){
 // ── UTILS ─────────────────────────────────────────────────────
 function pickerToTab(){const v=document.getElementById("datePicker").value;if(!v)return getTodayTab();const[y,m,d]=v.split("-");return `${parseInt(m)}/${parseInt(d)}`;}
 function getTodayTab(){const n=new Date();return `${n.getMonth()+1}/${n.getDate()}`;}
+// "YYYY-MM-DD" (native date input value) -> "M/D", matching getTodayTab()/pickerToTab().
+function isoToTab(iso){const[y,m,d]=iso.split("-");return `${parseInt(m)}/${parseInt(d)}`;}
 function mc(label,value,unit,cls){return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value ${cls}">${value}${unit?`<span style="font-size:12px;color:var(--text-3);margin-left:2px">${unit}</span>`:""}</div></div>`;}
 function setEl(id,html){const el=document.getElementById(id);if(el)el.innerHTML=html;}
 function spinner(){return `<div class="state-block"><div class="spinner"></div>Loading...</div>`;}
@@ -3783,12 +3804,8 @@ function renderCampaignTrend() {
 // EXPORT PDF
 // ══════════════════════════════════════════════════════════════
 function exportPDF() {
-  // Switch to overview tab for best print layout
-  setTab("overview");
-  setTimeout(() => {
-    document.title = "Chasing Dashboard — " + pickerToTab();
-    window.print();
-  }, 300);
+  document.title = "Chasing Dashboard — " + pickerToTab();
+  window.print();
 }
 
 // ══════════════════════════════════════════════════════════════
