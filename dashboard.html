@@ -333,7 +333,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
             </div>
           </div>
           <div class="range-group">
-            <label>ACW Multiplier (mins per case)</label>
+            <label>ACW Multiplier (mins per call)</label>
             <div class="range-row">
               <input type="range" id="acwMult" min="0.5" max="10" value="2" step="0.5" oninput="updateRangeVal('acwMult','acwMultVal');recalc()">
               <span class="range-val" id="acwMultVal">2</span>
@@ -726,7 +726,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
             </div>
 
             <div class="ctrl-group">
-              <label>ACW Multiplier (mins added per case)</label>
+              <label>ACW Multiplier (mins added per call)</label>
               <div class="range-row">
                 <input type="range" id="ctrlAcwMult" min="0.5" max="10" value="2" step="0.5"
                   oninput="document.getElementById('ctrlAcwMultVal').textContent=this.value">
@@ -863,7 +863,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
           <div>
             <div class="sub-label">How productivity is calculated</div>
             <div style="font-size:13px;color:var(--text-2);line-height:1.8">
-              <div>Productive Time = <span style="color:var(--teal-text)">Call Duration (mins)</span> + (ACW × Cases)</div>
+              <div>Productive Time = <span style="color:var(--teal-text)">Call Duration (mins)</span> + (ACW × Calls)</div>
               <div>Productivity % = Productive Time ÷ Shift Mins × 100</div>
               <div style="margin-top:10px;color:var(--text-3);font-size:12px;line-height:1.6">
                 <strong style="color:var(--text-2)">Data source priority:</strong><br>
@@ -1869,7 +1869,7 @@ function renderLeaderboard() {
   if (lbView==="custom") {
     if (!lbCustomData) { setEl("leaderboardEl",`<div class="state-block" style="color:var(--text-3)">Pick a date range above and click Apply.</div>`); return; }
     rows = Object.entries(lbCustomData).map(([name,d]) =>
-      buildRow(name, d.cases, d.positive, d.faxes, d.approvals, d.denials, sfm*d.days, acw, 0)
+      buildRow(name, d.cases, d.positive, d.faxes, d.approvals, d.denials, sfm*d.days, acw, 0, d.calls)
     );
   } else {
     const source=lbView==="week"?weekData:dayData;
@@ -1878,13 +1878,13 @@ function renderLeaderboard() {
       const bc=(dayData.responses||{}).byChaser||{};
       rows=(dayData.chasers||[]).map(c=>{
         const rs=bc[c.name]||{approvals:0,denials:0};
-        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMinsForDate(c.name,pickerToTab()));
+        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMinsForDate(c.name,pickerToTab()),getUtlCallsForDate(c.name,pickerToTab()));
       });
     } else {
       const bc=mergeWeekResp(weekData.weekDays||[]);
       rows=(weekData.chaserWeekTotals||[]).map(c=>{
         const rs=bc[c.name]||{approvals:0,denials:0};
-        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm*5,acw,getUtlMins(c.name)*5);
+        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm*5,acw,getUtlMins(c.name)*5,getUtlCalls(c.name)*5);
       });
     }
   }
@@ -1918,8 +1918,8 @@ function renderLeaderboard() {
     </tr>`).join("")}</tbody></table>`);
 }
 
-function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMins){
-  cases=cases||0;positive=positive||0;approvals=approvals||0;denials=denials||0;
+function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMins,calls){
+  cases=cases||0;positive=positive||0;approvals=approvals||0;denials=denials||0;calls=calls||0;
   // shiftMap now stores exact shift minutes for the chaser (numpad-entered), falling back to sfm default
   const shiftMinsRaw = shiftMap[name];
   const sm = (shiftMinsRaw === undefined || shiftMinsRaw === null || shiftMinsRaw === "") ? sfm : Number(shiftMinsRaw);
@@ -1929,7 +1929,7 @@ function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMin
   let productivity="--",productivityStub=false;
   if(sm<=0){productivity="--";}
   else if(!utlMins){productivityStub=true;}
-  else { const acw=acwMult*cases; productivity=sm>0?((utlMins+acw)/sm*100).toFixed(1):"--"; }
+  else { const acw=acwMult*calls; productivity=sm>0?((utlMins+acw)/sm*100).toFixed(1):"--"; }
   return {name,cases,positive,faxes,approvals,denials,approvalPct,denialPct,efficiency,productivity,productivityStub,shiftMins:sm};
 }
 
@@ -2098,6 +2098,21 @@ function getUtlMins(chaserName, dateTab){
     } else {
       // Fall back to total (e.g. file has no date column)
       tot+=utlatelData[agent].totalDurationMins||0;
+    }
+  }
+  return tot;
+}
+
+// Get Utlatel call count for a chaser — optionally filtered to a specific date.
+// Mirrors getUtlMins(); ACW duration is multiplier x calls, not x cases.
+function getUtlCalls(chaserName, dateTab){
+  let tot=0;
+  for(const[agent,mapped]of Object.entries(agentMap)){
+    if(mapped!==chaserName||!utlatelData[agent]) continue;
+    if(dateTab && utlatelData[agent].byDate && Object.keys(utlatelData[agent].byDate).length){
+      tot+=utlatelData[agent].byDate[dateTab]?.calls||0;
+    } else {
+      tot+=utlatelData[agent].totalCalls||0;
     }
   }
   return tot;
@@ -2356,7 +2371,7 @@ function downloadCSV(){
   const bc=(dayData.responses||{}).byChaser||{};
   const rows=(dayData.chasers||[]).map(c=>{
     const rs=bc[c.name]||{approvals:0,denials:0};
-    const r=buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name));
+    const r=buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name),getUtlCalls(c.name));
     return [d,c.name,r.cases,r.positive,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,(shiftMap[c.name] ?? DEFAULT_SHIFT_MINS),r.shiftMins].join(",");
   });
   const camps=dayData.responses?.byCampaign||mockCampaignData();
@@ -4551,6 +4566,26 @@ function getUtlMinsForDate(chaserName, dateTab) {
   }
 
   // 3. No data — productivity will show as stub
+  return 0;
+}
+
+// Get Utlatel call count for a chaser on a specific date. Mirrors
+// getUtlMinsForDate(); used for ACW = multiplier x calls, not x cases.
+function getUtlCallsForDate(chaserName, dateTab) {
+  const uploaded = getUtlCalls(chaserName, dateTab);
+  if (uploaded > 0) return uploaded;
+
+  if (archiveCache) {
+    const row = archiveCache.find(r => {
+      const d = parseArchiveDate(r.Date);
+      if (!d) return false;
+      const rTab = (d.getMonth()+1) + "/" + d.getDate();
+      return rTab === dateTab && r.Chaser === chaserName;
+    });
+    const archiveCalls = Number(row?.TotalCalls) || 0;
+    if (archiveCalls > 0) return archiveCalls;
+  }
+
   return 0;
 }
 
