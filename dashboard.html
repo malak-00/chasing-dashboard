@@ -886,6 +886,14 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
               <div class="upload-label">Drop Utlatel export or <span>browse</span></div>
               <div class="upload-status" id="ctrlUploadStatus">No override loaded</div>
             </div>
+            <div style="margin-top:8px" id="ctrlUtlatelSaveBar" class="hidden">
+              <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, saveUtlatelToArchive)">
+                &#128190; Save Utlatel to Archive
+              </button>
+              <span style="font-size:11px;color:var(--text-3);margin-left:8px">
+                Updates just the date(s) in this file — everything else in the archive stays as-is
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1970,7 +1978,15 @@ function parseCSV(text){
   return lines.slice(1).map(line=>{const vals=line.split(",").map(v=>v.trim().replace(/^"|"$/g,""));const o={};headers.forEach((h,i)=>o[h]=vals[i]||"");return o;});
 }
 
-function processUtlatelRows(rows,fileName,setS){
+// merge=false (Overview tab, the default): full replace -- utlatelData becomes
+// exactly what's in this file, a scratch/session-only preview that is never
+// auto-persisted.
+// merge=true (Controls tab "override" upload): the dashboard already reads
+// Utlatel from the archive by default (see applyUtlatelPersist, called on every
+// load), so a re-upload here should only correct the specific agent+date combos
+// present in this file, on top of whatever is already loaded -- not wipe out
+// every other date's data for the rest of the session.
+function processUtlatelRows(rows,fileName,setS,merge,saveBarId){
   if(!rows.length){setS("File is empty.","err");return;}
   const keys=Object.keys(rows[0]);
   const agentCol =keys.find(k=>/agent|name|user/i.test(k));
@@ -1980,7 +1996,8 @@ function processUtlatelRows(rows,fileName,setS){
   if(!agentCol){setS("Cannot find Agent Name column.","err");return;}
   if(!durCol){setS("Cannot find Total Duration column.","err");return;}
 
-  utlatelData={};  // { agentName: { totalDurationMins, totalCalls, byDate: { "6/25": {mins,calls} } } }
+  if(!merge) utlatelData={};  // { agentName: { totalDurationMins, totalCalls, byDate: { "6/25": {mins,calls} } } }
+  const touched=new Set(); // "agent|date" (or "agent|") already reset by this file
 
   for(const row of rows){
     const agent=String(row[agentCol]||"").trim();
@@ -1989,13 +2006,11 @@ function processUtlatelRows(rows,fileName,setS){
     const calls=parseInt(row[callsCol]||0)||0;
 
     if(!utlatelData[agent]) utlatelData[agent]={totalDurationMins:0,totalCalls:0,byDate:{}};
-    utlatelData[agent].totalDurationMins+=dur;
-    utlatelData[agent].totalCalls+=calls;
 
     // If the file has a date column, group by date too
+    let dateStr="";
     if(dateCol){
       const rawDate=row[dateCol];
-      let dateStr="";
       if(rawDate instanceof Date && !isNaN(rawDate)){
         dateStr=(rawDate.getMonth()+1)+"/"+rawDate.getDate();
       } else {
@@ -2009,11 +2024,38 @@ function processUtlatelRows(rows,fileName,setS){
           dateStr=parseInt(p[0])+"/"+parseInt(p[1]);
         }
       }
-      if(dateStr){
-        if(!utlatelData[agent].byDate[dateStr]) utlatelData[agent].byDate[dateStr]={mins:0,calls:0};
-        utlatelData[agent].byDate[dateStr].mins +=dur;
-        utlatelData[agent].byDate[dateStr].calls+=calls;
-      }
+    }
+
+    // On merge, the first row this file has for a given agent+date replaces
+    // whatever was already loaded for it (a re-upload corrects that date)
+    // rather than adding on top of it; later rows for the same agent+date
+    // within this same file still accumulate normally.
+    const touchKey=agent+"|"+dateStr;
+    if(merge && !touched.has(touchKey)){
+      if(dateStr) utlatelData[agent].byDate[dateStr]={mins:0,calls:0};
+      else { utlatelData[agent].totalDurationMins=0; utlatelData[agent].totalCalls=0; }
+      touched.add(touchKey);
+    }
+
+    if(dateStr){
+      if(!utlatelData[agent].byDate[dateStr]) utlatelData[agent].byDate[dateStr]={mins:0,calls:0};
+      utlatelData[agent].byDate[dateStr].mins +=dur;
+      utlatelData[agent].byDate[dateStr].calls+=calls;
+    } else {
+      utlatelData[agent].totalDurationMins+=dur;
+      utlatelData[agent].totalCalls+=calls;
+    }
+  }
+
+  // Re-derive each agent's running totals from its byDate breakdown so a
+  // corrected date's new value replaces the old one instead of being added
+  // on top of it.
+  for(const agent of Object.keys(utlatelData)){
+    const byDate=utlatelData[agent].byDate;
+    const dates=Object.keys(byDate);
+    if(dates.length){
+      utlatelData[agent].totalDurationMins=dates.reduce((s,d)=>s+byDate[d].mins,0);
+      utlatelData[agent].totalCalls       =dates.reduce((s,d)=>s+byDate[d].calls,0);
     }
   }
 
@@ -2026,7 +2068,7 @@ function processUtlatelRows(rows,fileName,setS){
 
   setS("Loaded "+fileName+" — "+agents.length+" agent(s)"+(hasDateCol?" across "+dateCount+" date(s)":"")+" · click Save to persist","ok");
   buildAgentMapUI(agents);
-  document.getElementById("utlatelSaveBar").classList.remove("hidden");
+  document.getElementById(saveBarId||"utlatelSaveBar").classList.remove("hidden");
   recalc();
 }
 
@@ -4527,7 +4569,7 @@ function handleCtrlFileUploadFile(file) {
   const ext = file.name.split(".").pop().toLowerCase();
   if (ext === "csv") {
     const r = new FileReader();
-    r.onload = e => processUtlatelRows(parseCSV(e.target.result), file.name, setS);
+    r.onload = e => processUtlatelRows(parseCSV(e.target.result), file.name, setS, true, "ctrlUtlatelSaveBar");
     r.readAsText(file);
   } else if (["xlsx","xls"].includes(ext)) {
     const r = new FileReader();
@@ -4535,7 +4577,7 @@ function handleCtrlFileUploadFile(file) {
       try {
         const wb = XLSX.read(e.target.result,{type:"array"});
         const ws = wb.Sheets[wb.SheetNames[0]];
-        processUtlatelRows(XLSX.utils.sheet_to_json(ws,{defval:""}), file.name, setS);
+        processUtlatelRows(XLSX.utils.sheet_to_json(ws,{defval:""}), file.name, setS, true, "ctrlUtlatelSaveBar");
       } catch(err) { setS("Error: "+err.message,"err"); }
     };
     r.readAsArrayBuffer(file);
