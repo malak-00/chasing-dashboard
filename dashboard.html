@@ -632,7 +632,14 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
       <label>Select Chaser</label>
       <div style="display:flex;gap:6px;flex-wrap:wrap" id="chaserSelectorBtns"></div>
       <label style="margin-left:12px">Date</label>
-      <input type="date" class="date-input" id="chaserDate" onchange="renderChaserPage()">
+      <input type="date" class="date-input" id="chaserDate">
+      <button class="btn" style="padding:5px 12px;font-size:11px" onclick="setChaserRangeMode(false)">Load Day</button>
+      <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+      <label>From</label>
+      <input type="date" class="date-input" id="chaserFrom">
+      <label>To</label>
+      <input type="date" class="date-input" id="chaserTo">
+      <button class="btn" style="padding:5px 12px;font-size:11px" onclick="setChaserRangeMode(true)">Load Range</button>
     </div>
     <div id="chaserPageContent">
       <div class="state-block" style="color:var(--text-3)">
@@ -2644,7 +2651,6 @@ function groupByChaser(rows) {
 
 // ── SUMMARY CARDS ────────────────────────────────────────────
 function renderHistSummaryCards(s, dedup) {
-  const label   = { month:"Month", quarter:"Quarter", year:"Year", custom:"Period" }[histView]||"";
   const approvals = dedup.approvals, denials = dedup.denials;
   const totalR  = approvals + denials; const appPct = totalR ? (approvals/totalR*100).toFixed(1) : "--";
   const eff     = s.cases    ? (s.positive/s.cases*100).toFixed(1)   : "--";
@@ -2653,7 +2659,6 @@ function renderHistSummaryCards(s, dedup) {
   const avgProd = s.days     ? (s.productiveTime/s.days).toFixed(1)   : "--";
   const totalH  = s.durationMins ? (s.durationMins/60).toFixed(1)     : "--";
   return `<div class="metric-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:18px">
-    ${mc("Total Cases ("+label+")", s.cases,   "", "teal")}
     ${mc("Approvals",            approvals,   "", "green")}
     ${mc("Denials",              denials,     "", "red")}
     ${mc("Approval Rate",        appPct,      "%","green")}
@@ -3165,6 +3170,13 @@ function initChaserTab() {
   if (activeChaserName) renderChaserPage();
 }
 
+let chaserRangeMode = false; // false = specific date, true = date range
+
+function setChaserRangeMode(isRange) {
+  chaserRangeMode = isRange;
+  renderChaserPage();
+}
+
 function selectChaser(name) {
   activeChaserName = name;
   document.querySelectorAll(".chaser-btn").forEach(b =>
@@ -3179,15 +3191,28 @@ async function renderChaserPage() {
     return;
   }
 
-  const pickedDate = document.getElementById("chaserDate").value || new Date().toISOString().slice(0,10);
+  let rows, periodLabel, matchesPeriod;
+  if (chaserRangeMode) {
+    const from = document.getElementById("chaserFrom").value;
+    const to   = document.getElementById("chaserTo").value;
+    if (!from || !to) {
+      setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">Pick a From and To date, then click Load Range.</div>`);
+      return;
+    }
+    rows = getChaserRowsRange(activeChaserName, from, to);
+    periodLabel = `${from} → ${to}`;
+    matchesPeriod = r => filterByChaserDateRange(r, from, to);
+  } else {
+    const pickedDate = document.getElementById("chaserDate").value || new Date().toISOString().slice(0,10);
+    rows = getChaserRows(activeChaserName, pickedDate);
+    periodLabel = pickedDate;
+    matchesPeriod = r => filterByChaserDate(r, pickedDate);
+  }
 
-  const rows     = getChaserRows(activeChaserName, pickedDate);
-  const todayRows= archiveCache.filter(r => String(r.Chaser)===activeChaserName &&
-                   String(r.Date).trim() === getTodayTab());
   const color    = CHASER_COLORS[activeChaserName] || "var(--teal-text)";
 
   if (!rows.length) {
-    setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">No data for ${activeChaserName} on ${pickedDate}.</div>`);
+    setEl("chaserPageContent", `<div class="state-block" style="color:var(--text-3)">No data for ${activeChaserName} on ${periodLabel}.</div>`);
     return;
   }
 
@@ -3213,7 +3238,7 @@ async function renderChaserPage() {
   // Rank in leaderboard
   const allChaserTotals = getAllChasers().map(n => ({
     name: n,
-    cases: archiveCache.filter(r=>String(r.Chaser)===n&&filterByChaserDate(r,pickedDate))
+    cases: archiveCache.filter(r=>String(r.Chaser)===n&&matchesPeriod(r))
                        .reduce((s,r)=>s+(Number(r.Cases)||0),0)
   })).sort((a,b)=>b.cases-a.cases);
   const rank = allChaserTotals.findIndex(c=>c.name===activeChaserName)+1;
@@ -3241,7 +3266,7 @@ async function renderChaserPage() {
         <div class="chaser-avatar" style="background:${color}">${activeChaserName[0]}</div>
         <div>
           <div class="chaser-hero-name" style="color:${color}">${activeChaserName}</div>
-          <div class="chaser-hero-sub">Rank #${rank} · ${totals.days} active days · ${pickedDate}</div>
+          <div class="chaser-hero-sub">Rank #${rank} · ${totals.days} active days · ${periodLabel}</div>
         </div>
       </div>
     </div>
@@ -3323,6 +3348,25 @@ function filterByChaserDate(r, isoDate) {
   const picked = new Date(y, m-1, day); picked.setHours(0,0,0,0);
   const rd     = new Date(d); rd.setHours(0,0,0,0);
   return rd.getTime() === picked.getTime();
+}
+
+function getChaserRowsRange(name, fromIso, toIso) {
+  return (archiveCache||[]).filter(r =>
+    String(r.Chaser) === name && filterByChaserDateRange(r, fromIso, toIso)
+  );
+}
+
+// fromIso/toIso: "YYYY-MM-DD" from the Chaser tab's From/To pickers. Parsed
+// as local midnight (not UTC) to avoid the off-by-one bug fixed elsewhere
+// in the Leaderboard/History custom ranges -- see applyLbCustomRange.
+function filterByChaserDateRange(r, fromIso, toIso) {
+  const d = parseArchiveDate(r.Date);
+  if (!d) return false;
+  const [fy,fm,fd] = fromIso.split("-").map(Number);
+  const [ty,tm,td] = toIso.split("-").map(Number);
+  const from = new Date(fy, fm-1, fd, 0, 0, 0);
+  const to   = new Date(ty, tm-1, td, 23, 59, 59);
+  return d >= from && d <= to;
 }
 
 function renderChaserCampaigns(rows) {
