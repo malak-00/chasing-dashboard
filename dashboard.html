@@ -1224,7 +1224,7 @@ async function syncSelectedDate() {
 
   try {
     const url = `${API_BASE}?mode=sync&date=${encodeURIComponent(d)}`;
-    const res = await fetchWithTimeout(url, SYNC_TIMEOUT_MS);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) throw new Error("Sync failed: " + res.status);
     const result = await res.json();
     if (result.error) throw new Error(result.error);
@@ -1258,14 +1258,11 @@ async function refreshDay() { await loadData(); }
 
 // Wrap fetch with a timeout so a stalled Apps Script cold-start leaves a
 // panel showing a clear error instead of "Loading..." forever with no
-// recourse but a page reload.
-const FETCH_TIMEOUT_MS = 20000;
-// "Sync" deletes + rewrites archive rows for a day, then re-reads 5 chaser
-// sheets plus 3 response-source spreadsheets (some tabs have 1000+ rows) --
-// genuinely slower than every other request in this app, not just a cold
-// start. Giving it the same 20s budget as a plain read aborts perfectly
-// healthy syncs that just need more time.
-const SYNC_TIMEOUT_MS = 90000;
+// recourse but a page reload. 90s covers every request in this app, including
+// Sync (which deletes + rewrites archive rows for a day, then re-reads 5
+// chaser sheets plus 3 response-source spreadsheets, some with 1000+ rows --
+// genuinely slower than a plain read).
+const FETCH_TIMEOUT_MS = 90000;
 async function fetchWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs || FETCH_TIMEOUT_MS);
@@ -1440,15 +1437,6 @@ function getHistDateRange(view, range) {
     return { fromDate: new Date(fy, fm-1, fd, 0,0,0), toDate: new Date(ty, tm-1, td, 23,59,59) };
   }
   return { fromDate: null, toDate: null };
-}
-
-// Best-effort fetch of the Lead History as-of-date snapshot for a Date
-// object, formatted as "M/D/YYYY". Used by every Campaigns tab panel
-// (Day/Week/Month/Quarter) to add Leads/In Process/Verbal Denial stats --
-// returns null on failure so the campaign cards still render without them.
-async function fetchLeadSnapshotForDate(dateObj) {
-  const dt = `${dateObj.getMonth()+1}/${dateObj.getDate()}/${dateObj.getFullYear()}`;
-  try { return await fetchAPI("leadsnapshot", dt); } catch(e) { return null; }
 }
 
 // Build day-shaped data from archive rows for a specific date
@@ -1640,13 +1628,7 @@ async function loadCampaignDay() {
     } else {
       campDayData = await fetchAPI("day", dateTab);
     }
-    // Deduplicated Leads / In Process / Verbal Denial counts as of this
-    // exact date, reconstructed from the Lead History log -- independent
-    // of the archive-based approved/denied numbers above. Best-effort:
-    // if it fails, the campaign cards still render without these 3 stats.
-    let leadSnap = null;
-    try { leadSnap = await fetchAPI("leadsnapshot", dateTab); } catch(e) { /* omit lead stats */ }
-    setEl("campaignTodayPanel", campaignHTML(campDayData, "day", leadSnap));
+    setEl("campaignTodayPanel", campaignHTML(campDayData, "day"));
   } catch(err) {
     setEl("campaignTodayPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1677,12 +1659,7 @@ async function loadCampaignWeek() {
     } else {
       campWeekData = await fetchAPI("week", dateTab);
     }
-    // Range-aggregated Leads/In Process/Verbal Denial, anchored to the
-    // LAST day of the week (Friday) -- "Leads" is a cumulative snapshot
-    // concept, not a per-day flow, so a range view shows it as of the
-    // range's end rather than trying to sum it across days.
-    const leadSnap = await fetchLeadSnapshotForDate(fri);
-    setEl("campaignWeekPanel", campaignHTML(campWeekData, "week", leadSnap));
+    setEl("campaignWeekPanel", campaignHTML(campWeekData, "week"));
   } catch(err) {
     setEl("campaignWeekPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1710,8 +1687,7 @@ async function loadCampaignMonth() {
       } catch(e) { /* will render zeros below if still unavailable */ }
     }
     const camps = buildCampaignFromLeadsDateRange(fromDate, toDate);
-    const leadSnap = await fetchLeadSnapshotForDate(toDate);
-    setEl("campaignMonthPanel", campaignHTML(camps, "camps", leadSnap));
+    setEl("campaignMonthPanel", campaignHTML(camps, "camps"));
   } catch(err) {
     setEl("campaignMonthPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1738,8 +1714,7 @@ async function loadCampaignQuarter() {
       } catch(e) { /* will render zeros below if still unavailable */ }
     }
     const camps = buildCampaignFromLeadsDateRange(fromDate, toDate);
-    const leadSnap = await fetchLeadSnapshotForDate(toDate);
-    setEl("campaignQuarterPanel", campaignHTML(camps, "camps", leadSnap));
+    setEl("campaignQuarterPanel", campaignHTML(camps, "camps"));
   } catch(err) {
     setEl("campaignQuarterPanel", `<div class="state-block error-msg">Error: ${err.message}</div>`);
   }
@@ -1758,7 +1733,7 @@ async function refreshCampaigns() {
   await Promise.all(tasks);
 }
 
-function campaignHTML(data,mode,leadSnap) {
+function campaignHTML(data,mode) {
   // mode "day"/"week" read from a day/week-shaped data object as before.
   // mode "camps" means data IS the camps object already (used by month/quarter views).
   const camps = mode==="camps"
@@ -1768,21 +1743,12 @@ function campaignHTML(data,mode,leadSnap) {
       : aggWeekCampaigns(data.weekDays||[]);
   const totApp=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.approved||0),0);
   const totDen=CAMPAIGNS.reduce((s,c)=>s+(camps[c.key]?.denied||0),0);
-  // leadSnap is the deduplicated Lead History snapshot -- one lifecycle =
-  // one Lead, counted once no matter how many chasers touched it.
-  // Independent of the approved/denied numbers above, which come from the
-  // campaign response sheets. "Leads" = submitted on/before the chosen
-  // date (SubmissionDate is a real historical fact); "In Process"/"Verbal
-  // Denial" = the CURRENT status of those leads, not a true historical
-  // snapshot of what they were on that exact date -- Lead History has no
-  // field that records that (see getLeadSnapshotForDate in LeadHistory.gs).
-  // For Day it's gated at that exact date; for Week/Month/Quarter ("range
-  // aggregated") it's gated at the range's last day.
-  const leadStats = leadSnap && leadSnap.byCampaign;
+  // Leads/In Process/Verbal Denial (from the Lead History as-of-date snapshot)
+  // removed for now -- the calculation needs rework. See campaignHTML in git
+  // history for the removed leadSnap-based rendering.
   return `<div class="campaign-grid">${CAMPAIGNS.map(camp=>{
     const d=camps[camp.key]||{approved:0,denied:0,total:0};
     const campTotal=(d.approved||0)+(d.denied||0); const pct=campTotal?(d.approved/campTotal*100).toFixed(1):"--";
-    const ls = leadStats ? (leadStats[camp.key]||{leads:0,inProcess:0,verbalDenial:0}) : null;
     return `<div class="campaign-card">
       <div class="campaign-name" style="color:${camp.color}">${camp.label}</div>
       <div class="campaign-stats">
@@ -1790,9 +1756,6 @@ function campaignHTML(data,mode,leadSnap) {
         <div class="cstat"><div class="cstat-val" style="color:var(--red)">${d.denied||0}</div><div class="cstat-lbl">Denied</div></div>
         <div class="cstat"><div class="cstat-val" style="color:var(--text-2)">${d.total||0}</div><div class="cstat-lbl">Total</div></div>
         <div class="cstat"><div class="cstat-val" style="color:${camp.color}">${pct}${pct!=="--"?"%":""}</div><div class="cstat-lbl">Approv%</div></div>
-        ${ls ? `<div class="cstat"><div class="cstat-val" style="color:var(--teal-text)">${ls.leads}</div><div class="cstat-lbl">Leads</div></div>
-        <div class="cstat"><div class="cstat-val" style="color:var(--amber)">${ls.inProcess}</div><div class="cstat-lbl">In Process</div></div>
-        <div class="cstat"><div class="cstat-val" style="color:var(--text-2)">${ls.verbalDenial}</div><div class="cstat-lbl">Verbal Denial</div></div>` : ""}
       </div></div>`;}).join("")}
   </div><div class="divider"></div>
   <div class="response-row">
@@ -1800,8 +1763,7 @@ function campaignHTML(data,mode,leadSnap) {
       <div><div class="resp-label">All Campaigns Approved</div><div class="resp-value">${totApp}</div></div></div>
     <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
       <div><div class="resp-label">All Campaigns Denied</div><div class="resp-value">${totDen}</div></div></div>
-  </div>
-  ${leadSnap ? `<div style="font-size:10px;color:var(--text-3);margin-top:8px">Leads = submitted through ${leadSnap.asOfDate}; In Process / Verbal Denial = their current status</div>` : ""}`;
+  </div>`;
 }
 
 function aggWeekCampaigns(weekDays) {
@@ -2244,7 +2206,6 @@ async function refreshDay() {
 
 // Apply shift history — find effective shift for each chaser on a given date
 function applyShiftHistory(dateTab) {
-  if (!shiftHistory.length) return;
   // Only append year if not already present (avoid "M/D/YYYY/2026")
   const fullDate = dateTab.split("/").length >= 3 ? dateTab : dateTab + "/" + new Date().getFullYear();
   const targetDate = parseArchiveDate(fullDate);
@@ -2260,6 +2221,10 @@ function applyShiftHistory(dateTab) {
     if (entries.length) {
       const mins = Number(entries[0].ShiftType);
       shiftMap[name] = isNaN(mins) ? DEFAULT_SHIFT_MINS : mins;
+    } else {
+      // No Settings entry for this chaser on or before this date -- always 400,
+      // never carry over a value left behind from a previously-viewed date.
+      shiftMap[name] = DEFAULT_SHIFT_MINS;
     }
   });
 
