@@ -249,15 +249,18 @@ function getOrCreateMonthTab(ss, tabName) {
   return sheet;
 }
 
-// Build duplicate guard from a specific month tab
-function buildExistingSet(sheet) {
-  const existing = new Set();
-  const data     = sheet.getDataRange().getValues();
+// Maps "date|chaser" -> { rowNum, values } for a specific month tab, so
+// archiveDayData() can update an existing row in place (fresh Cases/
+// Positive/etc. from a re-sync) instead of either skipping it (leaving
+// stale numbers forever) or blindly appending a duplicate row.
+function buildExistingRowMap(sheet) {
+  const map  = new Map();
+  const data = sheet.getDataRange().getValues();
   for (let r = 1; r < data.length; r++) {
     const key = normalizeDateCellToTab(data[r][0]) + "|" + String(data[r][1]);
-    existing.add(key);
+    map.set(key, { rowNum: r + 1, values: data[r] });
   }
-  return existing;
+  return map;
 }
 
 // ============================================================
@@ -270,7 +273,7 @@ function archiveDayData(dateTab) {
   const ss       = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
   const tabName  = monthTabName(dateTab);
   const sheet    = getOrCreateMonthTab(ss, tabName);
-  const existing = buildExistingSet(sheet);
+  const existing = buildExistingRowMap(sheet);
 
   // Use the dedicated per-chaser campaign counter (correct daily counts,
   // names normalized, no week-level inflation).
@@ -279,8 +282,27 @@ function archiveDayData(dateTab) {
   // byChaser from getDayData gives total approvals/denials across all campaigns
   const bc = data.responses.byChaser   || {};
 
+  // Utlatel rows for this date, so TotalCalls/TotalDurationMins get written
+  // into the archive row itself instead of staying permanently blank and
+  // relying solely on the dashboard's client-side join at render time (the
+  // dashboard's own "Data source priority" doc already treats this archive
+  // column as a valid fallback -- it just never got populated until now).
+  // ProductiveTime/Productivity/TotalShift are NOT computed here -- see the
+  // preserve-on-update comment further down for why.
+  const utlatelForDate = getUtlatelData().filter(r => r.Date === dateTab);
+  function utlatelTotalsForChaser(chaserName) {
+    let mins = 0, calls = 0;
+    utlatelForDate.forEach(r => {
+      if (String(r.Agent || "").toLowerCase().includes(chaserName.toLowerCase())) {
+        mins  += Number(r.DurationMins) || 0;
+        calls += Number(r.Calls)        || 0;
+      }
+    });
+    return { mins, calls };
+  }
+
   // Check if this date already has rows (skip week header if so)
-  const alreadyHasRows = [...existing].some(k => k.startsWith(dateTab + "|"));
+  const alreadyHasRows = [...existing.keys()].some(k => k.startsWith(dateTab + "|"));
   const isMonday       = isFirstDayOfWeek(dateTab);
 
   // Write week header row if this is a Monday and no rows exist for this date yet
@@ -305,14 +327,12 @@ function archiveDayData(dateTab) {
   }
 
   let written = 0;
+  let updated = 0;
   const missingTabChasers = [];
   const readErrorChasers  = [];
   for (const c of data.chasers) {
     const key = dateTab + "|" + c.name;
-    if (existing.has(key)) {
-      Logger.log("Skipping duplicate: " + key);
-      continue;
-    }
+    const existingRow = existing.get(key);
     // If this chaser's tracker has no tab named dateTab + "." for this date, do NOT
     // write a row — a chaser tracker can have a leftover tab from last year with the
     // same "M/D" name but no trailing dot; readChaserTab() only ever looks up the
@@ -347,22 +367,36 @@ function archiveDayData(dateTab) {
     // Each number = how many leads this chaser was listed on for that campaign today
     const cc = chaserCamps[c.name] || zeroCampaignTotals();
 
-    sheet.appendRow([
+    const utl = utlatelTotalsForChaser(c.name);
+
+    // Productivity/TotalShift/ACWDuration/ProductiveTime are never computed
+    // by Sync (see comment above) -- on an update, preserve whatever is
+    // already sitting in those cells (e.g. from the one-time legacy-sheet
+    // backfill) instead of blanking them out on every re-sync.
+    const prior = existingRow ? existingRow.values : null;
+    const rowValues = [
       dateTab, c.name, c.totalCases, c.totalPositive,
       r.approvals, r.denials, c.totalTimeMins, eff,  // no fax column
-      "",   // Productivity
-      "",   // TotalShift
-      "",   // TotalCalls
-      "",   // TotalDurationMins
-      "",   // ACWDuration
-      "",   // ProductiveTime
+      prior ? prior[8]  : "",   // Productivity
+      prior ? prior[9]  : "",   // TotalShift
+      utl.calls || "",          // TotalCalls
+      utl.mins  || "",          // TotalDurationMins
+      prior ? prior[12] : "",   // ACWDuration
+      prior ? prior[13] : "",   // ProductiveTime
       cc.ort.approved,    cc.ort.denied,
       cc.cgm.approved,    cc.cgm.denied,
       cc.lymphc.approved, cc.lymphc.denied,
       cc.lymphw.approved, cc.lymphw.denied,
-    ]);
-    existing.add(key);
-    written++;
+    ];
+
+    if (existingRow) {
+      sheet.getRange(existingRow.rowNum, 1, 1, ARCHIVE_HEADERS.length).setValues([rowValues]);
+      updated++;
+    } else {
+      sheet.appendRow(rowValues);
+      existing.set(key, { rowNum: sheet.getLastRow(), values: rowValues });
+      written++;
+    }
   }
 
   if (missingTabChasers.length) {
@@ -389,12 +423,15 @@ function archiveDayData(dateTab) {
     );
   }
 
-  // After writing all chasers for a Friday, also add a blank separator row
-  if (isFriday(dateTab)) {
+  // After writing all chasers for a Friday, also add a blank separator row --
+  // gated on written>0 so re-syncing an already-archived Friday (now updating
+  // rows in place instead of skipping) doesn't append another separator
+  // every time.
+  if (isFriday(dateTab) && written > 0) {
     sheet.appendRow(new Array(ARCHIVE_HEADERS.length).fill(""));
   }
 
-  Logger.log("Archived " + dateTab + " → " + tabName + " | Written: " + written + " rows");
+  Logger.log("Archived " + dateTab + " → " + tabName + " | Written: " + written + ", Updated: " + updated + " rows");
 }
 
 // ── Week label helpers ─────────────────────────────────────────
