@@ -601,16 +601,24 @@ function getOrCreateSettingsTab() {
   return sheet;
 }
 
+const UTLATEL_HEADERS = ["Date","Agent","DurationMins","Calls"];
+
 function getOrCreateUtlatelTab() {
   const ss    = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
   let   sheet = ss.getSheetByName("Utlatel");
   if (!sheet) {
     sheet = ss.insertSheet("Utlatel");
-    sheet.appendRow(["Date","Agent","DurationMins","Calls"]);
+    sheet.appendRow(UTLATEL_HEADERS);
     sheet.setFrozenRows(1);
     sheet.getRange(1,1,1,4).setFontWeight("bold").setBackground("#1A2C42").setFontColor("#00C2A8");
     Logger.log("Created Utlatel tab");
   }
+  // Without this, Sheets auto-coerces a "6/25"-style Date string into a real
+  // Date cell defaulted to some year -- getUtlatelData() then reads it back
+  // as "6/25/<that year>", which never matches the year-less "M/D" dateTab
+  // keys (getTodayTab/pickerToTab) the dashboard joins Utlatel data against,
+  // so uploaded duration/calls silently fail to show up for that date.
+  forcePlainTextColumns(sheet, UTLATEL_HEADERS, ["Date"]);
   return sheet;
 }
 
@@ -647,10 +655,13 @@ function getUtlatelData() {
   return data.slice(1).map(row => {
     const obj = {};
     headers.forEach((h,i) => { obj[h] = row[i]; });
-    // Normalize date
+    // Normalize date to "M/D" (no year) -- matches the year-less dateTab
+    // keys (getTodayTab/pickerToTab) the dashboard joins Utlatel data
+    // against; a row that slipped through as a real Date cell before
+    // forcePlainTextColumns was applied must still come back in this format.
     if (obj.Date instanceof Date && !isNaN(obj.Date)) {
       const d = obj.Date;
-      obj.Date = (d.getMonth()+1) + "/" + d.getDate() + "/" + d.getFullYear();
+      obj.Date = (d.getMonth()+1) + "/" + d.getDate();
     } else {
       obj.Date = String(obj.Date || "").trim();
     }
@@ -675,11 +686,14 @@ function saveUtlatelData(rows) {
   const sheet    = getOrCreateUtlatelTab();
   const existing = sheet.getDataRange().getValues();
 
-  // Build set of existing date|agent combos
+  // Build set of existing date|agent combos. Dates are compared as "M/D"
+  // (no year) -- same reasoning as getUtlatelData() -- so a row already
+  // sitting in the sheet as a real Date cell still matches this and future
+  // uploads' year-less date strings instead of silently duplicating.
   const existingKeys = new Set();
   for (let r = 1; r < existing.length; r++) {
     const d = existing[r][0] instanceof Date
-      ? (existing[r][0].getMonth()+1)+"/"+existing[r][0].getDate()+"/"+existing[r][0].getFullYear()
+      ? (existing[r][0].getMonth()+1)+"/"+existing[r][0].getDate()
       : String(existing[r][0]).trim();
     existingKeys.add(d + "|" + String(existing[r][1]).trim());
   }
@@ -693,7 +707,7 @@ function saveUtlatelData(rows) {
       // Update existing row
       for (let r = 1; r < existing.length; r++) {
         const d = existing[r][0] instanceof Date
-          ? (existing[r][0].getMonth()+1)+"/"+existing[r][0].getDate()+"/"+existing[r][0].getFullYear()
+          ? (existing[r][0].getMonth()+1)+"/"+existing[r][0].getDate()
           : String(existing[r][0]).trim();
         const existKey = d + "|" + String(existing[r][1]).trim();
         if (existKey === key) {
