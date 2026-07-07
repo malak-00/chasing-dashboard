@@ -2104,6 +2104,10 @@ function getOrCreateCampaignResponsesTab() {
          .setFontColor("#00C2A8");
     Logger.log("Created Campaign Responses tab");
   }
+  // Without this, a bare "6/25" Date value gets auto-coerced by Sheets into
+  // a real Date cell using Sheets' own year guess -- see archiveCampaignResponses()
+  // for why that guessed year silently breaks the dashboard's Month/Quarter views.
+  forcePlainTextColumns(sheet, CAMPAIGN_RESPONSES_HEADERS, ["Date"]);
   return sheet;
 }
 
@@ -2207,18 +2211,26 @@ function archiveCampaignResponses(dateTab) {
   const sheet = getOrCreateCampaignResponsesTab();
   const data  = sheet.getDataRange().getValues();
 
-  // Delete any existing rows for this date (work backwards to preserve indices)
+  // Write (and match against) the date WITH its year, via parseDateTab()
+  // (which defaults to the current year for a bare "M/D" dateTab -- correct
+  // here since this is only ever called for today/yesterday, never a stale
+  // historical date). A year-less "6/25" left Sheets to auto-coerce the
+  // cell into a Date using its own year guess; getArchiveCampaignResponses()
+  // then read that guess back into a full "M/D/YYYY" string. Month/Quarter
+  // filter using real Date-with-year ranges, so a wrong guessed year
+  // silently dropped or miscategorized the row -- Day/Week never showed the
+  // problem because they only ever compare year-less "M/D".
+  const d           = parseDateTab(dateTab);
+  const fullDateTab = (d.getMonth()+1) + "/" + d.getDate() + "/" + d.getFullYear();
+
+  // Delete any existing rows for this exact date (year included, so a
+  // same-M/D date from a different year is never mistakenly wiped)
   const toDelete = [];
   for (let r = 1; r < data.length; r++) {
     const rowDate = data[r][0] instanceof Date
-      ? (data[r][0].getMonth()+1)+"/"+data[r][0].getDate()
+      ? (data[r][0].getMonth()+1)+"/"+data[r][0].getDate()+"/"+data[r][0].getFullYear()
       : String(data[r][0]).trim();
-    // Normalize to M/D for comparison
-    const rParts = rowDate.split("/");
-    const rShort = parseInt(rParts[0]) + "/" + parseInt(rParts[1]);
-    const tParts = dateTab.split("/");
-    const tShort = parseInt(tParts[0]) + "/" + parseInt(tParts[1]);
-    if (rShort === tShort) toDelete.push(r + 1);
+    if (rowDate === fullDateTab) toDelete.push(r + 1);
   }
   toDelete.reverse().forEach(rowNum => sheet.deleteRow(rowNum));
 
@@ -2230,7 +2242,7 @@ function archiveCampaignResponses(dateTab) {
     const c   = camps[key];
     const tot = c.approved + c.denied;
     const pct = tot ? parseFloat((c.approved / tot * 100).toFixed(1)) : 0;
-    sheet.appendRow([dateTab, label, c.approved, c.denied, pct]);
+    sheet.appendRow([fullDateTab, label, c.approved, c.denied, pct]);
     written++;
   }
 
