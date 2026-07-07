@@ -1011,8 +1011,8 @@ const LB_COLS = [
   { key:"positive",     label:"Positive",    tip:"Total positive outcomes"           },
   { key:"approvals",    label:"Approv.",     tip:"Approvals"                        },
   { key:"denials",      label:"Denials",     tip:"Denials"                          },
-  { key:"approvalPct",  label:"Approv.%",    tip:"Approvals / (Approvals+Denials)"  },
-  { key:"denialPct",    label:"Denial%",     tip:"Denials / (Approvals+Denials)"    },
+  { key:"approvalPct",  label:"Approv.%",    tip:"This chaser's Approvals / team's total Approvals+Denials for the range"  },
+  { key:"denialPct",    label:"Denial%",     tip:"This chaser's Denials / team's total Approvals+Denials for the range"    },
   { key:"efficiency",   label:"Efficiency",  tip:"Positive ÷ Cases × 100 (higher = better)"},
   { key:"productivity", label:"Productivity",tip:"Productive time / shift x 100"    },
 ];
@@ -1824,6 +1824,7 @@ function renderLeaderboard() {
       });
     }
   }
+  applyTeamPct(rows);
   rows.sort((a,b)=>{
     const av=a[lbSort.col],bv=b[lbSort.col];
     if(av==="--"&&bv==="--")return 0; if(av==="--")return 1; if(bv==="--")return -1;
@@ -1859,14 +1860,29 @@ function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMin
   // shiftMap now stores exact shift minutes for the chaser (numpad-entered), falling back to sfm default
   const shiftMinsRaw = shiftMap[name];
   const sm = (shiftMinsRaw === undefined || shiftMinsRaw === null || shiftMinsRaw === "") ? sfm : Number(shiftMinsRaw);
-  const totalResp=approvals+denials; const approvalPct=totalResp?(approvals/totalResp*100).toFixed(1):"--";
-  const denialPct=totalResp?(denials/totalResp*100).toFixed(1):"--";
+  // approvalPct/denialPct are NOT computed here -- they depend on the whole
+  // team's totals for the picked range, not just this one chaser's own
+  // responses, so callers must run the built rows through applyTeamPct()
+  // once the full set for the range is assembled.
   const efficiency=cases?(positive/cases*100).toFixed(1):"--";
   let productivity="--",productivityStub=false;
   if(sm<=0){productivity="--";}
   else if(!utlMins){productivityStub=true;}
   else { const acw=acwMult*calls; productivity=sm>0?((utlMins+acw)/sm*100).toFixed(1):"--"; }
-  return {name,cases,positive,faxes,approvals,denials,approvalPct,denialPct,efficiency,productivity,productivityStub,shiftMins:sm};
+  return {name,cases,positive,faxes,approvals,denials,efficiency,productivity,productivityStub,shiftMins:sm};
+}
+
+// Sets approvalPct/denialPct on every row so each is "this chaser's
+// approvals (or denials) as a share of the TEAM's total responses for the
+// picked range" -- not "of my own responses, what % were approved," which
+// is what a naive per-row approvals/(approvals+denials) would give.
+function applyTeamPct(rows){
+  const teamTotal = rows.reduce((s,r)=>s+(r.approvals||0)+(r.denials||0),0);
+  rows.forEach(r=>{
+    r.approvalPct = teamTotal ? (r.approvals/teamTotal*100).toFixed(1) : "--";
+    r.denialPct   = teamTotal ? (r.denials/teamTotal*100).toFixed(1)   : "--";
+  });
+  return rows;
 }
 
 function mergeWeekResp(weekDays){
@@ -2352,11 +2368,14 @@ function downloadCSV(){
   const acw=Number(document.getElementById("acwMult").value);
   const headers=["Date","Chaser","Cases","Positive","Approvals","Denials","Approval%","Denial%","Efficiency","Productivity%","Shift","ShiftMins"];
   const bc=(dayData.responses||{}).byChaser||{};
-  const rows=(dayData.chasers||[]).map(c=>{
+  const chaserRows=(dayData.chasers||[]).map(c=>{
     const rs=bc[c.name]||{approvals:0,denials:0};
-    const r=buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name),getUtlCalls(c.name));
-    return [d,c.name,r.cases,r.positive,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,(shiftMap[c.name] ?? DEFAULT_SHIFT_MINS),r.shiftMins].join(",");
+    return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name),getUtlCalls(c.name));
   });
+  applyTeamPct(chaserRows);
+  const rows=chaserRows.map(r=>
+    [d,r.name,r.cases,r.positive,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,(shiftMap[r.name] ?? DEFAULT_SHIFT_MINS),r.shiftMins].join(",")
+  );
   const camps=dayData.responses?.byCampaign||mockCampaignData();
   rows.push("","Campaign,Approved,Denied,Total,Approval%");
   CAMPAIGNS.forEach(camp=>{const cd=camps[camp.key]||{approved:0,denied:0,total:0};const pct=cd.total?(cd.approved/cd.total*100).toFixed(1):"";rows.push([camp.label,cd.approved,cd.denied,cd.total,pct].join(","));});
@@ -2697,12 +2716,13 @@ function renderHistSummaryCards(s, dedup) {
 function renderHistLeaderboard(byChaserAgg) {
   const rows = Object.entries(byChaserAgg).map(([name, d]) => ({
     name, ...d,
-    approvalPct:  (d.approvals+d.denials) ? (d.approvals/(d.approvals+d.denials)*100).toFixed(1) : "--",
     efficiency:   d.cases    ? (d.positive/d.cases*100).toFixed(1)    : "--",
     avgCasesDay:  d.days     ? (d.cases/d.days).toFixed(1)           : "--",
     avgProd:      d.days     ? (d.productiveTime/d.days).toFixed(1)  : "--",
     callHours:    d.durationMins ? (d.durationMins/60).toFixed(1)    : "--",
-  })).sort((a,b) => b.cases - a.cases);
+  }));
+  applyTeamPct(rows);
+  rows.sort((a,b) => b.cases - a.cases);
 
   return `<div class="chart-wrap">
     <div class="chart-title">Chaser Totals for Period</div>
