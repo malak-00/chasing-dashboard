@@ -279,6 +279,27 @@ function archiveDayData(dateTab) {
   // byChaser from getDayData gives total approvals/denials across all campaigns
   const bc = data.responses.byChaser   || {};
 
+  // Utlatel rows for this date, so TotalCalls/TotalDurationMins get written
+  // into the archive row itself instead of staying permanently blank and
+  // relying solely on the dashboard's client-side join at render time (the
+  // dashboard's own "Data source priority" doc already treats this archive
+  // column as a valid fallback -- it just never got populated until now).
+  // ProductiveTime/Productivity/TotalShift stay blank here since those also
+  // depend on shift minutes / ACW multiplier, which can be edited after the
+  // fact -- the dashboard recomputes those live from current settings rather
+  // than trusting a frozen value written at archive time.
+  const utlatelForDate = getUtlatelData().filter(r => r.Date === dateTab);
+  function utlatelTotalsForChaser(chaserName) {
+    let mins = 0, calls = 0;
+    utlatelForDate.forEach(r => {
+      if (String(r.Agent || "").toLowerCase().includes(chaserName.toLowerCase())) {
+        mins  += Number(r.DurationMins) || 0;
+        calls += Number(r.Calls)        || 0;
+      }
+    });
+    return { mins, calls };
+  }
+
   // Check if this date already has rows (skip week header if so)
   const alreadyHasRows = [...existing].some(k => k.startsWith(dateTab + "|"));
   const isMonday       = isFirstDayOfWeek(dateTab);
@@ -347,13 +368,15 @@ function archiveDayData(dateTab) {
     // Each number = how many leads this chaser was listed on for that campaign today
     const cc = chaserCamps[c.name] || zeroCampaignTotals();
 
+    const utl = utlatelTotalsForChaser(c.name);
+
     sheet.appendRow([
       dateTab, c.name, c.totalCases, c.totalPositive,
       r.approvals, r.denials, c.totalTimeMins, eff,  // no fax column
       "",   // Productivity
       "",   // TotalShift
-      "",   // TotalCalls
-      "",   // TotalDurationMins
+      utl.calls || "",   // TotalCalls
+      utl.mins  || "",   // TotalDurationMins
       "",   // ACWDuration
       "",   // ProductiveTime
       cc.ort.approved,    cc.ort.denied,
