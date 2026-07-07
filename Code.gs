@@ -287,8 +287,6 @@ function archiveDayData(dateTab) {
   // relying solely on the dashboard's client-side join at render time (the
   // dashboard's own "Data source priority" doc already treats this archive
   // column as a valid fallback -- it just never got populated until now).
-  // ProductiveTime/Productivity/TotalShift are NOT computed here -- see the
-  // preserve-on-update comment further down for why.
   const utlatelForDate = getUtlatelData().filter(r => r.Date === dateTab);
   function utlatelTotalsForChaser(chaserName) {
     let mins = 0, calls = 0;
@@ -299,6 +297,41 @@ function archiveDayData(dateTab) {
       }
     });
     return { mins, calls };
+  }
+
+  // Shift minutes (TotalShift) and ACW multiplier, mirroring the dashboard's
+  // applyShiftHistory()/formulaSettings.acwMult exactly, so Sync/EOD write
+  // the same numbers the dashboard would otherwise only compute live:
+  //   - TotalShift: most recent per-chaser Settings-tab entry with
+  //     EffectiveDate <= the date being archived, else DEFAULT_SHIFT_MINS.
+  //   - ACW multiplier: the "__formula__"/"acwMult" global override (last
+  //     one wins, same as the dashboard's own load-time reducer), else 2.
+  const DEFAULT_SHIFT_MINS = 400;
+  const rawShiftHistory    = getSettings().shiftHistory || [];
+  const archiveTargetDate  = parseDateTab(dateTab);
+
+  let acwMult = 2;
+  rawShiftHistory.forEach(s => {
+    if (s.Chaser === "__formula__" && s.ShiftType === "acwMult") {
+      const v = parseFloat(s.Notes);
+      if (!isNaN(v)) acwMult = v;
+    }
+  });
+
+  function parseMDY(s) {
+    const p = String(s || "").trim().split("/");
+    if (p.length < 3) return null;
+    const m = parseInt(p[0], 10), d = parseInt(p[1], 10), y = parseInt(p[2], 10);
+    return (isNaN(m) || isNaN(d) || isNaN(y)) ? null : new Date(y, m - 1, d);
+  }
+
+  function shiftMinsForChaser(chaserName) {
+    const entries = rawShiftHistory
+      .filter(s => s.Chaser === chaserName)
+      .map(s => ({ mins: parseFloat(s.ShiftType), date: parseMDY(s.EffectiveDate) }))
+      .filter(s => s.date && s.date <= archiveTargetDate && !isNaN(s.mins))
+      .sort((a, b) => b.date - a.date);
+    return entries.length ? entries[0].mins : DEFAULT_SHIFT_MINS;
   }
 
   // Check if this date already has rows (skip week header if so)
@@ -367,22 +400,30 @@ function archiveDayData(dateTab) {
     // Each number = how many leads this chaser was listed on for that campaign today
     const cc = chaserCamps[c.name] || zeroCampaignTotals();
 
-    const utl = utlatelTotalsForChaser(c.name);
+    const utl       = utlatelTotalsForChaser(c.name);
+    const shiftMins = shiftMinsForChaser(c.name);
 
-    // Productivity/TotalShift/ACWDuration/ProductiveTime are never computed
-    // by Sync (see comment above) -- on an update, preserve whatever is
-    // already sitting in those cells (e.g. from the one-time legacy-sheet
-    // backfill) instead of blanking them out on every re-sync.
-    const prior = existingRow ? existingRow.values : null;
+    // ProductiveTime/ACWDuration/Productivity only mean something once we
+    // have real call-duration data for this chaser+date -- mirrors the
+    // dashboard's own "productivityStub" gate (buildRow: !utlMins), which
+    // shows an "Upload Utlatel" stub rather than asserting a number derived
+    // from zero duration.
+    let acwDuration = "", productiveTime = "", productivity = "";
+    if (utl.mins > 0) {
+      acwDuration    = acwMult * utl.calls;
+      productiveTime = utl.mins + acwDuration;
+      productivity   = shiftMins > 0 ? (productiveTime / shiftMins * 100).toFixed(1) : "";
+    }
+
     const rowValues = [
       dateTab, c.name, c.totalCases, c.totalPositive,
       r.approvals, r.denials, c.totalTimeMins, eff,  // no fax column
-      prior ? prior[8]  : "",   // Productivity
-      prior ? prior[9]  : "",   // TotalShift
-      utl.calls || "",          // TotalCalls
-      utl.mins  || "",          // TotalDurationMins
-      prior ? prior[12] : "",   // ACWDuration
-      prior ? prior[13] : "",   // ProductiveTime
+      productivity,       // Productivity
+      shiftMins,          // TotalShift
+      utl.calls || "",    // TotalCalls
+      utl.mins  || "",    // TotalDurationMins
+      acwDuration,        // ACWDuration
+      productiveTime,     // ProductiveTime
       cc.ort.approved,    cc.ort.denied,
       cc.cgm.approved,    cc.cgm.denied,
       cc.lymphc.approved, cc.lymphc.denied,

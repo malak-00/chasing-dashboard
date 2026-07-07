@@ -1011,8 +1011,8 @@ const LB_COLS = [
   { key:"positive",     label:"Positive",    tip:"Total positive outcomes"           },
   { key:"approvals",    label:"Approv.",     tip:"Approvals"                        },
   { key:"denials",      label:"Denials",     tip:"Denials"                          },
-  { key:"approvalPct",  label:"Approv.%",    tip:"Approvals / (Approvals+Denials)"  },
-  { key:"denialPct",    label:"Denial%",     tip:"Denials / (Approvals+Denials)"    },
+  { key:"approvalPct",  label:"Approv.%",    tip:"This chaser's Approvals / team's total Approvals+Denials for the range"  },
+  { key:"denialPct",    label:"Denial%",     tip:"This chaser's Denials / team's total Approvals+Denials for the range"    },
   { key:"efficiency",   label:"Efficiency",  tip:"Positive ÷ Cases × 100 (higher = better)"},
   { key:"productivity", label:"Productivity",tip:"Productive time / shift x 100"    },
 ];
@@ -1419,12 +1419,20 @@ function buildDayFromArchive(rows, dateTab) {
     return rTab === dateTab;
   });
   const chasers = dayRows.map(r => ({
-    name:          String(r.Chaser),
-    totalCases:    Number(r.Cases)    || 0,
-    totalPositive: Number(r.Positive) || 0,
-    totalTimeMins: Number(r.TimeMins) || 0,
-    totalFaxes:    0, // FaxDurationMins not used in dashboard
-    tabFound:      true,
+    name:              String(r.Chaser),
+    totalCases:        Number(r.Cases)             || 0,
+    totalPositive:     Number(r.Positive)           || 0,
+    totalTimeMins:     Number(r.TimeMins)           || 0,
+    totalFaxes:        0, // FaxDurationMins not used in dashboard
+    tabFound:          true,
+    // Written by archiveDayData() (Sync/EOD) -- read straight from the
+    // archive row instead of recomputing live from shiftMap/acwMult, so the
+    // Leaderboard shows exactly what Sync actually wrote, not a session-only
+    // value that drifts if a slider gets nudged without saving.
+    totalShift:        Number(r.TotalShift)         || 0,
+    totalCalls:        Number(r.TotalCalls)         || 0,
+    totalDurationMins: Number(r.TotalDurationMins)  || 0,
+    productiveTime:    Number(r.ProductiveTime)     || 0,
   }));
   const teamTotals = chasers.reduce((t, c) => ({
     totalCases:    t.totalCases    + c.totalCases,
@@ -1480,11 +1488,16 @@ function buildWeekFromArchive(rows, dateTab) {
   const chaserMap = {};
   weekDays.forEach(day => {
     day.chasers.forEach(c => {
-      if (!chaserMap[c.name]) chaserMap[c.name] = { name:c.name, totalCases:0, totalPositive:0, totalTimeMins:0, totalFaxes:0 };
-      chaserMap[c.name].totalCases    += c.totalCases;
-      chaserMap[c.name].totalPositive += c.totalPositive;
-      chaserMap[c.name].totalTimeMins += c.totalTimeMins;
-      chaserMap[c.name].totalFaxes    += c.totalFaxes;
+      if (!chaserMap[c.name]) chaserMap[c.name] = { name:c.name, totalCases:0, totalPositive:0, totalTimeMins:0, totalFaxes:0,
+        totalShift:0, totalCalls:0, totalDurationMins:0, productiveTime:0 };
+      chaserMap[c.name].totalCases        += c.totalCases;
+      chaserMap[c.name].totalPositive     += c.totalPositive;
+      chaserMap[c.name].totalTimeMins     += c.totalTimeMins;
+      chaserMap[c.name].totalFaxes        += c.totalFaxes;
+      chaserMap[c.name].totalShift        += c.totalShift;
+      chaserMap[c.name].totalCalls        += c.totalCalls;
+      chaserMap[c.name].totalDurationMins += c.totalDurationMins;
+      chaserMap[c.name].productiveTime    += c.productiveTime;
     });
   });
 
@@ -1798,15 +1811,14 @@ function applyLbCustomRange() {
 }
 
 function renderLeaderboard() {
-  const sfm=Number(document.getElementById("shiftMins")?.value||400);
-  const acw=Number(document.getElementById("acwMult")?.value||2);
   let rows;
 
   if (lbView==="custom") {
     if (!lbCustomData) { setEl("leaderboardEl",`<div class="state-block" style="color:var(--text-3)">Pick a date range above and click Apply.</div>`); return; }
-    rows = Object.entries(lbCustomData).map(([name,d]) =>
-      buildRow(name, d.cases, d.positive, d.faxes, d.approvals, d.denials, sfm*d.days, acw, 0, d.calls)
-    );
+    rows = Object.entries(lbCustomData).map(([name,d]) => buildRowFromTotals(name, {
+      cases:d.cases, positive:d.positive, approvals:d.approvals, denials:d.denials,
+      shiftMins:d.totalShift, calls:d.calls, durationMins:d.durationMins, productiveTime:d.productiveTime
+    }));
   } else {
     const source=lbView==="week"?weekData:dayData;
     if(!source)return;
@@ -1814,16 +1826,23 @@ function renderLeaderboard() {
       const bc=(dayData.responses||{}).byChaser||{};
       rows=(dayData.chasers||[]).map(c=>{
         const rs=bc[c.name]||{approvals:0,denials:0};
-        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMinsForDate(c.name,pickerToTab()),getUtlCallsForDate(c.name,pickerToTab()));
+        return buildRowFromTotals(c.name, {
+          cases:c.totalCases, positive:c.totalPositive, approvals:rs.approvals, denials:rs.denials,
+          shiftMins:c.totalShift, calls:c.totalCalls, durationMins:c.totalDurationMins, productiveTime:c.productiveTime
+        });
       });
     } else {
       const bc=mergeWeekResp(weekData.weekDays||[]);
       rows=(weekData.chaserWeekTotals||[]).map(c=>{
         const rs=bc[c.name]||{approvals:0,denials:0};
-        return buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm*5,acw,getUtlMins(c.name)*5,getUtlCalls(c.name)*5);
+        return buildRowFromTotals(c.name, {
+          cases:c.totalCases, positive:c.totalPositive, approvals:rs.approvals, denials:rs.denials,
+          shiftMins:c.totalShift, calls:c.totalCalls, durationMins:c.totalDurationMins, productiveTime:c.productiveTime
+        });
       });
     }
   }
+  applyTeamPct(rows);
   rows.sort((a,b)=>{
     const av=a[lbSort.col],bv=b[lbSort.col];
     if(av==="--"&&bv==="--")return 0; if(av==="--")return 1; if(bv==="--")return -1;
@@ -1835,7 +1854,7 @@ function renderLeaderboard() {
   setEl("leaderboardEl",`<table class="lb-table"><thead><tr>
     <th>#</th><th>Chaser</th>
     ${LB_COLS.map(c=>`<th class="${thC(c.key)}" onclick="setSortCol('${c.key}')" title="${c.tip}">${c.label}</th>`).join("")}
-    <th title="Shift length in minutes — edit to adjust for meetings, leave, etc.">Shift (min)</th></tr></thead><tbody>
+    <th title="As archived by Sync/EOD -- Settings-tab override for this date, or 400 by default">Shift (min)</th></tr></thead><tbody>
     ${rows.map((r,i)=>`<tr>
       <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
       <td><span class="chaser-name">${r.name}</span></td>
@@ -1847,26 +1866,44 @@ function renderLeaderboard() {
       <td>${r.denialPct==="--"?"--":`<span class="pill pill-amber">${r.denialPct}%</span>`}</td>
       <td>${r.efficiency==="--"?"--":r.efficiency}</td>
       <td>${r.productivityStub?`<span class="pill pill-stub">Upload Utlatel</span>`:`<span class="pill pill-teal">${r.productivity}%</span>`}</td>
-      <td><input type="number" inputmode="numeric" class="ctrl-input" style="width:78px;padding:4px 6px;font-size:11px" min="0" max="1440" step="5"
-        value="${shiftMap[r.name] !== undefined && shiftMap[r.name] !== null ? shiftMap[r.name] : DEFAULT_SHIFT_MINS}"
-        title="Shift minutes for today"
-        onchange="setShift('${r.name}',this.value)"></td>
+      <td>${r.shiftMins||"--"}</td>
     </tr>`).join("")}</tbody></table>`);
 }
 
-function buildRow(name,cases,positive,faxes,approvals,denials,sfm,acwMult,utlMins,calls){
-  cases=cases||0;positive=positive||0;approvals=approvals||0;denials=denials||0;calls=calls||0;
-  // shiftMap now stores exact shift minutes for the chaser (numpad-entered), falling back to sfm default
-  const shiftMinsRaw = shiftMap[name];
-  const sm = (shiftMinsRaw === undefined || shiftMinsRaw === null || shiftMinsRaw === "") ? sfm : Number(shiftMinsRaw);
-  const totalResp=approvals+denials; const approvalPct=totalResp?(approvals/totalResp*100).toFixed(1):"--";
-  const denialPct=totalResp?(denials/totalResp*100).toFixed(1):"--";
+// Builds a Leaderboard row entirely from archive-written totals -- shift
+// minutes, call duration/count, and productive time all come straight from
+// what Sync/EOD actually wrote (TotalShift/TotalCalls/TotalDurationMins/
+// ProductiveTime), not from the live ACW-multiplier/shift sliders. A slider
+// nudged without saving is user error and shouldn't change what's shown
+// here; this always reflects the persisted archive, same as Code.gs's own
+// productivity formula.
+// t: {cases,positive,approvals,denials,shiftMins,calls,durationMins,productiveTime}
+function buildRowFromTotals(name,t){
+  const cases=t.cases||0, positive=t.positive||0, approvals=t.approvals||0, denials=t.denials||0;
+  const shiftMins=t.shiftMins||0, calls=t.calls||0, durationMins=t.durationMins||0, productiveTime=t.productiveTime||0;
+  // approvalPct/denialPct are NOT computed here -- they depend on the whole
+  // team's totals for the picked range, not just this one chaser's own
+  // responses, so callers must run the built rows through applyTeamPct()
+  // once the full set for the range is assembled.
   const efficiency=cases?(positive/cases*100).toFixed(1):"--";
   let productivity="--",productivityStub=false;
-  if(sm<=0){productivity="--";}
-  else if(!utlMins){productivityStub=true;}
-  else { const acw=acwMult*calls; productivity=sm>0?((utlMins+acw)/sm*100).toFixed(1):"--"; }
-  return {name,cases,positive,faxes,approvals,denials,approvalPct,denialPct,efficiency,productivity,productivityStub,shiftMins:sm};
+  if(shiftMins<=0){productivity="--";}
+  else if(!durationMins){productivityStub=true;}
+  else { productivity=(productiveTime/shiftMins*100).toFixed(1); }
+  return {name,cases,positive,approvals,denials,efficiency,productivity,productivityStub,shiftMins,calls,durationMins};
+}
+
+// Sets approvalPct/denialPct on every row so each is "this chaser's
+// approvals (or denials) as a share of the TEAM's total responses for the
+// picked range" -- not "of my own responses, what % were approved," which
+// is what a naive per-row approvals/(approvals+denials) would give.
+function applyTeamPct(rows){
+  const teamTotal = rows.reduce((s,r)=>s+(r.approvals||0)+(r.denials||0),0);
+  rows.forEach(r=>{
+    r.approvalPct = teamTotal ? (r.approvals/teamTotal*100).toFixed(1) : "--";
+    r.denialPct   = teamTotal ? (r.denials/teamTotal*100).toFixed(1)   : "--";
+  });
+  return rows;
 }
 
 function mergeWeekResp(weekDays){
@@ -2058,37 +2095,6 @@ function buildAgentMapUI(agents){
     row.appendChild(select);
     grid.appendChild(row);
   });
-}
-
-// Get Utlatel minutes for a chaser — optionally filtered to a specific date
-function getUtlMins(chaserName, dateTab){
-  let tot=0;
-  for(const[agent,mapped]of Object.entries(agentMap)){
-    if(mapped!==chaserName||!utlatelData[agent]) continue;
-    if(dateTab && utlatelData[agent].byDate && Object.keys(utlatelData[agent].byDate).length){
-      // Use date-specific value if available
-      tot+=utlatelData[agent].byDate[dateTab]?.mins||0;
-    } else {
-      // Fall back to total (e.g. file has no date column)
-      tot+=utlatelData[agent].totalDurationMins||0;
-    }
-  }
-  return tot;
-}
-
-// Get Utlatel call count for a chaser — optionally filtered to a specific date.
-// Mirrors getUtlMins(); ACW duration is multiplier x calls, not x cases.
-function getUtlCalls(chaserName, dateTab){
-  let tot=0;
-  for(const[agent,mapped]of Object.entries(agentMap)){
-    if(mapped!==chaserName||!utlatelData[agent]) continue;
-    if(dateTab && utlatelData[agent].byDate && Object.keys(utlatelData[agent].byDate).length){
-      tot+=utlatelData[agent].byDate[dateTab]?.calls||0;
-    } else {
-      tot+=utlatelData[agent].totalCalls||0;
-    }
-  }
-  return tot;
 }
 
 // ── CUSTOM METRICS ────────────────────────────────────────────
@@ -2348,15 +2354,19 @@ function showToast(msg, type) {
 function downloadCSV(){
   if(!dayData){alert("Load data first.");return;}
   const d=pickerToTab();
-  const sfm=Number(document.getElementById("shiftMins").value);
-  const acw=Number(document.getElementById("acwMult").value);
   const headers=["Date","Chaser","Cases","Positive","Approvals","Denials","Approval%","Denial%","Efficiency","Productivity%","Shift","ShiftMins"];
   const bc=(dayData.responses||{}).byChaser||{};
-  const rows=(dayData.chasers||[]).map(c=>{
+  const chaserRows=(dayData.chasers||[]).map(c=>{
     const rs=bc[c.name]||{approvals:0,denials:0};
-    const r=buildRow(c.name,c.totalCases,c.totalPositive,c.totalFaxes,rs.approvals,rs.denials,sfm,acw,getUtlMins(c.name),getUtlCalls(c.name));
-    return [d,c.name,r.cases,r.positive,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,(shiftMap[c.name] ?? DEFAULT_SHIFT_MINS),r.shiftMins].join(",");
+    return buildRowFromTotals(c.name, {
+      cases:c.totalCases, positive:c.totalPositive, approvals:rs.approvals, denials:rs.denials,
+      shiftMins:c.totalShift, calls:c.totalCalls, durationMins:c.totalDurationMins, productiveTime:c.productiveTime
+    });
   });
+  applyTeamPct(chaserRows);
+  const rows=chaserRows.map(r=>
+    [d,r.name,r.cases,r.positive,r.approvals,r.denials,r.approvalPct,r.denialPct,r.efficiency,r.productivityStub?"":r.productivity,r.shiftMins,r.shiftMins].join(",")
+  );
   const camps=dayData.responses?.byCampaign||mockCampaignData();
   rows.push("","Campaign,Approved,Denied,Total,Approval%");
   CAMPAIGNS.forEach(camp=>{const cd=camps[camp.key]||{approved:0,denied:0,total:0};const pct=cd.total?(cd.approved/cd.total*100).toFixed(1):"";rows.push([camp.label,cd.approved,cd.denied,cd.total,pct].join(","));});
@@ -2654,7 +2664,7 @@ function groupByChaser(rows) {
     const n = r.Chaser;
     if (!n) continue;
     if (!map[n]) map[n] = { cases:0, positive:0, faxes:0, approvals:0, denials:0,
-                             timeMins:0, calls:0, durationMins:0, productiveTime:0, days:new Set() };
+                             timeMins:0, calls:0, durationMins:0, productiveTime:0, totalShift:0, days:new Set() };
     map[n].cases          += Number(r.Cases)||0;
     map[n].positive       += Number(r.Positive)||0;
     // faxes not tracked
@@ -2664,6 +2674,7 @@ function groupByChaser(rows) {
     map[n].calls          += Number(r.TotalCalls)||0;
     map[n].durationMins   += Number(r.TotalDurationMins)||0;
     map[n].productiveTime += Number(r.ProductiveTime)||0;
+    map[n].totalShift     += Number(r.TotalShift)||0;
     map[n].days.add(r.Date);
   }
   Object.values(map).forEach(v => v.days = v.days.size);
@@ -2697,12 +2708,13 @@ function renderHistSummaryCards(s, dedup) {
 function renderHistLeaderboard(byChaserAgg) {
   const rows = Object.entries(byChaserAgg).map(([name, d]) => ({
     name, ...d,
-    approvalPct:  (d.approvals+d.denials) ? (d.approvals/(d.approvals+d.denials)*100).toFixed(1) : "--",
     efficiency:   d.cases    ? (d.positive/d.cases*100).toFixed(1)    : "--",
     avgCasesDay:  d.days     ? (d.cases/d.days).toFixed(1)           : "--",
     avgProd:      d.days     ? (d.productiveTime/d.days).toFixed(1)  : "--",
     callHours:    d.durationMins ? (d.durationMins/60).toFixed(1)    : "--",
-  })).sort((a,b) => b.cases - a.cases);
+  }));
+  applyTeamPct(rows);
+  rows.sort((a,b) => b.cases - a.cases);
 
   return `<div class="chart-wrap">
     <div class="chart-title">Chaser Totals for Period</div>
@@ -4523,52 +4535,6 @@ function handleCtrlFileUploadFile(file) {
   } else { setS("Unsupported file type.","err"); }
 }
 
-// Update getUtlMins to also check archive rows for TotalDurationMins
-// Get Utlatel call duration mins for a chaser on a specific date.
-// Priority:
-//   1. Uploaded CSV (most accurate — use this for current testing)
-//   2. TotalDurationMins column in archive (from manual upload / future API)
-//   3. Zero (productivity shows as stub)
-function getUtlMinsForDate(chaserName, dateTab) {
-  // 1. Uploaded CSV override
-  const uploaded = getUtlMins(chaserName, dateTab);
-  if (uploaded > 0) return uploaded;
-
-  // 2. Archive TotalDurationMins column
-  if (archiveCache) {
-    const row = archiveCache.find(r => {
-      const d = parseArchiveDate(r.Date);
-      if (!d) return false;
-      const rTab = (d.getMonth()+1) + "/" + d.getDate();
-      return rTab === dateTab && r.Chaser === chaserName;
-    });
-    const archiveMins = Number(row?.TotalDurationMins) || 0;
-    if (archiveMins > 0) return archiveMins;
-  }
-
-  // 3. No data — productivity will show as stub
-  return 0;
-}
-
-// Get Utlatel call count for a chaser on a specific date. Mirrors
-// getUtlMinsForDate(); used for ACW = multiplier x calls, not x cases.
-function getUtlCallsForDate(chaserName, dateTab) {
-  const uploaded = getUtlCalls(chaserName, dateTab);
-  if (uploaded > 0) return uploaded;
-
-  if (archiveCache) {
-    const row = archiveCache.find(r => {
-      const d = parseArchiveDate(r.Date);
-      if (!d) return false;
-      const rTab = (d.getMonth()+1) + "/" + d.getDate();
-      return rTab === dateTab && r.Chaser === chaserName;
-    });
-    const archiveCalls = Number(row?.TotalCalls) || 0;
-    if (archiveCalls > 0) return archiveCalls;
-  }
-
-  return 0;
-}
 
 </script>
 <div class="chart-tooltip" id="chartTooltip"></div>
