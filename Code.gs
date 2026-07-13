@@ -1208,12 +1208,15 @@ function feedbackMatchesDate(feedbackStr, dateTab) {
   const tp   = dateTab.split("/");
   const want = parseInt(tp[0]) + "/" + parseInt(tp[1]);   // e.g. "5/1"
 
-  // Extract every M/D or M/D/YYYY token from the feedback string
-  const tokens = feedbackStr.match(/\b(\d{1,2}\/\d{1,2})(?:\/\d{2,4})?\b/g) || [];
-  return tokens.some(tok => {
-    const p = tok.split("/");
-    return parseInt(p[0]) + "/" + parseInt(p[1]) === want;
-  });
+  // Only the FIRST M/D token in the string counts as this row's actual
+  // status date. Free-text notes sometimes mention a different date in
+  // passing (e.g. "Approved+CN 6/1 / ... {Logan 6/2}"), which would
+  // otherwise get a single row counted on both its real date and any
+  // incidentally-mentioned date whenever each one gets synced.
+  const match = feedbackStr.match(/\b(\d{1,2}\/\d{1,2})(?:\/\d{2,4})?\b/);
+  if (!match) return false;
+  const p = match[1].split("/");
+  return parseInt(p[0]) + "/" + parseInt(p[1]) === want;
 }
 
 // ============================================================
