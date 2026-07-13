@@ -2527,44 +2527,33 @@ function getArchiveCampaignResponses() {
 // remains the daily source of truth — running this does not change
 // day-to-day syncing in any way.
 //
-// Sheet ID: 1QVnmXYRg-IbMi46Lvi752ZbIfL5NHd666DsH0WI7SmU
-// Each tab has its own Chaser Name column and a feedback/status column
-// that contains the date embedded in the text, same as the daily sheets
-// (e.g. "Approved+CN 5/1").
+// Reuses BACKFILL_RESPONSES_SHEET_ID / BACKFILL_RESPONSES_TABS (declared
+// above, near backfillCampaignColumns()) instead of redeclaring the same
+// spreadsheet ID and tab list a second time.
 //
 // USAGE (run once from the Apps Script editor):
 //   backfillFromCombinedSheet()
 // Resumable — saves progress after each date, safe to re-run if it times out.
 // ============================================================
 
-const COMBINED_HISTORICAL_SOURCE = {
-  id: "1QVnmXYRg-IbMi46Lvi752ZbIfL5NHd666DsH0WI7SmU",
-  tabs: [
-    { name: "ORT Overall 2026",      feedbackCol: "FAX FEEDBACK",   chaserCol: "Chaser Name", campaignKey: "ort"    },
-    { name: "CGM Overall 2026",      feedbackCol: "FAX SENT ON EST", chaserCol: "Chaser",       campaignKey: "cgm"    },
-    { name: "LY PUMP Overall 2026",  feedbackCol: "FAX FEEDBACK",   chaserCol: "Chaser Name", campaignKey: "lymphc" },
-    { name: "LY WRAP Overall 2026",  feedbackCol: "Fax Feedback",   chaserCol: "Chaser Name", campaignKey: "lymphw" },
-  ]
-};
-
 // Scan every tab in the combined sheet and collect every unique "M/D" date
 // found embedded in the feedback column text.
 function collectDatesFromCombinedSheet() {
   const dates = new Set();
   let ss;
-  try { ss = SpreadsheetApp.openById(COMBINED_HISTORICAL_SOURCE.id); }
+  try { ss = SpreadsheetApp.openById(BACKFILL_RESPONSES_SHEET_ID); }
   catch(e) { Logger.log("Cannot open combined sheet: " + e.message); return []; }
 
-  for (const tabConfig of COMBINED_HISTORICAL_SOURCE.tabs) {
-    const sheet = ss.getSheetByName(tabConfig.name);
-    if (!sheet) { Logger.log("Tab not found: " + tabConfig.name); continue; }
+  for (const tabConfig of BACKFILL_RESPONSES_TABS) {
+    const sheet = ss.getSheetByName(tabConfig.tabName);
+    if (!sheet) { Logger.log("Tab not found: " + tabConfig.tabName); continue; }
 
     const data = sheet.getDataRange().getValues();
     if (data.length < 2) continue;
 
     const headers     = data[0].map(h => String(h).trim().toUpperCase());
     const feedbackCol = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
-    if (feedbackCol < 0) { Logger.log("Feedback col not found in " + tabConfig.name + ": " + tabConfig.feedbackCol); continue; }
+    if (feedbackCol < 0) { Logger.log("Feedback col not found in " + tabConfig.tabName + ": " + tabConfig.feedbackCol); continue; }
 
     for (let r = 1; r < data.length; r++) {
       const feedback = String(data[r][feedbackCol] || "").trim();
@@ -2586,11 +2575,11 @@ function readCombinedCampaignTotalsForDate(dateTab) {
   const camps = zeroCampaignTotals();
 
   let ss;
-  try { ss = SpreadsheetApp.openById(COMBINED_HISTORICAL_SOURCE.id); }
+  try { ss = SpreadsheetApp.openById(BACKFILL_RESPONSES_SHEET_ID); }
   catch(e) { return camps; }
 
-  for (const tabConfig of COMBINED_HISTORICAL_SOURCE.tabs) {
-    const sheet = ss.getSheetByName(tabConfig.name);
+  for (const tabConfig of BACKFILL_RESPONSES_TABS) {
+    const sheet = ss.getSheetByName(tabConfig.tabName);
     if (!sheet) continue;
 
     const data = sheet.getDataRange().getValues();
@@ -2626,11 +2615,11 @@ function readCombinedChaserCampaignCountsForDate(dateTab) {
   const byChaser = {};
 
   let ss;
-  try { ss = SpreadsheetApp.openById(COMBINED_HISTORICAL_SOURCE.id); }
+  try { ss = SpreadsheetApp.openById(BACKFILL_RESPONSES_SHEET_ID); }
   catch(e) { return byChaser; }
 
-  for (const tabConfig of COMBINED_HISTORICAL_SOURCE.tabs) {
-    const sheet = ss.getSheetByName(tabConfig.name);
+  for (const tabConfig of BACKFILL_RESPONSES_TABS) {
+    const sheet = ss.getSheetByName(tabConfig.tabName);
     if (!sheet) continue;
 
     const data = sheet.getDataRange().getValues();
@@ -2667,8 +2656,8 @@ function readCombinedChaserCampaignCountsForDate(dateTab) {
 }
 
 // Write/overwrite Campaign Responses rows for ONE date using the combined sheet's data.
-// Mirrors archiveCampaignResponses() but reads from COMBINED_HISTORICAL_SOURCE instead
-// of RESPONSE_SOURCES.
+// Mirrors archiveCampaignResponses() but reads from BACKFILL_RESPONSES_TABS
+// instead of RESPONSE_SOURCES.
 function writeCombinedCampaignResponses(dateTab) {
   const sheet = getOrCreateCampaignResponsesTab();
   const data  = sheet.getDataRange().getValues();
@@ -2702,7 +2691,7 @@ function writeCombinedCampaignResponses(dateTab) {
 
 // Update per-chaser ORT/CGM/LymphC/LymphW columns in the monthly archive tab
 // for ONE date using the combined sheet's data. Mirrors the inner loop of
-// backfillCampaignColumns() but reads from COMBINED_HISTORICAL_SOURCE.
+// backfillCampaignColumns() but reads from BACKFILL_RESPONSES_TABS.
 function writeCombinedChaserCampaignColumns(dateTab) {
   const ss = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
 
