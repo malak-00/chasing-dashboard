@@ -118,7 +118,7 @@ const RESPONSE_SOURCES = [
     id: "1flemAA9Q5hEn78ZtCnGnhDlCVq18RJnjspirfH_uXlU",
     tabs: [
       { name: "ORT RESPONSES", feedbackCol: "FAX FEEDBACK",    chaserCol: "CHASER NAME", campaignKey: "ort" },
-      { name: "CGM Responses", feedbackCol: "FAX SENT ON EST", chaserCol: "CHASER NAME", campaignKey: "cgm" }
+      { name: "CGM Responses", feedbackCol: "FAX SENT ON EST", chaserCol: "CHASER",      campaignKey: "cgm" }
     ]
   },
   {
@@ -2421,7 +2421,7 @@ function archiveCampaignResponses(dateTab) {
 // Safe to re-run — existing rows for each date are deleted and rewritten.
 // Progress stored in script properties so it can resume after a timeout.
 function backfillCampaignResponses() {
-  const PROGRESS_KEY = "campaign_responses_backfill3";
+  const PROGRESS_KEY = "campaign_responses_backfill4";
   const props        = PropertiesService.getScriptProperties();
   const doneDates    = JSON.parse(props.getProperty(PROGRESS_KEY) || "[]");
 
@@ -2482,7 +2482,7 @@ function backfillCampaignResponses() {
 }
 
 function resetCampaignResponsesBackfill() {
-  PropertiesService.getScriptProperties().deleteProperty("campaign_responses_backfill3");
+  PropertiesService.getScriptProperties().deleteProperty("campaign_responses_backfill4");
   Logger.log("Campaign responses backfill progress reset.");
 }
 
