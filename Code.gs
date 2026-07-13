@@ -1918,17 +1918,16 @@ function applyDayBordersToArchive() {
 //   It processes one month tab at a time — if it times out,
 //   just run it again (already-updated rows are skipped).
 //
-// PROGRESS KEY: "campaign_backfill_progress"
+// PROGRESS KEY: "campaign_backfill_progress2"
 // ============================================================
 
 function backfillCampaignColumns() {
-  const PROGRESS_KEY  = "campaign_backfill_progress";
+  const PROGRESS_KEY  = "campaign_backfill_progress2";
   const props         = PropertiesService.getScriptProperties();
   const doneDates     = JSON.parse(props.getProperty(PROGRESS_KEY) || "[]");
 
-  const ss          = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
-  const MONTH_NAMES = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
-  const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i;
+  const ss           = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
+  const monthPattern  = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i;
 
   // Column indices in archive (0-based after header)
   // Headers: Date,Chaser,Cases,Positive,Approvals,Denials,TimeMins,Efficiency,Productivity,
@@ -1951,9 +1950,27 @@ function backfillCampaignColumns() {
   let totalUpdated = 0;
   let totalSkipped = 0;
 
+  // rowDate: given a raw cell value and the tab's own year (for a bare
+  // "M/D" cell), returns "M/D/YYYY" -- kept year-aware throughout so a
+  // same-calendar-day date from a different month tab (e.g. Jun 2025 vs
+  // Jun 2026) is never confused with, or skipped because of, the other.
+  function rowDate(rawDate, tabYear) {
+    if (rawDate instanceof Date && !isNaN(rawDate)) {
+      return (rawDate.getMonth()+1) + "/" + rawDate.getDate() + "/" + rawDate.getFullYear();
+    }
+    const s = String(rawDate || "").trim();
+    if (!s || s.toUpperCase() === "WEEK") return null;
+    const parts = s.split("/");
+    const m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
+    if (isNaN(m) || isNaN(d)) return null;
+    return m + "/" + d + "/" + (parts[2] ? parseInt(parts[2], 10) : tabYear);
+  }
+
   for (const sheet of ss.getSheets()) {
-    const tabName = sheet.getName().trim();
-    if (!monthPattern.test(tabName)) continue;
+    const tabName  = sheet.getName().trim();
+    const tabMatch = tabName.match(monthPattern);
+    if (!tabMatch) continue;
+    const tabYear = parseInt(tabMatch[2], 10);
 
     Logger.log("Processing tab: " + tabName);
     const data = sheet.getDataRange().getValues();
@@ -1962,24 +1979,14 @@ function backfillCampaignColumns() {
     // Collect unique dates in this tab that haven't been processed
     const datesToProcess = new Set();
     for (let r = 1; r < data.length; r++) {
-      const rawDate   = data[r][COL.date];
       const chaserVal = String(data[r][COL.chaser]).trim();
       if (!chaserVal || chaserVal.toUpperCase().startsWith("TOTAL")) continue;
 
-      let dateStr;
-      if (rawDate instanceof Date && !isNaN(rawDate)) {
-        dateStr = (rawDate.getMonth()+1) + "/" + rawDate.getDate() + "/" + rawDate.getFullYear();
-      } else {
-        dateStr = String(rawDate).trim();
-      }
-      if (!dateStr || dateStr.toUpperCase() === "WEEK") continue;
+      const fullDate = rowDate(data[r][COL.date], tabYear);
+      if (!fullDate) continue;
 
-      // Normalize to M/D for response sheet lookup
-      const parts = dateStr.split("/");
-      const shortDate = parseInt(parts[0]) + "/" + parseInt(parts[1]);
-
-      if (!doneDates.includes(shortDate)) {
-        datesToProcess.add(shortDate);
+      if (!doneDates.includes(fullDate)) {
+        datesToProcess.add(fullDate);
       } else {
         totalSkipped++;
       }
@@ -1988,18 +1995,18 @@ function backfillCampaignColumns() {
     Logger.log("  Dates to process: " + datesToProcess.size + " | Already done: " + totalSkipped);
 
     // For each unique date, fetch per-chaser campaign counts and update archive rows
-    for (const shortDate of datesToProcess) {
-      Logger.log("  Fetching per-chaser campaign counts for: " + shortDate);
+    for (const fullDate of datesToProcess) {
+      Logger.log("  Fetching per-chaser campaign counts for: " + fullDate);
 
       let chaserCamps;
       try {
         // readChaserCampaignCountsForDate: reads response sheets for this day,
         // returns normalized chaser names mapped to per-campaign lead counts.
         // Each chaser gets +1 per lead they were listed on (daily, not week totals).
-        chaserCamps = readChaserCampaignCountsForDate(shortDate);
+        chaserCamps = readChaserCampaignCountsForDate(fullDate);
       } catch(err) {
-        Logger.log("  Error reading responses for " + shortDate + ": " + err.message);
-        doneDates.push(shortDate);
+        Logger.log("  Error reading responses for " + fullDate + ": " + err.message);
+        doneDates.push(fullDate);
         props.setProperty(PROGRESS_KEY, JSON.stringify(doneDates));
         continue;
       }
@@ -2007,22 +2014,11 @@ function backfillCampaignColumns() {
       let rowsUpdated = 0;
 
       for (let r = 1; r < data.length; r++) {
-        const rawDate   = data[r][COL.date];
         const chaserVal = String(data[r][COL.chaser]).trim();
         if (!chaserVal || chaserVal.toUpperCase().startsWith("TOTAL")) continue;
-        if (chaserVal.toUpperCase() === "WEEK") continue;
 
-        let dateStr;
-        if (rawDate instanceof Date && !isNaN(rawDate)) {
-          dateStr = (rawDate.getMonth()+1) + "/" + rawDate.getDate() + "/" + rawDate.getFullYear();
-        } else {
-          dateStr = String(rawDate).trim();
-        }
-        if (!dateStr || dateStr.toUpperCase() === "WEEK") continue;
-
-        const parts = dateStr.split("/");
-        const rowShortDate = parseInt(parts[0]) + "/" + parseInt(parts[1]);
-        if (rowShortDate !== shortDate) continue;
+        const rowFullDate = rowDate(data[r][COL.date], tabYear);
+        if (rowFullDate !== fullDate) continue;
 
         // Archive stores normalized short names; chaserCamps also uses normalized names
         const normalized = normalizeChaserName(chaserVal);
@@ -2038,27 +2034,25 @@ function backfillCampaignColumns() {
         rowsUpdated++;
       }
 
-      Logger.log("  Updated " + rowsUpdated + " rows for " + shortDate);
+      Logger.log("  Updated " + rowsUpdated + " rows for " + fullDate);
       totalUpdated += rowsUpdated;
 
       // Save progress after each date
-      doneDates.push(shortDate);
+      doneDates.push(fullDate);
       props.setProperty(PROGRESS_KEY, JSON.stringify(doneDates));
     }
   }
 
   Logger.log("=== DONE ===");
   Logger.log("Rows updated: " + totalUpdated);
-  Logger.log("Dates skipped (already done): " + (doneDates.length - datesToProcess.size));
+  Logger.log("Dates skipped (already done): " + totalSkipped);
   Logger.log("Total dates processed so far: " + doneDates.length);
-
-  // Check if all done
   Logger.log("Run backfillCampaignColumns() again if there are more dates to process.");
 }
 
 // Reset campaign backfill progress
 function resetCampaignBackfill() {
-  PropertiesService.getScriptProperties().deleteProperty("campaign_backfill_progress");
+  PropertiesService.getScriptProperties().deleteProperty("campaign_backfill_progress2");
   Logger.log("Campaign backfill progress reset.");
 }
 
