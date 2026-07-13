@@ -1950,20 +1950,24 @@ function backfillCampaignColumns() {
   let totalUpdated = 0;
   let totalSkipped = 0;
 
-  // rowDate: given a raw cell value and the tab's own year (for a bare
-  // "M/D" cell), returns "M/D/YYYY" -- kept year-aware throughout so a
-  // same-calendar-day date from a different month tab (e.g. Jun 2025 vs
-  // Jun 2026) is never confused with, or skipped because of, the other.
+  // rowDate: given a raw cell value, returns "M/D/YYYY" -- the year ALWAYS
+  // comes from the tab's own name (e.g. "Jun 2026"), never from the cell
+  // itself. getOrCreateMonthTab() never forces its Date column to plain
+  // text either, so a bare "6/25" can get auto-coerced by Sheets into a
+  // Date object with Sheets' own year guess -- trusting that guessed year
+  // here would reintroduce the exact bug this fix exists to avoid. Only
+  // month/day are ever read off the cell; the tab name is the one thing
+  // that's never ambiguous.
   function rowDate(rawDate, tabYear) {
     if (rawDate instanceof Date && !isNaN(rawDate)) {
-      return (rawDate.getMonth()+1) + "/" + rawDate.getDate() + "/" + rawDate.getFullYear();
+      return (rawDate.getMonth()+1) + "/" + rawDate.getDate() + "/" + tabYear;
     }
     const s = String(rawDate || "").trim();
     if (!s || s.toUpperCase() === "WEEK") return null;
     const parts = s.split("/");
     const m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
     if (isNaN(m) || isNaN(d)) return null;
-    return m + "/" + d + "/" + (parts[2] ? parseInt(parts[2], 10) : tabYear);
+    return m + "/" + d + "/" + tabYear;
   }
 
   for (const sheet of ss.getSheets()) {
@@ -2059,7 +2063,7 @@ function resetCampaignBackfill() {
 // Check progress
 function checkCampaignBackfillProgress() {
   const done = JSON.parse(
-    PropertiesService.getScriptProperties().getProperty("campaign_backfill_progress") || "[]"
+    PropertiesService.getScriptProperties().getProperty("campaign_backfill_progress2") || "[]"
   );
   Logger.log("Dates with campaign data backfilled: " + done.length);
 }
