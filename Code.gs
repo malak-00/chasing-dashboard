@@ -361,32 +361,19 @@ function archiveDayData(dateTab) {
 
   let written = 0;
   let updated = 0;
-  const missingTabChasers = [];
-  const readErrorChasers  = [];
+  const missingTabChasers   = [];
+  const readErrorChasers    = [];
+  const creditedWithoutTab  = [];
   for (const c of data.chasers) {
     const key = dateTab + "|" + c.name;
     const existingRow = existing.get(key);
-    // If this chaser's tracker has no tab named dateTab + "." for this date, do NOT
-    // write a row — a chaser tracker can have a leftover tab from last year with the
-    // same "M/D" name but no trailing dot; readChaserTab() only ever looks up the
-    // dotted (current-year) tab and never falls back to it, so tabFound=false here
-    // genuinely means "no data yet", not "check the other tab". Writing zeros would
-    // be indistinguishable from a real zero-case day and would corrupt the archive
-    // permanently. Skip and leave it for a later Sync once the tab exists.
-    //
-    // readChaserTab() also sets tabFound=false when openById/getSheetByName threw
-    // (permissions, bad sheet ID, transient API error) — that is NOT "no data yet",
-    // so it's tracked and logged separately instead of being lumped in with a
-    // genuinely missing tab, which would send troubleshooting in the wrong direction.
-    if (!c.tabFound) {
-      if (c.error) {
-        readErrorChasers.push(c.name + " (" + c.error + ")");
-      } else {
-        missingTabChasers.push(c.name);
-      }
-      continue;
-    }
-    // Total approvals/denials across all campaigns for this chaser
+
+    // Total approvals/denials across all campaigns for this chaser, and their
+    // per-campaign breakdown — both sourced straight from the response/fax
+    // feedback sheets by chaser name, entirely independent of whether this
+    // chaser has a tracker tab for this date. A chaser can be credited with
+    // approvals/denials on a day they had no tracker tab at all (subbed in,
+    // worked an unscheduled day, tab not created yet, etc.).
     let r = bc[c.name];
     if (!r) {
       const matchKey = Object.keys(bc).find(k => normalizeChaserName(k) === c.name);
@@ -394,11 +381,41 @@ function archiveDayData(dateTab) {
     }
     r = r || { approvals: 0, denials: 0 };
 
-    const eff = c.totalCases ? (c.totalPositive / c.totalCases * 100).toFixed(1) : "";
-
     // Per-chaser per-campaign breakdown — daily counts from readChaserCampaignCountsForDate
     // Each number = how many leads this chaser was listed on for that campaign today
     const cc = chaserCamps[c.name] || zeroCampaignTotals();
+    const hasCampaignCredit = (r.approvals || r.denials) ||
+      Object.values(cc).some(camp => (camp.approved||0) > 0 || (camp.denied||0) > 0);
+
+    // If this chaser's tracker has no tab named dateTab + "." for this date, do NOT
+    // write Cases/Positive/TimeMins for them — a chaser tracker can have a leftover
+    // tab from last year with the same "M/D" name but no trailing dot; readChaserTab()
+    // only ever looks up the dotted (current-year) tab and never falls back to it, so
+    // tabFound=false here genuinely means "no data yet", not "check the other tab".
+    // Writing zeros for those fields would be indistinguishable from a real
+    // zero-case day and would corrupt the archive permanently.
+    //
+    // readChaserTab() also sets tabFound=false when openById/getSheetByName threw
+    // (permissions, bad sheet ID, transient API error) — that is NOT "no data yet",
+    // so it's tracked and logged separately instead of being lumped in with a
+    // genuinely missing tab, which would send troubleshooting in the wrong direction.
+    //
+    // Either way, if this chaser still has real campaign credit for the date, write
+    // a row for them anyway (Cases/Positive/TimeMins stay 0 — not a real zero-case
+    // day, just unknown until the tracker tab is fixed and a future Sync updates
+    // this row in place) rather than silently losing that credit along with the
+    // missing tracker data.
+    if (!c.tabFound) {
+      if (c.error) {
+        readErrorChasers.push(c.name + " (" + c.error + ")");
+      } else {
+        missingTabChasers.push(c.name);
+      }
+      if (!hasCampaignCredit) continue;
+      creditedWithoutTab.push(c.name);
+    }
+
+    const eff = c.totalCases ? (c.totalPositive / c.totalCases * 100).toFixed(1) : "";
 
     const utl       = utlatelTotalsForChaser(c.name);
     const shiftMins = shiftMinsForChaser(c.name);
@@ -443,14 +460,22 @@ function archiveDayData(dateTab) {
   if (missingTabChasers.length) {
     Logger.log("*** ARCHIVE INCOMPLETE for " + dateTab + " *** no tab named \"" + dateTab +
       ".\" found for: " + missingTabChasers.join(", ") +
-      " — their tracker tab for today may not exist yet. No row was written for them " +
-      "(zeros were NOT recorded). Re-run Sync for " + dateTab + " once the tab exists.");
+      " — their tracker tab for today may not exist yet. Cases/Positive/TimeMins were " +
+      "NOT recorded for them (zeros were NOT written either -- see below if they still got " +
+      "a row for campaign credit). Re-run Sync for " + dateTab + " once the tab exists.");
   }
   if (readErrorChasers.length) {
     Logger.log("*** ARCHIVE INCOMPLETE for " + dateTab + " *** could not read tracker sheet for: " +
       readErrorChasers.join(", ") + " — this is NOT a missing tab, the sheet read itself " +
-      "threw an error (see parenthetical above). No row was written for them. Re-run Sync for " +
-      dateTab + " once the underlying error is fixed.");
+      "threw an error (see parenthetical above). Cases/Positive/TimeMins were NOT recorded " +
+      "for them. Re-run Sync for " + dateTab + " once the underlying error is fixed.");
+  }
+  if (creditedWithoutTab.length) {
+    Logger.log("*** NOTE for " + dateTab + " *** wrote a row with Cases/Positive/TimeMins at 0 " +
+      "for: " + creditedWithoutTab.join(", ") + " — no tracker tab was found/readable for them, " +
+      "but they had real approvals/denials credited to them on the fax feedback sheet, so a row " +
+      "was written to preserve that campaign credit. Re-run Sync for " + dateTab +
+      " once their tracker tab is fixed to update this row with their real Cases/Positive/TimeMins.");
   }
 
   // Add bottom border to the last chaser row for this date
