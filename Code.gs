@@ -2257,33 +2257,46 @@ function archiveCampaignResponses(dateTab) {
 // Safe to re-run — existing rows for each date are deleted and rewritten.
 // Progress stored in script properties so it can resume after a timeout.
 function backfillCampaignResponses() {
-  const PROGRESS_KEY = "campaign_responses_backfill2";
+  const PROGRESS_KEY = "campaign_responses_backfill3";
   const props        = PropertiesService.getScriptProperties();
   const doneDates    = JSON.parse(props.getProperty(PROGRESS_KEY) || "[]");
 
-  // Collect every unique M/D date from all monthly archive tabs
+  // Collect every unique M/D/YYYY date from all monthly archive tabs. The
+  // year comes from the TAB NAME (e.g. "Jun 2026"), not guessed later --
+  // archiveCampaignResponses() now attaches a year via parseDateTab(), which
+  // defaults to whatever year it happens to be when this backfill actually
+  // runs, so a year-less "12/15" collected here would get every December
+  // 2025 date stamped as 2026 (or whenever this is next run).
   const ss           = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
-  const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i;
+  const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i;
   const allDates     = new Set();
 
   for (const sheet of ss.getSheets()) {
-    if (!monthPattern.test(sheet.getName().trim())) continue;
+    const tabMatch = sheet.getName().trim().match(monthPattern);
+    if (!tabMatch) continue;
+    const tabYear = parseInt(tabMatch[2], 10);
+
     const d = sheet.getDataRange().getValues();
     for (let r = 1; r < d.length; r++) {
       const rawDate = d[r][0];
       const chaser  = String(d[r][1]).trim();
       if (!chaser || chaser.toUpperCase() === "WEEK") continue;
 
-      let dateStr;
+      let month, day;
       if (rawDate instanceof Date && !isNaN(rawDate)) {
-        dateStr = (rawDate.getMonth()+1) + "/" + rawDate.getDate();
+        month = rawDate.getMonth() + 1;
+        day   = rawDate.getDate();
       } else {
         const s = String(rawDate).trim();
         if (!s || s.toUpperCase() === "WEEK") continue;
         const parts = s.split("/");
-        dateStr = parseInt(parts[0]) + "/" + parseInt(parts[1]);
+        month = parseInt(parts[0], 10);
+        day   = parseInt(parts[1], 10);
+        if (isNaN(month) || isNaN(day)) continue;
       }
-      if (dateStr && !doneDates.includes(dateStr)) allDates.add(dateStr);
+
+      const dateStr = month + "/" + day + "/" + tabYear;
+      if (!doneDates.includes(dateStr)) allDates.add(dateStr);
     }
   }
 
@@ -2305,7 +2318,7 @@ function backfillCampaignResponses() {
 }
 
 function resetCampaignResponsesBackfill() {
-  PropertiesService.getScriptProperties().deleteProperty("campaign_responses_backfill2");
+  PropertiesService.getScriptProperties().deleteProperty("campaign_responses_backfill3");
   Logger.log("Campaign responses backfill progress reset.");
 }
 
