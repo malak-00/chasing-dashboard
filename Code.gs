@@ -1974,13 +1974,11 @@ function applyDayBordersToArchive() {
 // referenced by archiveDayData()/readChaserCampaignCountsForDate() --
 // this spreadsheet holds a fuller combined historical record intended
 // specifically for backfilling, not for the day-to-day live path.
-const BACKFILL_RESPONSES_SHEET_ID = "1QVnmXYRg-IbMi46Lvi752ZbIfL5NHd666DsH0WI7SmU";
-const BACKFILL_RESPONSES_TABS = [
-  { tabName: "ORT Overall 2026",     campaignKey: "ort",    idCol: "MBI",                feedbackCol: "FAX FEEDBACK",    chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: "IDN" },
-  { tabName: "CGM Overall 2026",     campaignKey: "cgm",    idCol: "MBI",                feedbackCol: "FAX SENT ON EST", chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: "IDN" },
-  { tabName: "LY PUMP Overall 2026", campaignKey: "lymphc", idCol: "Insurance ID Number", feedbackCol: "FAX FEEDBACK",    chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: null  },
-  { tabName: "LY WRAP Overall 2026", campaignKey: "lymphw", idCol: "MBI",                feedbackCol: "Fax Feedback",    chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: null  },
-];
+//
+// BACKFILL_RESPONSES_SHEET_ID / BACKFILL_RESPONSES_TABS are declared in
+// LeadHistory.gs (used there by backfillFromResponsesSheet()) -- Apps
+// Script shares one global scope across every .gs file in the project, so
+// they're reused here rather than redeclared a second time.
 
 // Reads BACKFILL_RESPONSES_TABS for one date and returns per-chaser totals
 // in the same shape the live path produces (readResponsesForDate +
