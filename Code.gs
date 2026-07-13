@@ -1966,7 +1966,7 @@ function applyDayBordersToArchive() {
 //   It processes one month tab at a time — if it times out,
 //   just run it again (already-processed dates are skipped).
 //
-// PROGRESS KEY: "campaign_backfill_progress3"
+// PROGRESS KEY: "campaign_backfill_progress4"
 // ============================================================
 
 // One-time-backfill-only data source. Deliberately separate from
@@ -2040,7 +2040,7 @@ function readChaserTotalsFromBackfillSource(dateTab) {
 }
 
 function backfillCampaignColumns() {
-  const PROGRESS_KEY  = "campaign_backfill_progress3";
+  const PROGRESS_KEY  = "campaign_backfill_progress4";
   const props         = PropertiesService.getScriptProperties();
   const doneDates     = JSON.parse(props.getProperty(PROGRESS_KEY) || "[]");
 
@@ -2222,14 +2222,14 @@ function backfillCampaignColumns() {
 
 // Reset campaign backfill progress
 function resetCampaignBackfill() {
-  PropertiesService.getScriptProperties().deleteProperty("campaign_backfill_progress3");
+  PropertiesService.getScriptProperties().deleteProperty("campaign_backfill_progress4");
   Logger.log("Campaign backfill progress reset.");
 }
 
 // Check progress
 function checkCampaignBackfillProgress() {
   const done = JSON.parse(
-    PropertiesService.getScriptProperties().getProperty("campaign_backfill_progress3") || "[]"
+    PropertiesService.getScriptProperties().getProperty("campaign_backfill_progress4") || "[]"
   );
   Logger.log("Dates with campaign data backfilled: " + done.length);
 }
