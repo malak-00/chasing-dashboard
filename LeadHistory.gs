@@ -65,8 +65,8 @@
 //   BTO, Disregarded, Frozen (LymphW combines the last 3 into one tab
 //   disambiguated by its Status column)
 //
-// This file does NOT touch RESPONSE_SOURCES or any of Code.gs's daily
-// productivity/campaign logic — fully additive, fully separate.
+// This file does NOT touch Code.gs's daily productivity archive logic —
+// fully additive, fully separate.
 // ============================================================
 
 
@@ -1550,8 +1550,8 @@ function syncLeadHistoryForCampaign(campaignKey) {
   return { rows: newRows.length, conflicts: conflictRows.length };
 }
 
-// Run the daily sync for all 4 campaigns. This is the function Code.gs's
-// eodArchive trigger should call.
+// Run the daily sync for all 4 campaigns. Called by Code.gs's manual
+// daily-archive button (doGet mode=sync) on every click.
 function runDailyLeadHistorySync() {
   const campaigns = Object.keys(LEAD_STATE_SOURCES);
   let totalRows = 0;
