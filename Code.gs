@@ -2536,6 +2536,43 @@ function getArchiveCampaignResponses() {
 
 // Scan every tab in the combined sheet and collect every unique "M/D" date
 // found embedded in the feedback column text.
+// Resolves a year from a Submission Date cell (Date object or "M/D/YYYY"
+// string). Used as the fallback year anchor below -- this combined sheet
+// carries both late-2025 and 2026 rows, so a bare "M/D" feedback token
+// (the normal case -- these almost never carry a year) is genuinely
+// ambiguous without it. Returns null if no year can be determined, so
+// callers can skip rather than guess.
+function resolveYearFromSubmissionDate(cellValue) {
+  if (cellValue instanceof Date && !isNaN(cellValue)) return cellValue.getFullYear();
+  const parts = String(cellValue || "").trim().split("/");
+  if (parts.length >= 3) {
+    let y = parseInt(parts[2], 10);
+    if (!isNaN(y)) return y < 100 ? 2000 + y : y;
+  }
+  return null;
+}
+
+// Given a feedback string and that same row's Submission Date cell, resolves
+// the row's real year (feedback's own year if the token happens to carry
+// one, else the Submission Date's year) and checks it against targetYear.
+// Needed because feedbackMatchesDate() only ever compares M/D -- without
+// this, two different years' rows sharing the same M/D would get merged.
+function rowYearMatches(feedback, submissionCellValue, targetYear) {
+  const m = feedback.match(/\b\d{1,2}\/\d{1,2}(?:\/(\d{2,4}))?\b/);
+  let year = m && m[1] ? parseInt(m[1], 10) : null;
+  if (year !== null && year < 100) year += 2000;
+  if (year === null) year = resolveYearFromSubmissionDate(submissionCellValue);
+  return year === targetYear;
+}
+
+// Scan every tab in the combined sheet and collect every unique "M/D/YYYY"
+// date found embedded in the feedback column text. The year is NEVER
+// guessed: it comes from the feedback token itself if present, otherwise
+// from that same row's Submission Date column -- the only other date
+// anchor this source provides. Only the FIRST date token in the feedback
+// string counts (matches feedbackMatchesDate()'s own rule), so an
+// incidental date mentioned elsewhere in a free-text note is never
+// mistaken for the row's actual status date.
 function collectDatesFromCombinedSheet() {
   const dates = new Set();
   let ss;
@@ -2551,26 +2588,36 @@ function collectDatesFromCombinedSheet() {
 
     const headers     = data[0].map(h => String(h).trim().toUpperCase());
     const feedbackCol = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
+    const subCol      = tabConfig.submissionCol ? headers.indexOf(tabConfig.submissionCol.toUpperCase()) : -1;
     if (feedbackCol < 0) { Logger.log("Feedback col not found in " + tabConfig.tabName + ": " + tabConfig.feedbackCol); continue; }
 
     for (let r = 1; r < data.length; r++) {
       const feedback = String(data[r][feedbackCol] || "").trim();
       if (!feedback) continue;
-      const tokens = feedback.match(/\b(\d{1,2}\/\d{1,2})(?:\/\d{2,4})?\b/g) || [];
-      tokens.forEach(tok => {
-        const p = tok.split("/");
-        dates.add(parseInt(p[0]) + "/" + parseInt(p[1]));
-      });
+      const match = feedback.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+      if (!match) continue;
+
+      const month = parseInt(match[1], 10), day = parseInt(match[2], 10);
+      let year = match[3] ? parseInt(match[3], 10) : null;
+      if (year !== null && year < 100) year += 2000;
+      if (year === null && subCol >= 0) year = resolveYearFromSubmissionDate(data[r][subCol]);
+      if (year === null) continue; // no reliable year anchor -- skip rather than guess
+
+      dates.add(month + "/" + day + "/" + year);
     }
   }
 
   return [...dates];
 }
 
-// Read campaign totals (one count per lead row, chasers irrelevant) for ONE date
-// from the combined historical sheet.
+// Read campaign totals (one count per lead row, chasers irrelevant) for ONE
+// full "M/D/YYYY" date from the combined historical sheet. Requires the
+// row's own resolved year (see rowYearMatches) to match dateTab's year,
+// since feedbackMatchesDate() alone only compares M/D and would otherwise
+// merge two different years' same-M/D rows together.
 function readCombinedCampaignTotalsForDate(dateTab) {
   const camps = zeroCampaignTotals();
+  const targetYear = parseInt(dateTab.split("/")[2], 10);
 
   let ss;
   try { ss = SpreadsheetApp.openById(BACKFILL_RESPONSES_SHEET_ID); }
@@ -2586,6 +2633,7 @@ function readCombinedCampaignTotalsForDate(dateTab) {
     const headers     = data[0].map(h => String(h).trim().toUpperCase());
     const feedbackCol = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
     const chaserCol   = headers.indexOf(tabConfig.chaserCol.toUpperCase());
+    const subCol      = tabConfig.submissionCol ? headers.indexOf(tabConfig.submissionCol.toUpperCase()) : -1;
     if (feedbackCol < 0 || chaserCol < 0) continue;
 
     const key = tabConfig.campaignKey;
@@ -2593,6 +2641,7 @@ function readCombinedCampaignTotalsForDate(dateTab) {
     for (let r = 1; r < data.length; r++) {
       const feedback = String(data[r][feedbackCol] || "").trim();
       if (!feedback || !feedbackMatchesDate(feedback, dateTab)) continue;
+      if (!rowYearMatches(feedback, subCol >= 0 ? data[r][subCol] : null, targetYear)) continue;
 
       const approval = isApproval(feedback);
       const denial   = isDenial(feedback);
@@ -2606,11 +2655,14 @@ function readCombinedCampaignTotalsForDate(dateTab) {
   return camps;
 }
 
-// Read per-chaser per-campaign counts for ONE date from the combined historical sheet.
-// Same shape as readChaserCampaignCountsForDate, used to populate ORT_Approved etc.
-// columns in the monthly archive tabs.
+// Read per-chaser per-campaign counts for ONE full "M/D/YYYY" date from the
+// combined historical sheet. Same shape as readChaserCampaignCountsForDate,
+// used to populate ORT_Approved etc. columns in the monthly archive tabs.
+// See readCombinedCampaignTotalsForDate() above for why the year check
+// (rowYearMatches) is required alongside feedbackMatchesDate().
 function readCombinedChaserCampaignCountsForDate(dateTab) {
   const byChaser = {};
+  const targetYear = parseInt(dateTab.split("/")[2], 10);
 
   let ss;
   try { ss = SpreadsheetApp.openById(BACKFILL_RESPONSES_SHEET_ID); }
@@ -2626,6 +2678,7 @@ function readCombinedChaserCampaignCountsForDate(dateTab) {
     const headers     = data[0].map(h => String(h).trim().toUpperCase());
     const feedbackCol = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
     const chaserCol   = headers.indexOf(tabConfig.chaserCol.toUpperCase());
+    const subCol      = tabConfig.submissionCol ? headers.indexOf(tabConfig.submissionCol.toUpperCase()) : -1;
     if (feedbackCol < 0 || chaserCol < 0) continue;
 
     const campKey = tabConfig.campaignKey;
@@ -2634,6 +2687,7 @@ function readCombinedChaserCampaignCountsForDate(dateTab) {
       const feedback   = String(data[r][feedbackCol] || "").trim();
       const chaserText = String(data[r][chaserCol]   || "").trim();
       if (!feedback || !chaserText || !feedbackMatchesDate(feedback, dateTab)) continue;
+      if (!rowYearMatches(feedback, subCol >= 0 ? data[r][subCol] : null, targetYear)) continue;
 
       const approval = isApproval(feedback);
       const denial   = isDenial(feedback);
@@ -2653,23 +2707,37 @@ function readCombinedChaserCampaignCountsForDate(dateTab) {
   return byChaser;
 }
 
-// Write/overwrite Campaign Responses rows for ONE date using the combined sheet's data.
-// Mirrors archiveCampaignResponses() but reads from BACKFILL_RESPONSES_TABS
-// instead of RESPONSE_SOURCES.
+// Write/overwrite Campaign Responses rows for ONE full "M/D/YYYY" date using
+// the combined sheet's data. Mirrors archiveCampaignResponses() but reads
+// from BACKFILL_RESPONSES_TABS instead of RESPONSE_SOURCES.
 function writeCombinedCampaignResponses(dateTab) {
   const sheet = getOrCreateCampaignResponsesTab();
   const data  = sheet.getDataRange().getValues();
 
+  const tParts       = dateTab.split("/");
+  const targetShort  = parseInt(tParts[0]) + "/" + parseInt(tParts[1]);
+  const targetFull   = parseInt(tParts[0]) + "/" + parseInt(tParts[1]) + "/" + parseInt(tParts[2]);
+
   const toDelete = [];
   for (let r = 1; r < data.length; r++) {
-    const rowDate = data[r][0] instanceof Date
-      ? (data[r][0].getMonth()+1)+"/"+data[r][0].getDate()
-      : String(data[r][0]).trim();
-    const rParts = rowDate.split("/");
-    const rShort = parseInt(rParts[0]) + "/" + parseInt(rParts[1]);
-    const tParts = dateTab.split("/");
-    const tShort = parseInt(tParts[0]) + "/" + parseInt(tParts[1]);
-    if (rShort === tShort) toDelete.push(r + 1);
+    const cell = data[r][0];
+    if (cell instanceof Date && !isNaN(cell)) {
+      const full = (cell.getMonth()+1) + "/" + cell.getDate() + "/" + cell.getFullYear();
+      if (full === targetFull) toDelete.push(r + 1);
+      continue;
+    }
+    const parts = String(cell).trim().split("/");
+    if (parts.length >= 3) {
+      const full = parseInt(parts[0]) + "/" + parseInt(parts[1]) + "/" + parseInt(parts[2]);
+      if (full === targetFull) toDelete.push(r + 1);
+    } else if (parts.length === 2) {
+      // Leftover bare "M/D" row from the earlier year-less version of this
+      // backfill -- always stale/wrong (no row written by any current code
+      // path is ever missing a year), safe to clear out whenever this M/D
+      // is reprocessed.
+      const short = parseInt(parts[0]) + "/" + parseInt(parts[1]);
+      if (short === targetShort) toDelete.push(r + 1);
+    }
   }
   toDelete.reverse().forEach(rowNum => sheet.deleteRow(rowNum));
 
@@ -2688,16 +2756,13 @@ function writeCombinedCampaignResponses(dateTab) {
 }
 
 // Update per-chaser ORT/CGM/LymphC/LymphW columns in the monthly archive tab
-// for ONE date using the combined sheet's data. Mirrors the inner loop of
-// backfillCampaignColumns() but reads from BACKFILL_RESPONSES_TABS.
+// for ONE full "M/D/YYYY" date using the combined sheet's data. Mirrors the
+// inner loop of backfillCampaignColumns() but reads from BACKFILL_RESPONSES_TABS.
 function writeCombinedChaserCampaignColumns(dateTab) {
   const ss = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
 
-  // Figure out which monthly tab this date belongs to (assume current year
-  // unless dateTab already has one)
-  const fullDate = dateTab.split("/").length >= 3 ? dateTab : dateTab + "/" + new Date().getFullYear();
-  const tabName  = monthTabName(fullDate);
-  const sheet    = ss.getSheetByName(tabName);
+  const tabName = monthTabName(dateTab);
+  const sheet   = ss.getSheetByName(tabName);
   if (!sheet) { Logger.log("Monthly tab not found for " + dateTab + " (" + tabName + ") — skipping, run a Sync for this date first."); return 0; }
 
   const data = sheet.getDataRange().getValues();
@@ -2709,6 +2774,15 @@ function writeCombinedChaserCampaignColumns(dateTab) {
   const required = ["Date","Chaser","ORT_Approved","ORT_Denied","CGM_Approved","CGM_Denied","LymphC_Approved","LymphC_Denied","LymphW_Approved","LymphW_Denied"];
   if (!required.every(h => COL.hasOwnProperty(h))) { Logger.log("Monthly tab missing expected columns: " + tabName); return 0; }
 
+  // Archive month tabs are never forced to plain text on their Date column,
+  // so a bare "M/D" cell can get auto-coerced into a Date with Sheets' own
+  // guessed year -- same reasoning as rowDate() in backfillCampaignColumns().
+  // The tab's own name (e.g. "Jun 2026") is the only year that's never
+  // ambiguous, so every row in this tab is assumed to belong to that year,
+  // never whatever year the cell itself claims.
+  const tabYearMatch = tabName.match(/(\d{4})$/);
+  const tabYear      = tabYearMatch ? parseInt(tabYearMatch[1], 10) : new Date().getFullYear();
+
   const chaserCamps = readCombinedChaserCampaignCountsForDate(dateTab);
 
   let rowsUpdated = 0;
@@ -2717,16 +2791,15 @@ function writeCombinedChaserCampaignColumns(dateTab) {
     const chaserVal = String(data[r][COL.Chaser]).trim();
     if (!chaserVal || chaserVal.toUpperCase().startsWith("TOTAL") || chaserVal.toUpperCase() === "WEEK") continue;
 
-    let rowDateStr;
-    if (rawDate instanceof Date && !isNaN(rawDate)) {
-      rowDateStr = (rawDate.getMonth()+1) + "/" + rawDate.getDate();
-    } else {
-      const s = String(rawDate).trim();
-      if (!s || s.toUpperCase() === "WEEK") continue;
-      const parts = s.split("/");
-      rowDateStr = parseInt(parts[0]) + "/" + parseInt(parts[1]);
-    }
-    if (rowDateStr !== dateTab) continue;
+    const s = rawDate instanceof Date && !isNaN(rawDate)
+      ? (rawDate.getMonth()+1) + "/" + rawDate.getDate()
+      : String(rawDate).trim();
+    if (!s || s.toUpperCase() === "WEEK") continue;
+    const parts = s.split("/");
+    const m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
+    if (isNaN(m) || isNaN(d)) continue;
+    const rowFullDate = m + "/" + d + "/" + tabYear;
+    if (rowFullDate !== dateTab) continue;
 
     const normalized = normalizeChaserName(chaserVal);
     const cc = chaserCamps[normalized] || chaserCamps[chaserVal] || zeroCampaignTotals();
@@ -2755,7 +2828,7 @@ function writeCombinedChaserCampaignColumns(dateTab) {
 //    then re-run this function.
 // Resumable: progress is saved after each date.
 function backfillFromCombinedSheet() {
-  const PROGRESS_KEY = "combined_sheet_backfill";
+  const PROGRESS_KEY = "combined_sheet_backfill2";
   const props        = PropertiesService.getScriptProperties();
   const doneDates    = JSON.parse(props.getProperty(PROGRESS_KEY) || "[]");
 
@@ -2789,6 +2862,6 @@ function backfillFromCombinedSheet() {
 }
 
 function resetCombinedSheetBackfill() {
-  PropertiesService.getScriptProperties().deleteProperty("combined_sheet_backfill");
+  PropertiesService.getScriptProperties().deleteProperty("combined_sheet_backfill2");
   Logger.log("Combined sheet backfill progress reset.");
 }
