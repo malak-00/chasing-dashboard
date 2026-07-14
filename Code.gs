@@ -2536,43 +2536,41 @@ function getArchiveCampaignResponses() {
 
 // Scan every tab in the combined sheet and collect every unique "M/D" date
 // found embedded in the feedback column text.
-// Resolves a year from a Submission Date cell (Date object or "M/D/YYYY"
-// string). Used as the fallback year anchor below -- this combined sheet
-// carries both late-2025 and 2026 rows, so a bare "M/D" feedback token
-// (the normal case -- these almost never carry a year) is genuinely
-// ambiguous without it. Returns null if no year can be determined, so
-// callers can skip rather than guess.
-function resolveYearFromSubmissionDate(cellValue) {
-  if (cellValue instanceof Date && !isNaN(cellValue)) return cellValue.getFullYear();
-  const parts = String(cellValue || "").trim().split("/");
-  if (parts.length >= 3) {
-    let y = parseInt(parts[2], 10);
-    if (!isNaN(y)) return y < 100 ? 2000 + y : y;
-  }
-  return null;
+// Resolves a year from a backfill tab's own name (e.g. "ORT Overall 2026"
+// -> 2026) -- same pattern as the main archive's month tabs. This is the
+// authoritative default year when a feedback token doesn't carry one of
+// its own. Submission Date is NOT used for this: most leads are submitted
+// in one year and resolved (approved/denied) well into the next, so a
+// lead's Submission Date year is a poor proxy for its feedback date's
+// year -- confirmed against the live data (nearly everything resolves in
+// 2026 even when submitted in 2025).
+function resolveYearFromTabName(tabName) {
+  const m = String(tabName || "").match(/(\d{4})\s*$/);
+  return m ? parseInt(m[1], 10) : new Date().getFullYear();
 }
 
-// Given a feedback string and that same row's Submission Date cell, resolves
-// the row's real year (feedback's own year if the token happens to carry
-// one, else the Submission Date's year) and checks it against targetYear.
-// Needed because feedbackMatchesDate() only ever compares M/D -- without
-// this, two different years' rows sharing the same M/D would get merged.
-function rowYearMatches(feedback, submissionCellValue, targetYear) {
+// Given a feedback string and the tab's own default year, resolves the
+// row's real year (feedback's own year if the token happens to carry one,
+// else the tab's year) and checks it against targetYear. Needed because
+// feedbackMatchesDate() only ever compares M/D -- without this, two
+// different years' rows sharing the same M/D would get merged.
+function rowYearMatches(feedback, tabYear, targetYear) {
   const m = feedback.match(/\b\d{1,2}\/\d{1,2}(?:\/(\d{2,4}))?\b/);
   let year = m && m[1] ? parseInt(m[1], 10) : null;
   if (year !== null && year < 100) year += 2000;
-  if (year === null) year = resolveYearFromSubmissionDate(submissionCellValue);
+  if (year === null) year = tabYear;
   return year === targetYear;
 }
 
 // Scan every tab in the combined sheet and collect every unique "M/D/YYYY"
-// date found embedded in the feedback column text. The year is NEVER
-// guessed: it comes from the feedback token itself if present, otherwise
-// from that same row's Submission Date column -- the only other date
-// anchor this source provides. Only the FIRST date token in the feedback
-// string counts (matches feedbackMatchesDate()'s own rule), so an
-// incidental date mentioned elsewhere in a free-text note is never
-// mistaken for the row's actual status date.
+// date found embedded in the feedback column text. The year defaults to
+// the tab's own name (see resolveYearFromTabName) unless the feedback
+// token itself explicitly carries a different one (e.g. a handful of late
+// entries do spell out "12/15/2025" in a tab otherwise named "...2026").
+// Only the FIRST date token in the feedback string counts (matches
+// feedbackMatchesDate()'s own rule), so an incidental date mentioned
+// elsewhere in a free-text note is never mistaken for the row's actual
+// status date.
 function collectDatesFromCombinedSheet() {
   const dates = new Set();
   let ss;
@@ -2588,8 +2586,9 @@ function collectDatesFromCombinedSheet() {
 
     const headers     = data[0].map(h => String(h).trim().toUpperCase());
     const feedbackCol = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
-    const subCol      = tabConfig.submissionCol ? headers.indexOf(tabConfig.submissionCol.toUpperCase()) : -1;
     if (feedbackCol < 0) { Logger.log("Feedback col not found in " + tabConfig.tabName + ": " + tabConfig.feedbackCol); continue; }
+
+    const tabYear = resolveYearFromTabName(tabConfig.tabName);
 
     for (let r = 1; r < data.length; r++) {
       const feedback = String(data[r][feedbackCol] || "").trim();
@@ -2600,8 +2599,7 @@ function collectDatesFromCombinedSheet() {
       const month = parseInt(match[1], 10), day = parseInt(match[2], 10);
       let year = match[3] ? parseInt(match[3], 10) : null;
       if (year !== null && year < 100) year += 2000;
-      if (year === null && subCol >= 0) year = resolveYearFromSubmissionDate(data[r][subCol]);
-      if (year === null) continue; // no reliable year anchor -- skip rather than guess
+      if (year === null) year = tabYear;
 
       dates.add(month + "/" + day + "/" + year);
     }
@@ -2633,15 +2631,15 @@ function readCombinedCampaignTotalsForDate(dateTab) {
     const headers     = data[0].map(h => String(h).trim().toUpperCase());
     const feedbackCol = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
     const chaserCol   = headers.indexOf(tabConfig.chaserCol.toUpperCase());
-    const subCol      = tabConfig.submissionCol ? headers.indexOf(tabConfig.submissionCol.toUpperCase()) : -1;
     if (feedbackCol < 0 || chaserCol < 0) continue;
 
-    const key = tabConfig.campaignKey;
+    const key     = tabConfig.campaignKey;
+    const tabYear = resolveYearFromTabName(tabConfig.tabName);
 
     for (let r = 1; r < data.length; r++) {
       const feedback = String(data[r][feedbackCol] || "").trim();
       if (!feedback || !feedbackMatchesDate(feedback, dateTab)) continue;
-      if (!rowYearMatches(feedback, subCol >= 0 ? data[r][subCol] : null, targetYear)) continue;
+      if (!rowYearMatches(feedback, tabYear, targetYear)) continue;
 
       const approval = isApproval(feedback);
       const denial   = isDenial(feedback);
@@ -2678,16 +2676,16 @@ function readCombinedChaserCampaignCountsForDate(dateTab) {
     const headers     = data[0].map(h => String(h).trim().toUpperCase());
     const feedbackCol = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
     const chaserCol   = headers.indexOf(tabConfig.chaserCol.toUpperCase());
-    const subCol      = tabConfig.submissionCol ? headers.indexOf(tabConfig.submissionCol.toUpperCase()) : -1;
     if (feedbackCol < 0 || chaserCol < 0) continue;
 
     const campKey = tabConfig.campaignKey;
+    const tabYear = resolveYearFromTabName(tabConfig.tabName);
 
     for (let r = 1; r < data.length; r++) {
       const feedback   = String(data[r][feedbackCol] || "").trim();
       const chaserText = String(data[r][chaserCol]   || "").trim();
       if (!feedback || !chaserText || !feedbackMatchesDate(feedback, dateTab)) continue;
-      if (!rowYearMatches(feedback, subCol >= 0 ? data[r][subCol] : null, targetYear)) continue;
+      if (!rowYearMatches(feedback, tabYear, targetYear)) continue;
 
       const approval = isApproval(feedback);
       const denial   = isDenial(feedback);
@@ -2716,28 +2714,24 @@ function writeCombinedCampaignResponses(dateTab) {
 
   const tParts       = dateTab.split("/");
   const targetShort  = parseInt(tParts[0]) + "/" + parseInt(tParts[1]);
-  const targetFull   = parseInt(tParts[0]) + "/" + parseInt(tParts[1]) + "/" + parseInt(tParts[2]);
 
+  // Matches by M/D alone (not the full date) on purpose: earlier versions of
+  // this backfill mis-resolved the year for most rows (year-less entirely,
+  // then wrongly defaulted to Submission Date's year), leaving stale rows
+  // sitting under the wrong year for the same calendar day. This combined
+  // source is a single continuous timeline with no genuine same-M/D
+  // collisions across years, so an M/D match is safe here and guarantees
+  // those stale mis-dated rows get cleared out the next time this M/D is
+  // reprocessed, regardless of what year they were wrongly filed under.
   const toDelete = [];
   for (let r = 1; r < data.length; r++) {
     const cell = data[r][0];
-    if (cell instanceof Date && !isNaN(cell)) {
-      const full = (cell.getMonth()+1) + "/" + cell.getDate() + "/" + cell.getFullYear();
-      if (full === targetFull) toDelete.push(r + 1);
-      continue;
-    }
-    const parts = String(cell).trim().split("/");
-    if (parts.length >= 3) {
-      const full = parseInt(parts[0]) + "/" + parseInt(parts[1]) + "/" + parseInt(parts[2]);
-      if (full === targetFull) toDelete.push(r + 1);
-    } else if (parts.length === 2) {
-      // Leftover bare "M/D" row from the earlier year-less version of this
-      // backfill -- always stale/wrong (no row written by any current code
-      // path is ever missing a year), safe to clear out whenever this M/D
-      // is reprocessed.
-      const short = parseInt(parts[0]) + "/" + parseInt(parts[1]);
-      if (short === targetShort) toDelete.push(r + 1);
-    }
+    const parts = cell instanceof Date && !isNaN(cell)
+      ? [cell.getMonth()+1, cell.getDate(), cell.getFullYear()]
+      : String(cell).trim().split("/");
+    if (parts.length < 2) continue;
+    const short = parseInt(parts[0]) + "/" + parseInt(parts[1]);
+    if (short === targetShort) toDelete.push(r + 1);
   }
   toDelete.reverse().forEach(rowNum => sheet.deleteRow(rowNum));
 
@@ -2828,7 +2822,7 @@ function writeCombinedChaserCampaignColumns(dateTab) {
 //    then re-run this function.
 // Resumable: progress is saved after each date.
 function backfillFromCombinedSheet() {
-  const PROGRESS_KEY = "combined_sheet_backfill2";
+  const PROGRESS_KEY = "combined_sheet_backfill3";
   const props        = PropertiesService.getScriptProperties();
   const doneDates    = JSON.parse(props.getProperty(PROGRESS_KEY) || "[]");
 
@@ -2862,6 +2856,6 @@ function backfillFromCombinedSheet() {
 }
 
 function resetCombinedSheetBackfill() {
-  PropertiesService.getScriptProperties().deleteProperty("combined_sheet_backfill2");
+  PropertiesService.getScriptProperties().deleteProperty("combined_sheet_backfill3");
   Logger.log("Combined sheet backfill progress reset.");
 }
