@@ -1966,7 +1966,7 @@ function applyDayBordersToArchive() {
 //   It processes one month tab at a time — if it times out,
 //   just run it again (already-processed dates are skipped).
 //
-// PROGRESS KEY: "campaign_backfill_progress4"
+// PROGRESS KEY: "campaign_backfill_progress5"
 // ============================================================
 
 // One-time-backfill-only data source. Deliberately separate from
@@ -2003,19 +2003,26 @@ function readChaserTotalsFromBackfillSource(dateTab) {
     const data = sheet.getDataRange().getValues();
     if (data.length < 2) continue;
 
-    const headers     = data[0].map(h => String(h).trim().toUpperCase());
-    const feedbackCol = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
-    const chaserCol   = headers.indexOf(tabConfig.chaserCol.toUpperCase());
+    const headers       = data[0].map(h => String(h).trim().toUpperCase());
+    const feedbackCol   = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
+    const chaserCol     = headers.indexOf(tabConfig.chaserCol.toUpperCase());
+    const conclusionCol = tabConfig.conclusionCol ? headers.indexOf(tabConfig.conclusionCol.toUpperCase()) : -1;
     if (feedbackCol < 0) { Logger.log("Feedback column not found: " + tabConfig.feedbackCol + " in " + tabConfig.tabName); continue; }
     if (chaserCol   < 0) { Logger.log("Chaser column not found: "   + tabConfig.chaserCol   + " in " + tabConfig.tabName); continue; }
 
     const campaignKey = tabConfig.campaignKey;
+    const tabYear      = resolveYearFromTabName(tabConfig.tabName);
 
     for (let r = 1; r < data.length; r++) {
       const feedback   = String(data[r][feedbackCol] || "").trim();
       const chaserText = String(data[r][chaserCol]   || "").trim();
       if (!feedback || !chaserText) continue;
-      if (!feedbackMatchesDate(feedback, dateTab)) continue;
+      // ORT/CGM's "Date of conclusion" is authoritative when present (see
+      // resolveRowDate); LY PUMP/LY WRAP fall back to the feedback text
+      // with this tab's own year as default -- same reasoning as the
+      // combined-sheet backfill functions above.
+      const fullDate = resolveRowDate(feedback, conclusionCol >= 0 ? data[r][conclusionCol] : null, tabYear);
+      if (fullDate !== dateTab) continue;
 
       const approval = isApproval(feedback);
       const denial   = isDenial(feedback);
@@ -2040,7 +2047,7 @@ function readChaserTotalsFromBackfillSource(dateTab) {
 }
 
 function backfillCampaignColumns() {
-  const PROGRESS_KEY  = "campaign_backfill_progress4";
+  const PROGRESS_KEY  = "campaign_backfill_progress5";
   const props         = PropertiesService.getScriptProperties();
   const doneDates     = JSON.parse(props.getProperty(PROGRESS_KEY) || "[]");
 
@@ -2222,14 +2229,14 @@ function backfillCampaignColumns() {
 
 // Reset campaign backfill progress
 function resetCampaignBackfill() {
-  PropertiesService.getScriptProperties().deleteProperty("campaign_backfill_progress4");
+  PropertiesService.getScriptProperties().deleteProperty("campaign_backfill_progress5");
   Logger.log("Campaign backfill progress reset.");
 }
 
 // Check progress
 function checkCampaignBackfillProgress() {
   const done = JSON.parse(
-    PropertiesService.getScriptProperties().getProperty("campaign_backfill_progress4") || "[]"
+    PropertiesService.getScriptProperties().getProperty("campaign_backfill_progress5") || "[]"
   );
   Logger.log("Dates with campaign data backfilled: " + done.length);
 }
