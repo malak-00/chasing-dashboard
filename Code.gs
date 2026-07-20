@@ -110,10 +110,10 @@ function saveChaser(params) {
 
 // ============================================================
 // RESPONSE SOURCES -- retired. Campaign approvals/denials now come
-// exclusively from BACKFILL_RESPONSES_SHEET_ID/BACKFILL_RESPONSES_TABS
-// (LeadHistory.gs) via the weekly pullWeeklyCampaignData() pull, not from
-// these live day-to-day fax sheets -- see updateChaserCampaignColumnsForDate()
-// and writeCombinedCampaignResponses() below.
+// exclusively from BACKFILL_RESPONSES_SHEET_ID/BACKFILL_RESPONSES_TABS via
+// the weekly pullWeeklyCampaignData() pull, not from these live day-to-day
+// fax sheets -- see updateChaserCampaignColumnsForDate() and
+// writeCombinedCampaignResponses() below.
 // ============================================================
 
 // Single source of truth for the campaign roster -- add a 5th campaign
@@ -609,6 +609,25 @@ function getArchiveData() {
 
 
 
+// Force the given column names to Plain Text formatting on the whole column
+// so Google Sheets never silently auto-converts a written date string (e.g.
+// "6/20/2026") into a real Date value with a guessed year. Every getOrCreate*Tab
+// call that writes dates runs this unconditionally, not just on first creation,
+// since it must hold for as long as the tab exists.
+function forcePlainTextColumns(sheet, headers, fieldNames) {
+  fieldNames.forEach(function(field) {
+    const idx = headers.indexOf(field);
+    if (idx === -1) return;
+    let letter = "", n = idx + 1;
+    while (n > 0) {
+      const rem = (n - 1) % 26;
+      letter = String.fromCharCode(65 + rem) + letter;
+      n = Math.floor((n - 1) / 26);
+    }
+    sheet.getRange(letter + ":" + letter).setNumberFormat("@");
+  });
+}
+
 // ============================================================
 // SETTINGS & UTLATEL PERSISTENCE
 // Stored in the archive spreadsheet:
@@ -829,17 +848,6 @@ function doGet(e) {
       // Re-archive from live tracker sheets
       archiveDayData(syncDate);
 
-      // Lead History sync reads LIVE state from the source tabs right now --
-      // it is not tied to syncDate, it always reflects "as of today". This
-      // used to only run via the automatic EOD trigger; it's bundled into
-      // every manual daily-archive click instead now. Wrapped so any Lead
-      // History issue never blocks the archive itself.
-      try {
-        runDailyLeadHistorySync();
-      } catch (e) {
-        Logger.log("Lead History sync failed (archive still completed normally): " + e.message);
-      }
-
       // Clear archive cache so next dashboard load gets fresh data
       CacheService.getScriptCache().remove("archive_all");
 
@@ -865,34 +873,6 @@ function doGet(e) {
       // Add a new chaser or update an existing one's Sheet ID / Active flag.
       // Params: name, sheetId, active ("true"/"false")
       payload = saveChaser(params);
-
-    } else if (mode === "leadsnapshot") {
-      // Deduplicated Lead History snapshot as of the chosen date: per-campaign
-      // leads/inProcess/verbalDenial, per-chaser active-lead counts, and
-      // that day's new/concluded leads. Defined in LeadHistory.gs.
-      const mdY = dateTabToFullDate(date);
-      payload = getCachedOrFetch("leadsnapshot_" + mdY, () => getLeadSnapshotForDate(mdY), 300);
-
-    } else if (mode === "leadactivity") {
-      // Per-day New Leads / Leads Concluded across the whole Lead History
-      // log, for the History tab to filter/sum over any date range
-      // client-side. Defined in LeadHistory.gs.
-      payload = getCachedOrFetch("lead_activity_daily", getLeadActivityByDay, 300);
-
-    } else if (mode === "leadconflicts") {
-      // Returns all PENDING conflicts from Lead History Conflicts tab for
-      // dashboard review. Defined in LeadHistory.gs.
-      payload = getPendingLeadConflictsForDashboard();
-
-    } else if (mode === "resolveconflict") {
-      // Called when a human resolves a Lead History conflict.
-      // Params: conflictId, action, resolvedBy — action is one of
-      // "pick:State", "bothvalid:State1,State2", "dataerror", "readytoretry",
-      // "dismiss", "acknowledge". Defined in LeadHistory.gs.
-      payload = resolveLeadConflict(
-        params.conflictId, params.action, params.resolvedBy
-      );
-      CacheService.getScriptCache().remove("lead_conflicts");
 
     } else if (mode === "debug") {
       // Diagnostic view of exactly what a Sync would see for one date —
@@ -1073,6 +1053,36 @@ function getWeekTabs(dateTab) {
   return tabs;
 }
 
+// Chaser tracker tabs are named "M/D/YY" or "M/D/YYYY" (e.g. "6/25/26" or
+// "6/25/2026"), with month/day either zero-padded or not depending on the
+// chaser's own sheet -- tries every combination so it doesn't matter which
+// one a given sheet actually uses. dateTab here is always a live/current
+// date (this function is only ever used for daily archiving, never a
+// stale historical backfill), so a missing year defaults to the current
+// year, same reasoning as parseDateTab() elsewhere. Falls back to the old
+// "M/D." dotted format last, for any tab not yet renamed.
+function findChaserTrackerSheet(ss, dateTab) {
+  const parts = String(dateTab).split("/");
+  const m     = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
+  const year  = parts[2] ? parseInt(parts[2], 10) : new Date().getFullYear();
+  const yy    = String(year).slice(-2);
+  const mm    = String(m).padStart(2, "0");
+  const dd    = String(d).padStart(2, "0");
+
+  const candidates = [
+    m + "/" + d + "/" + year,
+    m + "/" + d + "/" + yy,
+    mm + "/" + dd + "/" + year,
+    mm + "/" + dd + "/" + yy,
+    m + "/" + d + ".", // legacy dotted format, for any tab not yet renamed
+  ];
+  for (const name of candidates) {
+    const sheet = ss.getSheetByName(name);
+    if (sheet) return sheet;
+  }
+  return null;
+}
+
 // ============================================================
 // READ ONE CHASER TAB
 // Only reads summary metrics — patient rows are not needed
@@ -1088,10 +1098,10 @@ function readChaserTab(sheetId, dateTab, chaserName) {
 
   try {
     const ss    = SpreadsheetApp.openById(sheetId);
-    const sheet = ss.getSheetByName(dateTab + ".");
+    const sheet = findChaserTrackerSheet(ss, dateTab);
 
     if (!sheet) {
-      Logger.log(chaserName + " — tab not found: " + dateTab + ".");
+      Logger.log(chaserName + " — tab not found for: " + dateTab);
       return result;
     }
 
@@ -1681,11 +1691,19 @@ function applyDayBordersToArchive() {
 
 // This spreadsheet holds a fuller combined historical record than any live
 // day-to-day sheet ever did.
-//
-// BACKFILL_RESPONSES_SHEET_ID / BACKFILL_RESPONSES_TABS are declared in
-// LeadHistory.gs (used there by backfillFromResponsesSheet()) -- Apps
-// Script shares one global scope across every .gs file in the project, so
-// they're reused here rather than redeclared a second time.
+const BACKFILL_RESPONSES_SHEET_ID = "1QVnmXYRg-IbMi46Lvi752ZbIfL5NHd666DsH0WI7SmU";
+
+// conclusionCol ("Date of conclusion") is only present on the ORT/CGM tabs
+// -- it's the actual resolution date (with a real year), authoritative
+// over anything parsed out of the feedback text. LY PUMP/LY WRAP don't
+// have it, but they've also never carried anything but current-year data,
+// so falling back to the tab's own year there is safe.
+const BACKFILL_RESPONSES_TABS = [
+  { tabName: "ORT Overall 2026",     campaignKey: "ort",    idCol: "MBI",                feedbackCol: "FAX FEEDBACK",   chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: "IDN", conclusionCol: "Date of conclusion" },
+  { tabName: "CGM Overall 2026",     campaignKey: "cgm",    idCol: "MBI",                feedbackCol: "FAX SENT ON EST", chaserCol: "Chaser",      submissionCol: "Submission Date", idnCol: "IDN", conclusionCol: "Date of conclusion" },
+  { tabName: "LY PUMP Overall 2026", campaignKey: "lymphc", idCol: "Insurance ID Number", feedbackCol: "FAX FEEDBACK",   chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: null,  conclusionCol: null },
+  { tabName: "LY WRAP Overall 2026", campaignKey: "lymphw", idCol: "MBI",                feedbackCol: "Fax Feedback",   chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: null,  conclusionCol: null },
+];
 
 // Reads BACKFILL_RESPONSES_TABS for one date and returns per-chaser totals
 // in the same shape the live path produces (readResponsesForDate +
