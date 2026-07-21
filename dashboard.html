@@ -270,7 +270,6 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
     <input type="date" class="date-input" id="datePicker" onchange="loadData(); updateSyncLabel();">
     <button class="btn" onclick="loadData()">&#8635; Load</button>
     <button class="btn btn-ghost" id="syncBtn" onclick="syncSelectedDate()" title="Re-reads the selected date from live sheets and updates archive">&#9650; Sync <span id="syncDateLabel">Today</span></button>
-    <button class="btn btn-ghost" onclick="toggleControls()">&#9881; Controls</button>
     <button class="btn btn-ghost" onclick="downloadCSV()">&#8595; CSV</button>
     <button class="btn btn-ghost" onclick="exportPDF()">&#128438; PDF</button>
   </div>
@@ -281,80 +280,14 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
 <main class="main">
 
   <div class="tab-nav">
-    <button class="tab-btn active" onclick="setTab('overview')">Overview</button>
-    <button class="tab-btn" onclick="setTab('campaigns')">Campaigns</button>
+    <button class="tab-btn active" onclick="setTab('campaigns')">Campaigns</button>
     <button class="tab-btn" onclick="setTab('leaderboard')">Leaderboard</button>
     <button class="tab-btn" onclick="setTab('custom')">Custom Metrics</button>
     <button class="tab-btn" onclick="setTab('history')">History</button>
     <button class="tab-btn" onclick="setTab('charts')">Charts</button>
     <button class="tab-btn" onclick="setTab('chasers')">Chasers</button>
     <button class="tab-btn" onclick="setTab('compare')">Compare</button>
-    <button class="tab-btn" onclick="setTab('conflicts')">Conflicts</button>
     <button class="tab-btn" onclick="setTab('controls')">Controls</button>
-  </div>
-
-  <!-- OVERVIEW TAB -->
-  <div id="tab-overview">
-    <div class="controls-panel">
-      <button class="controls-toggle" onclick="toggleControls()">
-        <span class="section-title">&#9881; Session Controls — apply to current view only, reset on refresh</span>
-        <span class="chevron" id="ctrlChevron">&#9662;</span>
-      </button>
-      <div class="controls-body hidden" id="ctrlBody">
-        <div class="sub-label">Utlatel Data Upload (CSV or Excel)</div>
-        <div class="upload-zone" id="uploadZone" onclick="document.getElementById('utlatelFile').click()"
-             ondragover="handleDragOver(event)" ondrop="handleDrop(event)" ondragleave="this.classList.remove('drag')">
-          <input type="file" id="utlatelFile" accept=".csv,.xlsx,.xls" onchange="handleFileUpload(event)">
-          <div class="upload-label">Drop Utlatel export here or <span>browse</span></div>
-          <div class="upload-status" id="uploadStatus">Upload Utlatel report (any date range) — matched to dates in the archive</div>
-        </div>
-        <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
-          <label style="font-size:11px;color:var(--text-3)" for="utlatelUploadDate" title="Only used if the uploaded file has no Date column of its own">Save under date (if file has none)</label>
-          <input type="date" class="date-input" id="utlatelUploadDate">
-        </div>
-        <div style="margin-top:8px" id="utlatelSaveBar" class="hidden">
-          <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, () => saveUtlatelToArchive('utlatelUploadDate'))">
-            &#128190; Save Utlatel to Archive
-          </button>
-          <span style="font-size:11px;color:var(--text-3);margin-left:8px">
-            Saves permanently so it reloads next session
-          </span>
-        </div>
-        <div id="agentMapSection" class="hidden">
-          <div class="sub-label">Map Agent Names to Chasers</div>
-          <div class="agent-map-grid" id="agentMapGrid"></div>
-        </div>
-        <div class="divider"></div>
-        <div class="sub-label">Shift Type per Chaser</div>
-        <div class="controls-grid" id="shiftGrid"></div>
-        <div class="global-controls">
-          <div class="range-group">
-            <label>Full Shift (mins)</label>
-            <div class="range-row">
-              <input type="range" id="shiftMins" min="60" max="600" value="400" step="10" oninput="updateRangeVal('shiftMins','shiftMinsVal');recalc()">
-              <span class="range-val" id="shiftMinsVal">400</span>
-            </div>
-          </div>
-          <div class="range-group">
-            <label>ACW Multiplier (mins per call)</label>
-            <div class="range-row">
-              <input type="range" id="acwMult" min="0.5" max="10" value="2" step="0.5" oninput="updateRangeVal('acwMult','acwMultVal');recalc()">
-              <span class="range-val" id="acwMultVal">2</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="panels">
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">Today</span><span class="panel-date" id="todayLabel">-</span></div>
-        <div class="panel-body" id="todayPanel"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
-      </div>
-      <div class="panel">
-        <div class="panel-header"><span class="panel-title">This Week</span><span class="panel-date">Mon - Fri</span></div>
-        <div class="panel-body" id="weekPanel"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
-      </div>
-    </div>
   </div>
 
   <!-- CAMPAIGNS TAB -->
@@ -675,39 +608,6 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
     </div>
   </div>
 
-
-  <!-- ══ CONFLICTS TAB ══ -->
-  <div id="tab-conflicts" class="hidden">
-    <div class="panel">
-      <div class="panel-header">
-        <span class="panel-title">&#9888; Lead History Conflicts</span>
-        <div style="display:flex;gap:10px;align-items:center">
-          <label style="font-size:11px;color:var(--text-3)">Resolved By</label>
-          <input type="text" class="ctrl-input" id="conflictResolverName" style="width:140px;font-size:12px" placeholder="Your name">
-          <button class="btn btn-ghost" onclick="withButtonGuard(this, refreshConflicts)">&#8635; Refresh</button>
-        </div>
-      </div>
-      <div class="panel-body">
-        <div id="conflictsSummary" style="display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap"></div>
-        <div id="conflictsStatus" style="font-size:12px;margin-bottom:10px;min-height:16px"></div>
-        <div style="overflow-x:auto">
-          <table class="lb-table" style="min-width:900px" id="conflictsTable">
-            <thead>
-              <tr>
-                <th>ID</th><th>Type</th><th>MBI</th><th>Campaign</th>
-                <th>Submission Date(s)</th><th>Detail</th><th>Detected</th><th>Status</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="conflictsBody">
-              <tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-3)">Loading...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-
-
   <!-- ══ CONTROLS TAB ══ -->
   <div id="tab-controls" class="hidden">
 
@@ -862,6 +762,33 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
       </div>
     </div>
 
+    <!-- Campaign Data Sync -->
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">&#128257; Campaign Data Sync</span>
+        <span style="font-size:11px;color:var(--text-3)">No automatic trigger — both of these run only when you click them</span>
+      </div>
+      <div class="panel-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+          <div>
+            <div class="sub-label">Daily Archive (trackers)</div>
+            <div style="font-size:12px;color:var(--text-3);margin-bottom:8px">
+              Reads chaser tracker tabs for the date selected above and writes Cases/Positive/Time/Shift/Productivity. Use the Sync button in the header.
+            </div>
+          </div>
+          <div>
+            <div class="sub-label">Weekly Campaign Responses</div>
+            <div style="font-size:12px;color:var(--text-3);margin-bottom:8px">
+              Reads the backfill response sheet for every chaser, reprocessing the trailing 14 days of Approvals/Denials/campaign columns and the Campaign Responses tab.
+            </div>
+            <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, pullWeeklyResponses)">
+              &#128257; Pull Weekly Responses
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Utlatel from Archive info -->
     <div class="panel">
       <div class="panel-header">
@@ -889,7 +816,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
             <div class="sub-label">Upload Utlatel Override</div>
             <div class="upload-zone" id="ctrlUploadZone"
                  onclick="document.getElementById('ctrlUtlatelFile').click()"
-                 ondragover="handleDragOver(event)" ondrop="handleCtrlDrop(event)"
+                 ondragover="handleCtrlDragOver(event)" ondrop="handleCtrlDrop(event)"
                  ondragleave="this.classList.remove('drag')">
               <input type="file" id="ctrlUtlatelFile" accept=".csv,.xlsx,.xls"
                      onchange="handleCtrlFileUpload(event)">
@@ -907,6 +834,10 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
               <span style="font-size:11px;color:var(--text-3);margin-left:8px">
                 Updates just the date(s) in this file — everything else in the archive stays as-is
               </span>
+            </div>
+            <div id="ctrlAgentMapSection" class="hidden" style="margin-top:8px">
+              <div class="sub-label">Map Agent Names to Chasers</div>
+              <div class="agent-map-grid" id="ctrlAgentMapGrid"></div>
             </div>
           </div>
         </div>
@@ -1006,15 +937,30 @@ const METRIC_FIELDS = [
   { key:"timeMins",  label:"Time (mins)"    },
 ];
 
+// Format minutes as "Xh Ym" for the "Total duration" display column --
+// "Total duration (Min)" shows the same underlying durationMins raw.
+function formatDuration(mins) {
+  mins = Number(mins) || 0;
+  if (!mins) return "--";
+  const h = Math.floor(mins / 60), m = Math.round(mins % 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
+}
+
 const LB_COLS = [
-  { key:"cases",        label:"Cases",       tip:"Total chased cases"               },
-  { key:"positive",     label:"Positive",    tip:"Total positive outcomes"           },
-  { key:"approvals",    label:"Approv.",     tip:"Approvals"                        },
-  { key:"denials",      label:"Denials",     tip:"Denials"                          },
-  { key:"approvalPct",  label:"Approv.%",    tip:"This chaser's Approvals / team's total Approvals+Denials for the range"  },
-  { key:"denialPct",    label:"Denial%",     tip:"This chaser's Denials / team's total Approvals+Denials for the range"    },
-  { key:"efficiency",   label:"Efficiency",  tip:"Positive ÷ Cases × 100 (higher = better)"},
-  { key:"productivity", label:"Productivity",tip:"Productive time / shift x 100"    },
+  { key:"shiftMins",      label:"Total Shift",         tip:"Total shift minutes" },
+  { key:"calls",          label:"Total Calls",         tip:"Total calls (Utlatel)" },
+  { key:"durationMins",   label:"Total Duration",      tip:"Total call duration (Utlatel)", format: formatDuration },
+  { key:"durationMins",   label:"Total Duration (Min)",tip:"Total call duration in minutes (Utlatel)" },
+  { key:"acwDuration",    label:"ACW Duration",        tip:"After-call work time (ACW multiplier x Calls)" },
+  { key:"productiveTime", label:"Productive Time",     tip:"Call duration + ACW duration" },
+  { key:"cases",          label:"Total Chased Cases",  tip:"Total chased cases" },
+  { key:"positive",       label:"Total Positive",      tip:"Total positive outcomes" },
+  { key:"timeMins",       label:"Total Time Taken",    tip:"Total time taken (tracker tab)" },
+  { key:"approvals",      label:"Approvals",           tip:"Approvals" },
+  { key:"denials",        label:"Denials",             tip:"Denials" },
+  { key:"totalResponses", label:"Total Responses",     tip:"Approvals + Denials" },
+  { key:"productivity",   label:"Productivity",        tip:"Productive time / shift x 100" },
+  { key:"efficiency",     label:"Efficiency",          tip:"Positive ÷ Cases × 100 (higher = better)" },
 ];
 
 let dayData       = null;
@@ -1022,8 +968,7 @@ let weekData      = null;
 let lbView        = "day";
 let lbSort        = { col:"cases", dir:"desc" };
 let shiftMap      = {};
-let controlsOpen  = false;
-let activeTab     = "overview";
+let activeTab     = "campaigns";
 let utlatelData   = {};
 let agentMap      = {};
 let customMetrics = [];
@@ -1043,20 +988,12 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("campWeekPicker").value = today;
   document.getElementById("campMonthPicker").value = today.slice(0,7); // "YYYY-MM"
   document.getElementById("chaserDate").value = today;
-  document.getElementById("utlatelUploadDate").value = today;
   document.getElementById("ctrlUtlatelUploadDate").value = today;
   initCampaignQuarterSelectors();
   CHASERS.forEach(n => { shiftMap[n]=DEFAULT_SHIFT_MINS; agentMap[n]=n; });
-  buildShiftGrid();
   buildSortBtns();
   populateCustomFieldSelects();
   loadData();
-
-  const resolverEl = document.getElementById("conflictResolverName");
-  if (resolverEl) {
-    resolverEl.value = localStorage.getItem("conflictResolverName") || "";
-    resolverEl.addEventListener("change", () => localStorage.setItem("conflictResolverName", resolverEl.value.trim()));
-  }
 });
 
 // Populate the Quarter and Year dropdowns in the Campaigns tab, defaulting
@@ -1088,7 +1025,7 @@ function initCampaignQuarterSelectors() {
 }
 
 // ── TABS ──────────────────────────────────────────────────────
-const TABS = ["overview","campaigns","leaderboard","custom","history","charts","chasers","compare","conflicts","controls"];
+const TABS = ["campaigns","leaderboard","custom","history","charts","chasers","compare","controls"];
 function setTab(tab) {
   activeTab = tab;
   TABS.forEach(t => document.getElementById("tab-"+t).classList.toggle("hidden", t!==tab));
@@ -1101,14 +1038,12 @@ function setTab(tab) {
   if (tab === "compare")  initCompareDefaults();
   if (tab === "campaigns") setTimeout(renderCampaignTrend, 200);
   if (tab === "controls")  setTimeout(initControlsTab, 100);
-  if (tab === "conflicts") refreshConflicts();
 }
 
 // ── DATA ──────────────────────────────────────────────────────
 async function loadData() {
   const d = pickerToTab();
-  const panelIds = ["todayPanel","weekPanel","campaignTodayPanel","campaignWeekPanel","leaderboardEl"];
-  document.getElementById("todayLabel").textContent   = d;
+  const panelIds = ["campaignTodayPanel","campaignWeekPanel","leaderboardEl"];
   document.getElementById("campDayLabel").textContent = d;
   document.getElementById("statusBadge").textContent  = "Loading...";
   panelIds.forEach(id=>setEl(id,spinner()));
@@ -1147,7 +1082,6 @@ async function loadData() {
         if (!(n in shiftMap)) shiftMap[n] = DEFAULT_SHIFT_MINS;
         if (!(n in agentMap)) agentMap[n] = n;
       });
-      buildShiftGrid();
       renderChasterRosterTable();
       refreshChaserDropdowns();
       if (activeTab === "chasers") initChaserTab();
@@ -1248,6 +1182,24 @@ function updateSyncLabel() {
 }
 
 async function refreshDay() { await loadData(); }
+
+// Manual weekly campaign-response pull -- reads the backfill response sheet
+// for every chaser, reprocessing the trailing 14 days of Approvals/Denials/
+// campaign columns plus the Campaign Responses tab. There's no automatic
+// trigger for this; it only runs when this button is clicked.
+async function pullWeeklyResponses() {
+  try {
+    const url = `${API_BASE}?mode=weeklycampaignsync`;
+    const res = await fetchWithTimeout(url, 120000);
+    const result = await res.json();
+    if (result.error) throw new Error(result.error);
+    showToast(`Weekly pull: ${result.rowsUpdated} updated, ${result.rowsInserted} inserted (${result.fromDate} – ${result.toDate})`);
+    await loadData();
+  } catch(err) {
+    console.error("Weekly campaign pull failed:", err);
+    showToast("Weekly campaign pull failed: " + err.message, "error");
+  }
+}
 
 // Wrap fetch with a timeout so a stalled Apps Script cold-start leaves a
 // panel showing a clear error instead of "Loading..." forever with no
@@ -1433,6 +1385,7 @@ function buildDayFromArchive(rows, dateTab) {
     totalCalls:        Number(r.TotalCalls)         || 0,
     totalDurationMins: Number(r.TotalDurationMins)  || 0,
     productiveTime:    Number(r.ProductiveTime)     || 0,
+    acwDuration:       Number(r.ACWDuration)        || 0,
   }));
   const teamTotals = chasers.reduce((t, c) => ({
     totalCases:    t.totalCases    + c.totalCases,
@@ -1489,7 +1442,7 @@ function buildWeekFromArchive(rows, dateTab) {
   weekDays.forEach(day => {
     day.chasers.forEach(c => {
       if (!chaserMap[c.name]) chaserMap[c.name] = { name:c.name, totalCases:0, totalPositive:0, totalTimeMins:0, totalFaxes:0,
-        totalShift:0, totalCalls:0, totalDurationMins:0, productiveTime:0 };
+        totalShift:0, totalCalls:0, totalDurationMins:0, productiveTime:0, acwDuration:0 };
       chaserMap[c.name].totalCases        += c.totalCases;
       chaserMap[c.name].totalPositive     += c.totalPositive;
       chaserMap[c.name].totalTimeMins     += c.totalTimeMins;
@@ -1498,6 +1451,7 @@ function buildWeekFromArchive(rows, dateTab) {
       chaserMap[c.name].totalCalls        += c.totalCalls;
       chaserMap[c.name].totalDurationMins += c.totalDurationMins;
       chaserMap[c.name].productiveTime    += c.productiveTime;
+      chaserMap[c.name].acwDuration       += c.acwDuration;
     });
   });
 
@@ -1524,8 +1478,6 @@ function getWeekTabsJS(dateTab) {
 function renderAll() {
   if (!dayData||!weekData) return;
   renderPulseBar();
-  renderTodayPanel();
-  renderWeekPanel();
   renderCampaignPanels();
   renderLeaderboard();
   renderCustomMetricCards();
@@ -1540,43 +1492,6 @@ function renderPulseBar() {
   document.getElementById("pulseBar").innerHTML=ch.map((c,i)=>`
     <div class="pulse-segment" style="background:${CHASER_COLORS[c.name]||"var(--teal-text)"};opacity:${c.totalCases?1:.2}"
          title="${c.name}: ${c.totalCases||0} cases"></div>`).join("");
-}
-
-// ── TODAY / WEEK PANELS ────────────────────────────────────────
-function renderTodayPanel() {
-  const t=dayData.teamTotals||{}, r=dayData.responses||{};
-  const totalResp=(r.approved||0)+(r.denied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
-  setEl("todayPanel",`
-    <div class="metric-grid">
-      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",totalResp,"","")}
-      ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
-    </div>
-    <div class="response-row">
-      <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
-        <div><div class="resp-label">Approved</div><div class="resp-value">${r.approved||0}</div>
-        <div class="resp-pct">${((r.approved||0)/totalResp*100).toFixed(1)}% of responses</div></div></div>
-      <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
-        <div><div class="resp-label">Denied</div><div class="resp-value">${r.denied||0}</div>
-        <div class="resp-pct">${((r.denied||0)/totalResp*100).toFixed(1)}% of responses</div></div></div>
-    </div>`);
-}
-
-function renderWeekPanel() {
-  const t=weekData.weekTotals||{};
-  const totalResp=(t.totalApproved||0)+(t.totalDenied||0)||1; const avgT=t.totalCases?(t.totalTimeMins/t.totalCases).toFixed(1):"?";
-  setEl("weekPanel",`
-    <div class="metric-grid">
-      ${mc("Total Cases",t.totalCases||0,"","teal")}${mc("Responses",totalResp,"","")}
-      ${mc("Avg Time/Case",avgT,"m","")}${mc("Positive",t.totalPositive||0,"","green")}
-    </div>
-    <div class="response-row">
-      <div class="resp-card approved"><div class="resp-icon">&#10003;</div>
-        <div><div class="resp-label">Approved (Week)</div><div class="resp-value">${t.totalApproved||0}</div>
-        <div class="resp-pct">${t.totalApproved?((t.totalApproved||0)/totalResp*100).toFixed(1):"0"}% of responses</div></div></div>
-      <div class="resp-card denied"><div class="resp-icon">&#10005;</div>
-        <div><div class="resp-label">Denied (Week)</div><div class="resp-value">${t.totalDenied||0}</div>
-        <div class="resp-pct">${t.totalDenied?((t.totalDenied||0)/totalResp*100).toFixed(1):"0"}% of responses</div></div></div>
-    </div>`);
 }
 
 // ── CAMPAIGNS ─────────────────────────────────────────────────
@@ -1817,7 +1732,8 @@ function renderLeaderboard() {
     if (!lbCustomData) { setEl("leaderboardEl",`<div class="state-block" style="color:var(--text-3)">Pick a date range above and click Apply.</div>`); return; }
     rows = Object.entries(lbCustomData).map(([name,d]) => buildRowFromTotals(name, {
       cases:d.cases, positive:d.positive, approvals:d.approvals, denials:d.denials,
-      shiftMins:d.totalShift, calls:d.calls, durationMins:d.durationMins, productiveTime:d.productiveTime
+      shiftMins:d.totalShift, calls:d.calls, durationMins:d.durationMins, productiveTime:d.productiveTime,
+      timeMins:d.timeMins, acwDuration:d.acwDuration
     }));
   } else {
     const source=lbView==="week"?weekData:dayData;
@@ -1828,7 +1744,8 @@ function renderLeaderboard() {
         const rs=bc[c.name]||{approvals:0,denials:0};
         return buildRowFromTotals(c.name, {
           cases:c.totalCases, positive:c.totalPositive, approvals:rs.approvals, denials:rs.denials,
-          shiftMins:c.totalShift, calls:c.totalCalls, durationMins:c.totalDurationMins, productiveTime:c.productiveTime
+          shiftMins:c.totalShift, calls:c.totalCalls, durationMins:c.totalDurationMins, productiveTime:c.productiveTime,
+          timeMins:c.totalTimeMins, acwDuration:c.acwDuration
         });
       });
     } else {
@@ -1837,37 +1754,47 @@ function renderLeaderboard() {
         const rs=bc[c.name]||{approvals:0,denials:0};
         return buildRowFromTotals(c.name, {
           cases:c.totalCases, positive:c.totalPositive, approvals:rs.approvals, denials:rs.denials,
-          shiftMins:c.totalShift, calls:c.totalCalls, durationMins:c.totalDurationMins, productiveTime:c.productiveTime
+          shiftMins:c.totalShift, calls:c.totalCalls, durationMins:c.totalDurationMins, productiveTime:c.productiveTime,
+          timeMins:c.totalTimeMins, acwDuration:c.acwDuration
         });
       });
     }
   }
-  applyTeamPct(rows);
   rows.sort((a,b)=>{
     const av=a[lbSort.col],bv=b[lbSort.col];
     if(av==="--"&&bv==="--")return 0; if(av==="--")return 1; if(bv==="--")return -1;
     return lbSort.dir==="desc"?bv-av:av-bv;
   });
-  // mxF removed - faxes not used
   const mxC=Math.max(...rows.map(r=>r.cases),1);
   const thC=col=>col===lbSort.col?"sort-"+lbSort.dir:"";
   setEl("leaderboardEl",`<table class="lb-table"><thead><tr>
-    <th>#</th><th>Chaser</th>
+    <th>#</th><th>Chaser Name</th>
     ${LB_COLS.map(c=>`<th class="${thC(c.key)}" onclick="setSortCol('${c.key}')" title="${c.tip}">${c.label}</th>`).join("")}
-    <th title="As archived by Sync/EOD -- Settings-tab override for this date, or 400 by default">Shift (min)</th></tr></thead><tbody>
+    </tr></thead><tbody>
     ${rows.map((r,i)=>`<tr>
       <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
       <td><span class="chaser-name">${r.name}</span></td>
-      <td><div>${r.cases}</div><div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${(r.cases/mxC*100).toFixed(0)}%;background:var(--teal-text)"></div></div></td>
-      <td>${r.positive}</td>
-      <td><span class="pill pill-green">${r.approvals}</span></td>
-      <td><span class="pill pill-red">${r.denials}</span></td>
-      <td>${r.approvalPct==="--"?"--":`<span class="pill pill-teal">${r.approvalPct}%</span>`}</td>
-      <td>${r.denialPct==="--"?"--":`<span class="pill pill-amber">${r.denialPct}%</span>`}</td>
-      <td>${r.efficiency==="--"?"--":r.efficiency}</td>
-      <td>${r.productivityStub?`<span class="pill pill-stub">Upload Utlatel</span>`:`<span class="pill pill-teal">${r.productivity}%</span>`}</td>
-      <td>${r.shiftMins||"--"}</td>
+      ${LB_COLS.map(c=>renderLbCell(c,r,mxC)).join("")}
     </tr>`).join("")}</tbody></table>`);
+}
+
+// Renders one <td> for a Leaderboard row, per the column definition in
+// LB_COLS. "cases" gets the mini-bar treatment, "productivity" shows the
+// "Upload Utlatel" stub when there's no call-duration data yet, everything
+// else is just the raw value (formatted via c.format if the column defines
+// one, e.g. "Total Duration" showing "3h 20m" instead of a bare number).
+function renderLbCell(c, r, mxC) {
+  const v = r[c.key];
+  if (c.key === "cases") {
+    return `<td><div>${v}</div><div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${(v/mxC*100).toFixed(0)}%;background:var(--teal-text)"></div></div></td>`;
+  }
+  if (c.key === "approvals") return `<td><span class="pill pill-green">${v}</span></td>`;
+  if (c.key === "denials")   return `<td><span class="pill pill-red">${v}</span></td>`;
+  if (c.key === "productivity") {
+    return `<td>${r.productivityStub?`<span class="pill pill-stub">Upload Utlatel</span>`:`<span class="pill pill-teal">${v}%</span>`}</td>`;
+  }
+  if (c.key === "efficiency") return `<td>${v==="--"?"--":v}</td>`;
+  return `<td>${c.format ? c.format(v) : (v ?? "--")}</td>`;
 }
 
 // Builds a Leaderboard row entirely from archive-written totals -- shift
@@ -1877,20 +1804,19 @@ function renderLeaderboard() {
 // nudged without saving is user error and shouldn't change what's shown
 // here; this always reflects the persisted archive, same as Code.gs's own
 // productivity formula.
-// t: {cases,positive,approvals,denials,shiftMins,calls,durationMins,productiveTime}
+// t: {cases,positive,approvals,denials,shiftMins,calls,durationMins,productiveTime,timeMins,acwDuration}
 function buildRowFromTotals(name,t){
   const cases=t.cases||0, positive=t.positive||0, approvals=t.approvals||0, denials=t.denials||0;
   const shiftMins=t.shiftMins||0, calls=t.calls||0, durationMins=t.durationMins||0, productiveTime=t.productiveTime||0;
-  // approvalPct/denialPct are NOT computed here -- they depend on the whole
-  // team's totals for the picked range, not just this one chaser's own
-  // responses, so callers must run the built rows through applyTeamPct()
-  // once the full set for the range is assembled.
+  const timeMins=t.timeMins||0, acwDuration=t.acwDuration||0;
+  const totalResponses=approvals+denials;
   const efficiency=cases?(positive/cases*100).toFixed(1):"--";
   let productivity="--",productivityStub=false;
   if(shiftMins<=0){productivity="--";}
   else if(!durationMins){productivityStub=true;}
   else { productivity=(productiveTime/shiftMins*100).toFixed(1); }
-  return {name,cases,positive,approvals,denials,efficiency,productivity,productivityStub,shiftMins,calls,durationMins};
+  return {name,cases,positive,approvals,denials,efficiency,productivity,productivityStub,shiftMins,calls,durationMins,
+          productiveTime,timeMins,acwDuration,totalResponses};
 }
 
 // Sets approvalPct/denialPct on every row so each is "this chaser's
@@ -1915,28 +1841,6 @@ function mergeWeekResp(weekDays){
 }
 
 // ── UTLATEL ───────────────────────────────────────────────────
-function handleDragOver(e){e.preventDefault();document.getElementById("uploadZone").classList.add("drag");}
-function handleDrop(e){e.preventDefault();document.getElementById("uploadZone").classList.remove("drag");if(e.dataTransfer.files[0])parseUtlatelFile(e.dataTransfer.files[0]);}
-function handleFileUpload(e){if(e.target.files[0])parseUtlatelFile(e.target.files[0]);}
-
-function parseUtlatelFile(file){
-  const setS=(msg,cls)=>{const el=document.getElementById("uploadStatus");el.textContent=msg;el.className="upload-status "+(cls||"");};
-  setS("Reading...");
-  const ext=file.name.split(".").pop().toLowerCase();
-  if(ext==="csv"){
-    const r=new FileReader();
-    r.onload=e=>processUtlatelRows(parseCSV(e.target.result),file.name,setS);
-    r.readAsText(file);
-  } else if(["xlsx","xls"].includes(ext)){
-    const r=new FileReader();
-    r.onload=e=>{
-      try{const wb=XLSX.read(e.target.result,{type:"array"});const ws=wb.Sheets[wb.SheetNames[0]];processUtlatelRows(XLSX.utils.sheet_to_json(ws,{defval:""}),file.name,setS);}
-      catch(err){setS("Error: "+err.message,"err");}
-    };
-    r.readAsArrayBuffer(file);
-  } else { setS("Unsupported file type.","err"); }
-}
-
 function parseCSV(text){
   const lines=text.trim().split("\n");
   const headers=lines[0].split(",").map(h=>h.trim().replace(/^"|"$/g,""));
@@ -2036,7 +1940,7 @@ function processUtlatelRows(rows,fileName,setS,merge,saveBarId){
 
   setS("Loaded "+fileName+" — "+agents.length+" agent(s)"+(hasDateCol?" across "+dateCount+" date(s)":"")+" · click Save to persist","ok");
   buildAgentMapUI(agents);
-  document.getElementById(saveBarId||"utlatelSaveBar").classList.remove("hidden");
+  document.getElementById(saveBarId||"ctrlUtlatelSaveBar").classList.remove("hidden");
   recalc();
 }
 
@@ -2048,8 +1952,8 @@ function parseDuration(str){
 }
 
 function buildAgentMapUI(agents){
-  document.getElementById("agentMapSection").classList.remove("hidden");
-  const grid = document.getElementById("agentMapGrid");
+  document.getElementById("ctrlAgentMapSection").classList.remove("hidden");
+  const grid = document.getElementById("ctrlAgentMapGrid");
   // Built via DOM APIs (not innerHTML string interpolation) because `agent`
   // names come from an uploaded file and could contain characters that
   // would otherwise break out of the markup/attribute — this data also
@@ -2202,9 +2106,6 @@ function applyShiftHistory(dateTab) {
       shiftMap[name] = DEFAULT_SHIFT_MINS;
     }
   });
-
-  // Rebuild shift grid UI to reflect loaded values
-  buildShiftGrid();
 }
 
 // Apply persisted Utlatel data to utlatelData in memory
@@ -2238,9 +2139,9 @@ function applyUtlatelPersist() {
   // Rebuild agent map UI if already visible
   const agents = Object.keys(utlatelData);
   if (agents.length) {
-    document.getElementById("uploadStatus").textContent =
+    document.getElementById("ctrlUploadStatus").textContent =
       "✓ " + agents.length + " agent(s) loaded from archive";
-    document.getElementById("uploadStatus").className = "upload-status ok";
+    document.getElementById("ctrlUploadStatus").className = "upload-status ok";
     buildAgentMapUI(agents);
   }
 }
@@ -2248,7 +2149,6 @@ function applyUtlatelPersist() {
 // Save a shift change permanently
 async function saveShift(name, val, effectiveDate, notes) {
   shiftMap[name] = val; // val is shift minutes (number)
-  document.querySelectorAll(`[onchange*="setShift('${name}'"]`).forEach(el => el.value = val);
   recalc();
 
   // Persist to archive sheet — ShiftType field now holds the raw minute count as a string
@@ -2374,53 +2274,6 @@ function downloadCSV(){
   const blob=new Blob([[headers.join(","),...rows].join("\n")],{type:"text/csv"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");a.href=url;a.download=`chasing_${d.replace("/","-")}.csv`;a.click();URL.revokeObjectURL(url);
-}
-
-// ── SHIFT ─────────────────────────────────────────────────────
-function buildShiftGrid(){
-  document.getElementById("shiftGrid").innerHTML=CHASERS.map(name=>`
-    <div class="ctrl-group"><label>${name} — Shift (min)</label>
-    <input type="number" inputmode="numeric" class="ctrl-input" min="0" max="1440" step="5"
-      value="${shiftMap[name] !== undefined && shiftMap[name] !== null ? shiftMap[name] : DEFAULT_SHIFT_MINS}"
-      onchange="setShift('${name}',this.value)"></div>`).join("");
-}
-function setShift(name, val) {
-  // val is now exact shift minutes (e.g. typed via numpad for meeting-adjusted shifts)
-  const mins = Number(val);
-  if (val === "" || isNaN(mins) || mins < 0) {
-    alert("Enter a valid number of minutes (0 or more).");
-    document.querySelectorAll(`[onchange*="setShift('${name}'"]`).forEach(el => el.value = shiftMap[name] ?? DEFAULT_SHIFT_MINS);
-    return;
-  }
-  // Ask for effective date
-  const today     = new Date().toISOString().slice(0,10);
-  const dateInput = prompt(
-    `Shift change for ${name}\nEnter effective date (YYYY-MM-DD) or leave blank for today:`,
-    today
-  );
-  if (dateInput === null) {
-    // User cancelled — revert the input
-    document.querySelectorAll(`[onchange*="setShift('${name}'"]`).forEach(el => el.value = shiftMap[name] ?? DEFAULT_SHIFT_MINS);
-    return;
-  }
-
-  const parts   = (dateInput.trim()||today).split("-");
-  const effDate = parts.length === 3
-    ? parseInt(parts[1]) + "/" + parseInt(parts[2]) + "/" + parts[0]
-    : getTodayTab();
-
-  const notes = "";
-  saveShift(name, mins, effDate, notes);
-}
-function toggleControls(){
-  controlsOpen=!controlsOpen;
-  document.getElementById("ctrlBody").classList.toggle("hidden",!controlsOpen);
-  document.getElementById("ctrlChevron").classList.toggle("open",controlsOpen);
-  // Inject goals controls once
-  const body = document.getElementById("ctrlBody");
-  if (controlsOpen && body && !body.querySelector("#goalProd")) {
-    body.insertAdjacentHTML("beforeend", renderGoalsControls());
-  }
 }
 
 // ── UTILS ─────────────────────────────────────────────────────
@@ -2664,7 +2517,7 @@ function groupByChaser(rows) {
     const n = r.Chaser;
     if (!n) continue;
     if (!map[n]) map[n] = { cases:0, positive:0, faxes:0, approvals:0, denials:0,
-                             timeMins:0, calls:0, durationMins:0, productiveTime:0, totalShift:0, days:new Set() };
+                             timeMins:0, calls:0, durationMins:0, productiveTime:0, totalShift:0, acwDuration:0, days:new Set() };
     map[n].cases          += Number(r.Cases)||0;
     map[n].positive       += Number(r.Positive)||0;
     // faxes not tracked
@@ -2675,6 +2528,7 @@ function groupByChaser(rows) {
     map[n].durationMins   += Number(r.TotalDurationMins)||0;
     map[n].productiveTime += Number(r.ProductiveTime)||0;
     map[n].totalShift     += Number(r.TotalShift)||0;
+    map[n].acwDuration     += Number(r.ACWDuration)||0;
     map[n].days.add(r.Date);
   }
   Object.values(map).forEach(v => v.days = v.days.size);
@@ -3163,30 +3017,6 @@ function goalBar(metric, actual, label, chaserName, dateTab) {
 }
 
 // Goals settings panel — injected into Controls drawer
-function renderGoalsControls() {
-  return `
-    <div class="divider"></div>
-    <div class="sub-label">Productivity &amp; Efficiency Targets</div>
-    <div class="controls-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
-      <div class="ctrl-group">
-        <label>Productivity Target (%)</label>
-        <div class="range-row">
-          <input type="range" id="goalProd" min="30" max="100" value="${goals.productivity}" step="5"
-            oninput="goals.productivity=Number(this.value);document.getElementById('goalProdVal').textContent=this.value+'%';recalc()">
-          <span class="range-val" id="goalProdVal">${goals.productivity}%</span>
-        </div>
-      </div>
-      <div class="ctrl-group">
-        <label>Efficiency Target (positive ÷ cases × 100)</label>
-        <div class="range-row">
-          <input type="range" id="goalEff" min="10" max="100" value="${goals.efficiency}" step="5"
-            oninput="goals.efficiency=Number(this.value);document.getElementById('goalEffVal').textContent=this.value+'%';recalc()">
-          <span class="range-val" id="goalEffVal">${goals.efficiency}%</span>
-        </div>
-      </div>
-    </div>`;
-}
-
 // ══════════════════════════════════════════════════════════════
 // CHASER PAGES
 // ══════════════════════════════════════════════════════════════
@@ -4264,7 +4094,6 @@ async function refreshChasterRoster() {
         if (!(n in shiftMap)) shiftMap[n] = DEFAULT_SHIFT_MINS;
         if (!(n in agentMap)) agentMap[n] = n;
       });
-      buildShiftGrid();
       renderChasterRosterTable();
       refreshChaserDropdowns();
     }
@@ -4272,170 +4101,6 @@ async function refreshChasterRoster() {
     // The save action itself already reported success/failure to the user;
     // keep whichever roster is already in memory rather than surface a
     // second error for what's just a post-save refresh.
-  }
-}
-
-// ── LEAD HISTORY CONFLICTS TAB ──────────────────────────────────
-let leadConflicts = [];
-
-function setConflictsStatus(msg, color) {
-  const el = document.getElementById("conflictsStatus");
-  if (!el) return;
-  el.textContent = msg || "";
-  el.style.color = color || "var(--text-3)";
-}
-
-function getConflictResolverName() {
-  const el = document.getElementById("conflictResolverName");
-  return el ? el.value.trim() : "";
-}
-
-async function refreshConflicts() {
-  setConflictsStatus("Loading conflicts...", "var(--text-3)");
-  try {
-    const data = await fetchAPI("leadconflicts", "");
-    leadConflicts = Array.isArray(data.conflicts) ? data.conflicts : [];
-    renderConflictsSummary();
-    renderConflictsTable();
-    setConflictsStatus("", "");
-  } catch (err) {
-    setConflictsStatus("Error loading conflicts: " + err.message, "var(--red)");
-    const tbody = document.getElementById("conflictsBody");
-    if (tbody) tbody.innerHTML = `<tr><td colspan="9" class="state-block error-msg">Error: ${err.message}</td></tr>`;
-  }
-}
-
-function renderConflictsSummary() {
-  const el = document.getElementById("conflictsSummary");
-  if (!el) return;
-  const blocking = leadConflicts.filter(c => c.ConflictType === "Blocking" && c.Status === "Pending").length;
-  const review   = leadConflicts.filter(c => c.ConflictType === "Review"   && c.Status === "Pending").length;
-  const errored  = leadConflicts.filter(c => c.Status === "DataError - Pending Fix").length;
-  el.innerHTML = "";
-  [
-    ["Blocking (held from Lead History)", blocking, "var(--red)"],
-    ["Review (informational)", review, "var(--amber)"],
-    ["Data Error — Pending Fix", errored, "var(--text-3)"],
-  ].forEach(([label, val, color]) => {
-    const box = document.createElement("div");
-    box.className = "metric";
-    const l = document.createElement("div"); l.className = "metric-label"; l.textContent = label;
-    const v = document.createElement("div"); v.className = "metric-value"; v.style.color = color; v.textContent = val;
-    box.appendChild(l); box.appendChild(v);
-    el.appendChild(box);
-  });
-}
-
-function renderConflictsTable() {
-  const tbody = document.getElementById("conflictsBody");
-  if (!tbody) return;
-  tbody.innerHTML = "";
-
-  if (!leadConflicts.length) {
-    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-3)">No pending conflicts. &#9989;</td></tr>`;
-    return;
-  }
-
-  // Blocking first, then Review, then DataError -- most actionable on top.
-  const order = { "Blocking": 0, "Review": 1 };
-  const sorted = [...leadConflicts].sort((a, b) => (order[a.ConflictType] ?? 2) - (order[b.ConflictType] ?? 2));
-
-  sorted.forEach(c => {
-    const tr = document.createElement("tr");
-
-    const td = (text) => { const el = document.createElement("td"); el.textContent = text == null ? "" : text; return el; };
-
-    tr.appendChild(td(c.ConflictID));
-
-    const typeTd = document.createElement("td");
-    const typePill = document.createElement("span");
-    typePill.className = "pill " + (c.ConflictType === "Blocking" ? "pill-red" : "pill-amber");
-    typePill.textContent = c.ConflictType;
-    typeTd.appendChild(typePill);
-    tr.appendChild(typeTd);
-
-    tr.appendChild(td(c.MBI));
-    tr.appendChild(td(String(c.Campaign || "").toUpperCase()));
-    tr.appendChild(td(c.SubmissionDate));
-    tr.appendChild(td(c.TabsFound));
-    tr.appendChild(td(c.DateDetected));
-
-    const statusTd = document.createElement("td");
-    const statusPill = document.createElement("span");
-    statusPill.className = "pill " + (c.Status === "Pending" ? "pill-teal" : "pill-stub");
-    statusPill.textContent = c.Status;
-    statusTd.appendChild(statusPill);
-    tr.appendChild(statusTd);
-
-    const actionsTd = document.createElement("td");
-    actionsTd.style.display = "flex";
-    actionsTd.style.flexWrap = "wrap";
-    actionsTd.style.gap = "6px";
-    buildConflictActions(c).forEach(btn => actionsTd.appendChild(btn));
-    tr.appendChild(actionsTd);
-
-    tbody.appendChild(tr);
-  });
-}
-
-function makeConflictActionButton(label, onClick, danger) {
-  const btn = document.createElement("button");
-  btn.className = "btn btn-ghost";
-  btn.style.padding = "4px 9px";
-  btn.style.fontSize = "11px";
-  if (danger) btn.style.color = "var(--red)";
-  btn.textContent = label;
-  btn.addEventListener("click", () => withButtonGuard(btn, onClick));
-  return btn;
-}
-
-// Builds the action buttons valid for this conflict's ConflictType/Status,
-// matching exactly what resolveLeadConflict() in LeadHistory.gs accepts --
-// "pick"/"bothvalid" only for Blocking, "acknowledge" only for Review.
-function buildConflictActions(c) {
-  const buttons = [];
-
-  if (c.Status === "DataError - Pending Fix") {
-    buttons.push(makeConflictActionButton("Ready to Retry", () => resolveConflict(c.ConflictID, "readytoretry")));
-    buttons.push(makeConflictActionButton("Dismiss", () => resolveConflict(c.ConflictID, "dismiss"), true));
-    return buttons;
-  }
-
-  if (c.ConflictType === "Blocking") {
-    // TabsFound is a plain comma-separated list of state names for Blocking, e.g. "InProcess, BTO"
-    const states = String(c.TabsFound || "").split(",").map(s => s.trim()).filter(Boolean);
-    states.forEach(state => {
-      buttons.push(makeConflictActionButton("Pick: " + state, () => resolveConflict(c.ConflictID, "pick:" + state)));
-    });
-    buttons.push(makeConflictActionButton("Both Valid", () => resolveConflict(c.ConflictID, "bothvalid")));
-    buttons.push(makeConflictActionButton("Data Error", () => resolveConflict(c.ConflictID, "dataerror")));
-    buttons.push(makeConflictActionButton("Dismiss", () => resolveConflict(c.ConflictID, "dismiss"), true));
-  } else if (c.ConflictType === "Review") {
-    buttons.push(makeConflictActionButton("Acknowledge", () => resolveConflict(c.ConflictID, "acknowledge")));
-    buttons.push(makeConflictActionButton("Dismiss", () => resolveConflict(c.ConflictID, "dismiss"), true));
-  }
-
-  return buttons;
-}
-
-async function resolveConflict(conflictId, action) {
-  const resolvedBy = getConflictResolverName();
-  if (!resolvedBy) { setConflictsStatus("Enter your name in \"Resolved By\" first.", "var(--red)"); return; }
-
-  setConflictsStatus("Resolving conflict #" + conflictId + "...", "var(--text-3)");
-  try {
-    const url = `${API_BASE}?mode=resolveconflict&conflictId=${encodeURIComponent(conflictId)}`
-      + `&action=${encodeURIComponent(action)}&resolvedBy=${encodeURIComponent(resolvedBy)}`;
-    const res  = await fetchWithTimeout(url);
-    const data = await res.json();
-    if (data.success) {
-      setConflictsStatus("Conflict #" + conflictId + " resolved.", "var(--green)");
-      await refreshConflicts();
-    } else {
-      setConflictsStatus("Error: " + (data.error || "Could not resolve conflict."), "var(--red)");
-    }
-  } catch (err) {
-    setConflictsStatus("Error: " + err.message, "var(--red)");
   }
 }
 
@@ -4501,6 +4166,10 @@ function renderUtlatelSummary() {
 }
 
 // Utlatel upload from controls tab
+function handleCtrlDragOver(e) {
+  e.preventDefault();
+  document.getElementById("ctrlUploadZone").classList.add("drag");
+}
 function handleCtrlDrop(e) {
   e.preventDefault();
   document.getElementById("ctrlUploadZone").classList.remove("drag");
