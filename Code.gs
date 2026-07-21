@@ -1368,14 +1368,37 @@ function migrateExistingSheets() {
   // ── Open / prepare archive sheet ──────────────────────────
   const archiveSS = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
 
-  // Build a combined duplicate guard across ALL month tabs
+  // Build a combined duplicate guard across ALL month tabs. Keys MUST be
+  // full "M/D/YYYY" (year included) to match what parseWeekTab() below
+  // actually checks against (its currentDate always carries a year, parsed
+  // from date-header rows like "6/23/2026") -- using normalizeDateCellToTab()
+  // here (year-less "M/D") made every key mismatch every lookup, so the
+  // dedup check never matched anything and every re-run rewrote every row
+  // as a fresh duplicate instead of skipping what was already there.
   const existing    = new Set();
-  const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i;
+  const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i;
   for (const sheet of archiveSS.getSheets()) {
-    if (!monthPattern.test(sheet.getName().trim())) continue;
+    const tabMatch = sheet.getName().trim().match(monthPattern);
+    if (!tabMatch) continue;
+    const tabYear = parseInt(tabMatch[2], 10);
     const d = sheet.getDataRange().getValues();
     for (let r = 1; r < d.length; r++) {
-      existing.add(normalizeDateCellToTab(d[r][0]) + "|" + String(d[r][1]));
+      const chaserVal = String(d[r][1]).trim();
+      if (!chaserVal || chaserVal.toUpperCase().startsWith("TOTAL")) continue;
+
+      const rawDate = d[r][0];
+      let fullDate;
+      if (rawDate instanceof Date && !isNaN(rawDate)) {
+        fullDate = (rawDate.getMonth()+1) + "/" + rawDate.getDate() + "/" + tabYear;
+      } else {
+        const s = String(rawDate).trim();
+        if (!s || s.toUpperCase() === "WEEK") continue;
+        const parts = s.split("/");
+        const m = parseInt(parts[0], 10), day = parseInt(parts[1], 10);
+        if (isNaN(m) || isNaN(day)) continue;
+        fullDate = m + "/" + day + "/" + tabYear;
+      }
+      existing.add(fullDate + "|" + chaserVal);
     }
   }
   Logger.log("Existing archive rows across all month tabs: " + existing.size);
