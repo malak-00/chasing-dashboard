@@ -2251,57 +2251,6 @@ function readCombinedCampaignTotalsForDate(dateTab) {
   return camps;
 }
 
-// Read per-chaser per-campaign counts for ONE full "M/D/YYYY" date from the
-// combined historical sheet. Same shape as readChaserCampaignCountsForDate,
-// used to populate ORT_Approved etc. columns in the monthly archive tabs.
-function readCombinedChaserCampaignCountsForDate(dateTab) {
-  const byChaser = {};
-
-  let ss;
-  try { ss = SpreadsheetApp.openById(BACKFILL_RESPONSES_SHEET_ID); }
-  catch(e) { return byChaser; }
-
-  for (const tabConfig of BACKFILL_RESPONSES_TABS) {
-    const sheet = ss.getSheetByName(tabConfig.tabName);
-    if (!sheet) continue;
-
-    const data = sheet.getDataRange().getValues();
-    if (data.length < 2) continue;
-
-    const headers       = data[0].map(h => String(h).trim().toUpperCase());
-    const feedbackCol   = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
-    const chaserCol     = headers.indexOf(tabConfig.chaserCol.toUpperCase());
-    const conclusionCol = tabConfig.conclusionCol ? headers.indexOf(tabConfig.conclusionCol.toUpperCase()) : -1;
-    if (feedbackCol < 0 || chaserCol < 0) continue;
-
-    const campKey = tabConfig.campaignKey;
-    const tabYear = resolveYearFromTabName(tabConfig.tabName);
-
-    for (let r = 1; r < data.length; r++) {
-      const feedback   = String(data[r][feedbackCol] || "").trim();
-      const chaserText = String(data[r][chaserCol]   || "").trim();
-      if (!feedback || !chaserText) continue;
-      const fullDate = resolveRowDate(feedback, conclusionCol >= 0 ? data[r][conclusionCol] : null, tabYear);
-      if (fullDate !== dateTab) continue;
-
-      const approval = isApproval(feedback);
-      const denial   = isDenial(feedback);
-      if (!approval && !denial) continue;
-
-      const chasers = chaserText.split("/").map(x => normalizeChaserName(x.trim())).filter(Boolean);
-      for (const name of chasers) {
-        if (!byChaser[name]) {
-          byChaser[name] = zeroCampaignTotals();
-        }
-        if (approval) byChaser[name][campKey].approved++;
-        if (denial)   byChaser[name][campKey].denied++;
-      }
-    }
-  }
-
-  return byChaser;
-}
-
 // Write/overwrite Campaign Responses rows for ONE full "M/D/YYYY" date using
 // the combined sheet's data (BACKFILL_RESPONSES_TABS). Called by both
 // backfillFromCombinedSheet() (one-time historical) and
@@ -2347,78 +2296,22 @@ function writeCombinedCampaignResponses(dateTab) {
   return written;
 }
 
-// Update per-chaser ORT/CGM/LymphC/LymphW columns in the monthly archive tab
-// for ONE full "M/D/YYYY" date using the combined sheet's data. Mirrors the
-// inner loop of backfillCampaignColumns() but reads from BACKFILL_RESPONSES_TABS.
-function writeCombinedChaserCampaignColumns(dateTab) {
-  const ss = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
-
-  const tabName = monthTabName(dateTab);
-  const sheet   = ss.getSheetByName(tabName);
-  if (!sheet) { Logger.log("Monthly tab not found for " + dateTab + " (" + tabName + ") — skipping, run a Sync for this date first."); return 0; }
-
-  const data = sheet.getDataRange().getValues();
-  if (data.length < 2) return 0;
-
-  const headers = data[0].map(h => String(h).trim());
-  const COL = {};
-  headers.forEach((h, i) => { COL[h] = i; });
-  const required = ["Date","Chaser","ORT_Approved","ORT_Denied","CGM_Approved","CGM_Denied","LymphC_Approved","LymphC_Denied","LymphW_Approved","LymphW_Denied"];
-  if (!required.every(h => COL.hasOwnProperty(h))) { Logger.log("Monthly tab missing expected columns: " + tabName); return 0; }
-
-  // Archive month tabs are never forced to plain text on their Date column,
-  // so a bare "M/D" cell can get auto-coerced into a Date with Sheets' own
-  // guessed year -- same reasoning as rowDate() in backfillCampaignColumns().
-  // The tab's own name (e.g. "Jun 2026") is the only year that's never
-  // ambiguous, so every row in this tab is assumed to belong to that year,
-  // never whatever year the cell itself claims.
-  const tabYearMatch = tabName.match(/(\d{4})$/);
-  const tabYear      = tabYearMatch ? parseInt(tabYearMatch[1], 10) : new Date().getFullYear();
-
-  const chaserCamps = readCombinedChaserCampaignCountsForDate(dateTab);
-
-  let rowsUpdated = 0;
-  for (let r = 1; r < data.length; r++) {
-    const rawDate   = data[r][COL.Date];
-    const chaserVal = String(data[r][COL.Chaser]).trim();
-    if (!chaserVal || chaserVal.toUpperCase().startsWith("TOTAL") || chaserVal.toUpperCase() === "WEEK") continue;
-
-    const s = rawDate instanceof Date && !isNaN(rawDate)
-      ? (rawDate.getMonth()+1) + "/" + rawDate.getDate()
-      : String(rawDate).trim();
-    if (!s || s.toUpperCase() === "WEEK") continue;
-    const parts = s.split("/");
-    const m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
-    if (isNaN(m) || isNaN(d)) continue;
-    const rowFullDate = m + "/" + d + "/" + tabYear;
-    if (rowFullDate !== dateTab) continue;
-
-    const normalized = normalizeChaserName(chaserVal);
-    const cc = chaserCamps[normalized] || chaserCamps[chaserVal] || zeroCampaignTotals();
-
-    sheet.getRange(r+1, COL.ORT_Approved+1, 1, 8).setValues([[
-      cc.ort.approved,    cc.ort.denied,
-      cc.cgm.approved,    cc.cgm.denied,
-      cc.lymphc.approved, cc.lymphc.denied,
-      cc.lymphw.approved, cc.lymphw.denied,
-    ]]);
-    rowsUpdated++;
-  }
-
-  return rowsUpdated;
-}
-
 // ============================================================
 // MAIN ENTRY POINT — run this once from the Apps Script editor
 // ============================================================
 // 1. Finds every date mentioned in the combined sheet's feedback columns
-// 2. For each date: writes Campaign Responses rows (deduplicated totals)
-// 3. For each date: updates per-chaser ORT/CGM/LymphC/LymphW columns in
-//    the matching monthly archive tab — but ONLY for chaser rows that
-//    already exist there. If a date has no archive rows yet, run a
-//    Sync for that date first (so Cases/Positive/TimeMins etc. exist),
-//    then re-run this function.
-// Resumable: progress is saved after each date.
+//    (independent of the archive -- works even if a month tab has been
+//    deleted entirely, e.g. before re-running migrateExistingSheets()).
+// 2. For each date: writes Campaign Responses rows (deduplicated totals).
+// 3. For each date: updates per-chaser ORT/CGM/LymphC/LymphW/Approvals/
+//    Denials columns via updateChaserCampaignColumnsForDate() -- this
+//    creates the monthly archive tab if it doesn't exist yet, and inserts
+//    a row (tracker columns blank/0) for any chaser with real campaign
+//    credit but no existing row for that date.
+// Resumable: progress is saved after each date. If you've deleted archive
+// rows/tabs and want this to fully reprocess them, call
+// resetCombinedSheetBackfill() first -- otherwise dates already marked
+// done will be skipped even though the data underneath them is gone.
 function backfillFromCombinedSheet() {
   const PROGRESS_KEY = "combined_sheet_backfill4";
   const props        = PropertiesService.getScriptProperties();
@@ -2428,15 +2321,15 @@ function backfillFromCombinedSheet() {
   Logger.log("Dates found in combined sheet: " + (allDates.length + doneDates.length) + " | Remaining: " + allDates.length);
 
   let totalCampaignRows = 0;
-  let totalChaserRows   = 0;
-  let skippedNoArchive  = [];
+  let totalChaserUpdated = 0;
+  let totalChaserInserted = 0;
 
   for (const dateTab of allDates) {
     try {
       totalCampaignRows += writeCombinedCampaignResponses(dateTab);
-      const updated = writeCombinedChaserCampaignColumns(dateTab);
-      totalChaserRows += updated;
-      if (updated === 0) skippedNoArchive.push(dateTab);
+      const { updated, inserted } = updateChaserCampaignColumnsForDate(dateTab);
+      totalChaserUpdated  += updated;
+      totalChaserInserted += inserted;
     } catch(e) {
       Logger.log("Error processing " + dateTab + ": " + e.message);
     }
@@ -2446,11 +2339,7 @@ function backfillFromCombinedSheet() {
 
   Logger.log("=== DONE ===");
   Logger.log("Campaign Responses rows written: " + totalCampaignRows);
-  Logger.log("Chaser rows updated: " + totalChaserRows);
-  if (skippedNoArchive.length) {
-    Logger.log("Dates with NO matching archive rows (Campaign Responses still written, but per-chaser columns skipped): " + skippedNoArchive.join(", "));
-    Logger.log("Sync those dates first, then re-run backfillFromCombinedSheet() to fill in the per-chaser columns.");
-  }
+  Logger.log("Chaser rows updated: " + totalChaserUpdated + " | inserted: " + totalChaserInserted);
 }
 
 function resetCombinedSheetBackfill() {
