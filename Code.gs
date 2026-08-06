@@ -225,13 +225,65 @@ function getOrCreateMonthTab(ss, tabName) {
   if (!sheet) {
     sheet = ss.insertSheet(tabName);
     sheet.appendRow(ARCHIVE_HEADERS);
-    // Freeze header row
-    sheet.setFrozenRows(1);
-    // Bold the header
-    sheet.getRange(1, 1, 1, ARCHIVE_HEADERS.length).setFontWeight("bold");
+    applyMonthTabFormatting(sheet);
     Logger.log("Created new tab: " + tabName);
   }
   return sheet;
+}
+
+// Styles a month tab so it's presentable to someone opening the raw sheet,
+// not just the dashboard: header row styled like the week-separator rows
+// (so it always reads as a header, not just bold text), Date/Chaser frozen
+// so they stay visible scrolling through this table's 22 columns, column
+// widths sized for the longer headers (TotalDurationMins, ProductiveTime,
+// etc.), alternating row banding over a generous range so every row added
+// later (Sync, backfills, migration) automatically picks it up without
+// needing to be reapplied, and Efficiency/Productivity displayed with a
+// "%" suffix -- this only changes how they render, the underlying values
+// stay the plain numbers every other function already expects.
+function applyMonthTabFormatting(sheet) {
+  sheet.setFrozenRows(1);
+  sheet.setFrozenColumns(2);
+
+  const headerRange = sheet.getRange(1, 1, 1, ARCHIVE_HEADERS.length);
+  headerRange.setBackground("#1A2C42");
+  headerRange.setFontColor("#00C2A8");
+  headerRange.setFontWeight("bold");
+  headerRange.setHorizontalAlignment("center");
+
+  sheet.setColumnWidth(1, 90);   // Date
+  sheet.setColumnWidth(2, 110);  // Chaser
+  for (let c = 3; c <= ARCHIVE_HEADERS.length; c++) {
+    sheet.setColumnWidth(c, 110);
+  }
+
+  const existingBandings = sheet.getBandings();
+  if (!existingBandings.length) {
+    sheet.getRange(2, 1, 998, ARCHIVE_HEADERS.length)
+         .applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, false, false);
+  }
+
+  const effCol  = ARCHIVE_HEADERS.indexOf("Efficiency") + 1;
+  const prodCol = ARCHIVE_HEADERS.indexOf("Productivity") + 1;
+  sheet.getRange(2, effCol,  998, 1).setNumberFormat('0.0"%"');
+  sheet.getRange(2, prodCol, 998, 1).setNumberFormat('0.0"%"');
+}
+
+// One-time utility: applies applyMonthTabFormatting() to every EXISTING
+// month tab (data untouched) -- run this from the Apps Script editor to
+// make the current archive presentable immediately, without needing to
+// delete and rebuild every tab first. New tabs get this automatically via
+// getOrCreateMonthTab().
+function reformatArchiveTabs() {
+  const ss = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
+  const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i;
+  let count = 0;
+  for (const sheet of ss.getSheets()) {
+    if (!monthPattern.test(sheet.getName().trim())) continue;
+    applyMonthTabFormatting(sheet);
+    count++;
+  }
+  Logger.log("Reformatted " + count + " month tab(s).");
 }
 
 // Maps "date|chaser" -> { rowNum, values } for a specific month tab, so
@@ -1383,12 +1435,12 @@ function migrateExistingSheets() {
   const archiveSS = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
 
   // Build a combined duplicate guard across ALL month tabs. Keys MUST be
-  // full "M/D/YYYY" (year included) to match what parseWeekTab() below
-  // actually checks against (its currentDate always carries a year, parsed
-  // from date-header rows like "6/23/2026") -- using normalizeDateCellToTab()
-  // here (year-less "M/D") made every key mismatch every lookup, so the
-  // dedup check never matched anything and every re-run rewrote every row
-  // as a fresh duplicate instead of skipping what was already there.
+  // full "M/D/YYYY" (year included) to match collectRowsFromWeekTab()'s
+  // dates below (always carry a year, parsed from date-header rows like
+  // "6/23/2026") -- using normalizeDateCellToTab() here (year-less "M/D")
+  // made every key mismatch every lookup, so the dedup check never matched
+  // anything and every re-run rewrote every row as a fresh duplicate
+  // instead of skipping what was already there.
   const existing    = new Set();
   const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i;
   for (const sheet of archiveSS.getSheets()) {
@@ -1417,10 +1469,15 @@ function migrateExistingSheets() {
   }
   Logger.log("Existing archive rows across all month tabs: " + existing.size);
 
-  let totalWritten = 0;
-  let totalSkipped = 0;
-
-  // ── Loop both source spreadsheets ─────────────────────────
+  // ── Collect every row from BOTH source spreadsheets first, then sort
+  // chronologically before writing anything. Writing team-by-team (the old
+  // behavior: fully process Team 1's spreadsheet, THEN start Team 2) meant
+  // every appendRow() for Team 2 landed after every row already written for
+  // Team 1 in each shared month tab -- correct within each team, but the
+  // two teams' rows never interleaved by date, requiring a manual re-sort
+  // afterward. Collecting first and sorting once fixes that regardless of
+  // which team's spreadsheet happens to get read first.
+  const allRows = [];
   for (const ssId of EXISTING_SHEETS) {
     let ss;
     try {
@@ -1430,7 +1487,7 @@ function migrateExistingSheets() {
       continue;
     }
 
-    Logger.log("Processing: " + ss.getName());
+    Logger.log("Reading: " + ss.getName());
 
     // Get all tabs named "WEEK X" (any number)
     const weekTabs = ss.getSheets().filter(s => /^WEEK\s+\d+$/i.test(s.getName().trim()));
@@ -1438,10 +1495,49 @@ function migrateExistingSheets() {
 
     for (const tab of weekTabs) {
       Logger.log("  Reading tab: " + tab.getName());
-      const rows = parseWeekTab(tab, archiveSS, existing);
-      totalWritten += rows.written;
-      totalSkipped += rows.skipped;
+      allRows.push(...collectRowsFromWeekTab(tab));
     }
+  }
+
+  allRows.sort((a, b) => parseDateTab(a.date) - parseDateTab(b.date));
+  Logger.log("Collected " + allRows.length + " rows total, sorted chronologically.");
+
+  let totalWritten = 0;
+  let totalSkipped = 0;
+
+  for (const row of allRows) {
+    const key = row.date + "|" + row.chaser;
+    if (existing.has(key)) { totalSkipped++; continue; }
+
+    const rowTabName = monthTabName(row.date);
+    const rowSheet    = getOrCreateMonthTab(archiveSS, rowTabName);
+
+    // Write week header if this is the first row for a Monday in this sheet
+    const isMonDate = parseDateTab(row.date).getDay() === 1;
+    const weekKey   = "WEEKHEADER|" + row.date;
+    if (isMonDate && !existing.has(weekKey)) {
+      const weekLabel = getWeekLabel(row.date);
+      rowSheet.appendRow(["WEEK", weekLabel].concat(new Array(ARCHIVE_HEADERS.length - 2).fill("")));
+      const lastRow = rowSheet.getLastRow();
+      const hRange  = rowSheet.getRange(lastRow, 1, 1, ARCHIVE_HEADERS.length);
+      hRange.setBackground("#1A2C42");
+      hRange.setFontColor("#00C2A8");
+      hRange.setFontWeight("bold");
+      existing.add(weekKey);
+    }
+
+    rowSheet.appendRow([
+      row.date, row.chaser,
+      row.cases, row.positive, row.approvals, row.denials, row.timeMins,   // no faxes col
+      row.eff, row.prod,
+      row.totalShift, row.calls, row.totalDurationMins, row.acwDuration, row.productiveTime,
+      // Campaign columns — not in source sheets, default to 0
+      // (the weekly campaign pull fills these going forward)
+      0, 0, 0, 0, 0, 0, 0, 0
+    ]);
+
+    existing.add(key);
+    totalWritten++;
   }
 
   Logger.log("=== MIGRATION COMPLETE ===");
@@ -1449,11 +1545,12 @@ function migrateExistingSheets() {
   Logger.log("Skipped (duplicates): " + totalSkipped + " rows");
 }
 
-// ── Parse one weekly tab ───────────────────────────────────────
-function parseWeekTab(tab, archiveSS, existing) {
-  const data    = tab.getDataRange().getValues();
-  let written   = 0;
-  let skipped   = 0;
+// ── Parse one weekly tab into plain row records -- no archive writes, no
+// side effects, so migrateExistingSheets() can collect every row from both
+// source spreadsheets and sort them chronologically before writing anything.
+function collectRowsFromWeekTab(tab) {
+  const data = tab.getDataRange().getValues();
+  const rows = [];
   let currentDate = null;
   let colIndex    = {};   // field name → column index, reset per date block
 
@@ -1473,7 +1570,6 @@ function parseWeekTab(tab, archiveSS, existing) {
     if (parsedDate) {
       currentDate = parsedDate;
       colIndex    = {};
-      Logger.log("    Date: " + currentDate);
       continue;
     }
 
@@ -1486,62 +1582,45 @@ function parseWeekTab(tab, archiveSS, existing) {
     // ── Data row ────────────────────────────────────────────
     if (!currentDate || Object.keys(colIndex).length === 0) continue;
 
-    const chaser = String(row[colIndex.chaser] !== undefined ? row[colIndex.chaser] : "").trim();
-    if (!chaser || chaser.toUpperCase() === "CHASER NAME") continue;
+    const rawChaser = String(row[colIndex.chaser] !== undefined ? row[colIndex.chaser] : "").trim();
+    // Skip the header re-appearing mid-sheet, and a week's own "Total"
+    // summary row -- that's not a real chaser, and the campaign backfills
+    // explicitly skip any chaser name starting with "Total" too (see
+    // updateChaserCampaignColumnsForDate()), so it would otherwise sit at
+    // 0 for Approvals/Denials/campaign columns forever with no way to
+    // ever get filled in.
+    if (!rawChaser || rawChaser.toUpperCase() === "CHASER NAME" || rawChaser.toUpperCase().startsWith("TOTAL")) continue;
 
-    const key = currentDate + "|" + chaser;
-    if (existing.has(key)) { skipped++; continue; }
+    // Normalize here (not just at read time) so the archive itself shows
+    // clean canonical names ("Alex", "Tom Walker") instead of whatever raw
+    // text a tracker tab happened to have ("ALEX WOODS", "Tom", etc.).
+    const chaser = normalizeChaserName(rawChaser);
 
     const get = field => colIndex[field] !== undefined ? row[colIndex[field]] : "";
 
     // Parse productivity/efficiency — strip % if stored as string
-    const prodRaw  = String(get("productivity") || "").replace("%","").trim();
-    const effRaw   = String(get("efficiency")   || "").replace("%","").trim();
-    const prod     = parseFloat(prodRaw) || "";
-    const eff      = parseFloat(effRaw)  || "";
+    const prodRaw = String(get("productivity") || "").replace("%","").trim();
+    const effRaw  = String(get("efficiency")   || "").replace("%","").trim();
 
-    const rowTabName  = monthTabName(currentDate);
-    const rowSheet    = getOrCreateMonthTab(archiveSS, rowTabName);
-
-    // Write week header if this is the first row for a Monday in this sheet
-    const isMonDate   = parseDateTab(currentDate).getDay() === 1;
-    const weekKey     = "WEEKHEADER|" + currentDate;
-    if (isMonDate && !existing.has(weekKey)) {
-      const weekLabel = getWeekLabel(currentDate);
-      rowSheet.appendRow(["WEEK", weekLabel].concat(new Array(ARCHIVE_HEADERS.length - 2).fill("")));
-      const lastRow = rowSheet.getLastRow();
-      const hRange  = rowSheet.getRange(lastRow, 1, 1, ARCHIVE_HEADERS.length);
-      hRange.setBackground("#1A2C42");
-      hRange.setFontColor("#00C2A8");
-      hRange.setFontWeight("bold");
-      existing.add(weekKey);
-    }
-
-    rowSheet.appendRow([
-      currentDate,
+    rows.push({
+      date:  currentDate,
       chaser,
-      Number(get("cases"))            || 0,   // Cases
-      Number(get("positive"))         || 0,   // Positive
-      Number(get("approvals"))        || 0,   // Approvals (NO faxes col)
-      Number(get("denials"))          || 0,   // Denials
-      Number(get("timeMins"))         || 0,   // TimeMins
-      eff,                                    // Efficiency
-      prod,                                   // Productivity
-      Number(get("totalShift"))       || 0,   // TotalShift
-      Number(get("calls"))            || 0,   // TotalCalls
-      Number(get("totalDurationMins"))|| 0,   // TotalDurationMins
-      Number(get("acwDuration"))      || 0,   // ACWDuration
-      Number(get("productiveTime"))   || 0,   // ProductiveTime
-      // Campaign columns — not in source sheets, default to 0
-      // (the weekly campaign pull fills these going forward)
-      0, 0, 0, 0, 0, 0, 0, 0
-    ]);
-
-    existing.add(key);
-    written++;
+      cases:             Number(get("cases"))             || 0,
+      positive:          Number(get("positive"))          || 0,
+      approvals:         Number(get("approvals"))         || 0,
+      denials:           Number(get("denials"))           || 0,
+      timeMins:          Number(get("timeMins"))           || 0,
+      eff:               parseFloat(effRaw)  || "",
+      prod:              parseFloat(prodRaw) || "",
+      totalShift:        Number(get("totalShift"))         || 0,
+      calls:             Number(get("calls"))               || 0,
+      totalDurationMins: Number(get("totalDurationMins"))  || 0,
+      acwDuration:       Number(get("acwDuration"))         || 0,
+      productiveTime:    Number(get("productiveTime"))      || 0,
+    });
   }
 
-  return { written, skipped };
+  return rows;
 }
 
 // ── Helpers ────────────────────────────────────────────────────
