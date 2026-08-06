@@ -12,6 +12,24 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06)
 
+### `dryRunCampaignBackfill()` — read-only preview before running the real backfills (fifth batch)
+Added a new dry-run test function alongside the existing `dryRunMigration()`,
+for the two functions that actually write data (`backfillCampaignColumns()`,
+`backfillFromCombinedSheet()`): calls the same `parseBackfillResponses()`
+every real backfill uses, then reports the date range found, per-campaign
+approved/denied totals, every distinct chaser name credited (flagging any
+that didn't resolve to a known canonical name via `normalizeChaserName()`
+-- catches a typo'd/unmapped name before it silently creates a brand-new
+"chaser"), and a simulated updated-vs-inserted row count by re-running
+`updateChaserCampaignColumnsForDate()`'s own matching logic against the
+archive read-only (never calling `setValues()`/`appendRow()`). Also reports
+both real functions' `PropertiesService` progress-key state so you know
+what a real run would actually still touch. Verified with a mocked
+Sheets/PropertiesService environment in Node (`vm` sandbox) against a small
+synthetic dataset -- confirmed it correctly distinguishes an already-
+archived date (counted as "would update") from one with no existing row
+("would insert") and correctly flags an unmapped chaser name.
+
 ### Card depth, fonts, header decluttering, bar animation (fourth batch)
 Follow-up visual pass on top of the Overview/status-color work below, based
 on the same "make it look like a modern exec dashboard" research:

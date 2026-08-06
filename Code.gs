@@ -2472,3 +2472,158 @@ function resetCombinedSheetBackfill() {
   PropertiesService.getScriptProperties().deleteProperty("combined_sheet_backfill5");
   Logger.log("Combined sheet backfill progress reset.");
 }
+
+// ============================================================
+// DRY RUN — preview what backfillCampaignColumns() and
+// backfillFromCombinedSheet() would do, with ZERO writes to any sheet and
+// NO progress-key changes. Run this first (View > Logs, or Executions,
+// after running it from the editor) and read the output before running
+// either real (writing) backfill function.
+//
+// Reports:
+//   - every date the backfill source (BACKFILL_RESPONSES_SHEET_ID/
+//     BACKFILL_RESPONSES_TABS) actually resolves an approval/denial for,
+//     and the date range they span
+//   - per-campaign approved/denied totals across that whole range, so you
+//     can sanity-check them against what you expect before writing anything
+//   - every distinct chaser name the source data credits, flagging any
+//     that DIDN'T resolve to a known canonical name via
+//     normalizeChaserName() -- catches a typo'd/unmapped name in the
+//     source sheet before it silently creates a brand-new "chaser" in the
+//     archive
+//   - how many existing archive rows would be UPDATED vs how many brand
+//     new rows would be INSERTED (chasers with real credit but no
+//     tracker-derived row for that date), simulated by re-running the same
+//     matching logic updateChaserCampaignColumnsForDate() uses, but only
+//     ever reading sheets, never writing to them
+//   - how many dates each real backfill function's progress key already
+//     considers "done" (and would therefore skip on its next run), so you
+//     know what a real run would actually touch
+// ============================================================
+function dryRunCampaignBackfill() {
+  Logger.log("=== DRY RUN: campaign backfill preview -- no sheet will be modified ===");
+
+  const parsedBucket = parseBackfillResponses();
+  const dates = Object.keys(parsedBucket).sort((a, b) => new Date(a) - new Date(b));
+
+  if (!dates.length) {
+    Logger.log("No dates resolved at all -- check BACKFILL_RESPONSES_SHEET_ID opens, and that " +
+      "each BACKFILL_RESPONSES_TABS entry's tabName/chaserCol/statusCol/conclusionCol match the " +
+      "real sheet exactly (see the per-tab \"not found\" log lines above, if any).");
+    return;
+  }
+
+  Logger.log("Dates with at least one approval/denial: " + dates.length +
+    " (earliest " + dates[0] + ", latest " + dates[dates.length - 1] + ")");
+
+  // ── Campaign totals + chaser-name sanity check across the whole range ──
+  const grandCampaignTotals = zeroCampaignTotals(true);
+  const allChaserNames      = new Set();
+  const unknownChaserNames  = new Set();
+  const knownCanonicalNames = new Set(Object.values(CHASER_NAME_MAP));
+
+  for (const dateTab of dates) {
+    const bucket = parsedBucket[dateTab];
+    Object.keys(CAMPAIGN_LABELS).forEach(key => {
+      grandCampaignTotals[key].approved += bucket.campaignTotals[key].approved;
+      grandCampaignTotals[key].denied   += bucket.campaignTotals[key].denied;
+    });
+    Object.keys(bucket.chaserTotals).forEach(name => {
+      allChaserNames.add(name);
+      if (!knownCanonicalNames.has(name)) unknownChaserNames.add(name);
+    });
+  }
+
+  Object.entries(CAMPAIGN_LABELS).forEach(([key, label]) => {
+    const c = grandCampaignTotals[key];
+    Logger.log(label + ": " + c.approved + " approved, " + c.denied + " denied (" + (c.approved + c.denied) + " total)");
+  });
+
+  Logger.log("Unique chaser names credited: " + allChaserNames.size + " -> " + [...allChaserNames].sort().join(", "));
+  if (unknownChaserNames.size) {
+    Logger.log("*** UNRECOGNIZED NAMES -- these did not resolve to a canonical name in CHASER_NAME_MAP " +
+      "and will be written to the archive exactly as-is. If any of these are really a typo/variant of an " +
+      "existing chaser, add them to CHASER_NAME_MAP before backfilling for real, or they'll create a " +
+      "separate \"chaser\": " + [...unknownChaserNames].sort().join(", "));
+  } else {
+    Logger.log("All chaser names resolve to a known canonical name -- OK.");
+  }
+
+  // ── Simulate updateChaserCampaignColumnsForDate() for every date, purely
+  // read-only: how many existing rows would be updated vs how many new rows
+  // would be inserted. Mirrors that function's own matching logic exactly,
+  // but only ever calls getDataRange()/getValues(), never setValues()/
+  // appendRow(), and never opens a month tab that doesn't already exist.
+  const archiveSS = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
+  const tabDataCache = {}; // tabName -> values (memoized; several dates share a month tab)
+  let wouldUpdate = 0, wouldInsert = 0;
+  const datesWithNoArchiveTabYet = [];
+
+  for (const fullDate of dates) {
+    const tabName = monthTabName(fullDate);
+    if (!(tabName in tabDataCache)) {
+      const sheet = archiveSS.getSheetByName(tabName); // read-only: does NOT create the tab
+      tabDataCache[tabName] = sheet ? sheet.getDataRange().getValues() : null;
+    }
+    const data = tabDataCache[tabName];
+    if (!data) datesWithNoArchiveTabYet.push(fullDate);
+
+    const matchedChasers = new Set();
+    if (data) {
+      const tabYearMatch = tabName.match(/(\d{4})\s*$/);
+      const tabYear = tabYearMatch ? parseInt(tabYearMatch[1], 10) : new Date().getFullYear();
+      for (let r = 1; r < data.length; r++) {
+        const chaserVal = String(data[r][1]).trim();
+        if (!chaserVal || chaserVal.toUpperCase().startsWith("TOTAL")) continue;
+
+        const raw = data[r][0];
+        let rowFullDate;
+        if (raw instanceof Date && !isNaN(raw)) {
+          rowFullDate = (raw.getMonth() + 1) + "/" + raw.getDate() + "/" + tabYear;
+        } else {
+          const s = String(raw || "").trim();
+          if (!s || s.toUpperCase() === "WEEK") continue;
+          const parts = s.split("/");
+          const m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
+          if (isNaN(m) || isNaN(d)) continue;
+          rowFullDate = m + "/" + d + "/" + tabYear;
+        }
+        if (rowFullDate !== fullDate) continue;
+
+        matchedChasers.add(normalizeChaserName(chaserVal));
+        wouldUpdate++;
+      }
+    }
+
+    const chaserTotals = parsedBucket[fullDate].chaserTotals;
+    Object.entries(chaserTotals).forEach(([name, totals]) => {
+      if (matchedChasers.has(name)) return;
+      const hasCredit = totals.approvals || totals.denials ||
+        Object.values(totals.campaigns).some(c => (c.approved || 0) > 0 || (c.denied || 0) > 0);
+      if (hasCredit) wouldInsert++;
+    });
+  }
+
+  Logger.log("If run for real right now: ~" + wouldUpdate + " existing archive row(s) would be UPDATED, " +
+    "~" + wouldInsert + " new row(s) would be INSERTED (real campaign credit, no tracker-derived row yet).");
+  if (datesWithNoArchiveTabYet.length) {
+    Logger.log("Note: " + datesWithNoArchiveTabYet.length + " date(s) have no month tab in the archive at all " +
+      "yet -- a real run would create it. Every chaser credited on those dates counts toward the INSERTED " +
+      "total above, not UPDATED.");
+  }
+
+  // ── Progress-key context: what each REAL backfill function would still
+  // have left to do on its next run (both skip dates already marked done).
+  const props = PropertiesService.getScriptProperties();
+  const doneColumns  = JSON.parse(props.getProperty("campaign_backfill_progress6") || "[]");
+  const doneCombined = JSON.parse(props.getProperty("combined_sheet_backfill5")     || "[]");
+  Logger.log("backfillCampaignColumns() progress: tracks by ARCHIVE date (only dates that already have at " +
+    "least one archive row) -- " + doneColumns.length + " date(s) already marked done. Run " +
+    "resetCampaignBackfill() first to force a full reprocess.");
+  Logger.log("backfillFromCombinedSheet() progress: tracks by SOURCE date (all " + dates.length + " dates " +
+    "found above) -- " + doneCombined.length + " already marked done, " +
+    (dates.length - doneCombined.length) + " would be processed on the next run. Run " +
+    "resetCombinedSheetBackfill() first to force a full reprocess.");
+
+  Logger.log("=== DRY RUN COMPLETE -- no sheet was modified, no progress key was changed. ===");
+}
