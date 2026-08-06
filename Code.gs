@@ -136,8 +136,12 @@ function zeroCampaignTotals(withTotal) {
 // ============================================================
 // APPROVAL / DENIAL MATCHERS
 // ============================================================
+// Patterns are matched as substrings against a Status cell's text (case-
+// insensitive) -- "RECEIVED DENIAL" is kept for old feedback-text-derived
+// data, "DENIED"/"DENIAL" cover a dedicated Status column just saying
+// "Denied" plainly, which is the actual source for all 4 campaigns now.
 const APPROVAL_PATTERNS = ["APPROVED", "APPROVED+CN"];
-const DENIAL_PATTERNS   = ["RECEIVED DENIAL"];
+const DENIAL_PATTERNS   = ["RECEIVED DENIAL", "DENIED", "DENIAL"];
 
 function isApproval(text) {
   const upper = text.toUpperCase();
@@ -545,6 +549,7 @@ const CHASER_NAME_MAP = {
   "rose simon":       "Rose",
   "frank clarkson":   "Frank",
   "nova grace":       "Nova",
+  "tom":              "Tom Walker",
   // Former chasers — kept as-is for historical data
   "nora atkins":      "Nora",
   "jamie williams":   "Jamie",
@@ -552,8 +557,18 @@ const CHASER_NAME_MAP = {
   "caroline richards":"Caroline",
 };
 
+// Keys above are written without periods -- match against them the same way:
+// strip periods (handles "Alex Woods.", "A.J. Smith", etc.), collapse
+// whitespace, then lowercase. Case ("ALEX WOODS" vs "alex woods") was
+// already handled by the lowercase step; periods and irregular spacing
+// were not, so a name written with a trailing dot or a stray double-space
+// fell through to "return as-is" instead of resolving to the canonical form.
 function normalizeChaserName(fullName) {
-  const key = fullName.trim().toLowerCase();
+  const key = String(fullName || "")
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
   return CHASER_NAME_MAP[key] || fullName.trim(); // fallback: return as-is
 }
 
@@ -1213,36 +1228,35 @@ function getDebugInfoForDate(dateTab) {
       const sheet = ss.getSheetByName(tabConfig.tabName);
       if (!sheet) { responseSources.push({ tab: tabConfig.tabName, error: "Tab not found" }); continue; }
 
-      const data        = sheet.getDataRange().getValues();
-      const headers     = data[0] ? data[0].map(h => String(h).trim().toUpperCase()) : [];
-      const feedbackCol   = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
+      const data          = sheet.getDataRange().getValues();
+      const headers       = data[0] ? data[0].map(h => String(h).trim().toUpperCase()) : [];
       const chaserCol     = headers.indexOf(tabConfig.chaserCol.toUpperCase());
-      const conclusionCol = tabConfig.conclusionCol ? headers.indexOf(tabConfig.conclusionCol.toUpperCase()) : -1;
-      const tabYear       = resolveYearFromTabName(tabConfig.tabName);
+      const statusCol     = headers.indexOf(tabConfig.statusCol.toUpperCase());
+      const conclusionCol = headers.indexOf(tabConfig.conclusionCol.toUpperCase());
 
       const entry = {
         tab: tabConfig.tabName,
         headersRaw: data[0] || [],
-        feedbackColConfigured: tabConfig.feedbackCol,
-        feedbackColFound: feedbackCol >= 0,
         chaserColConfigured: tabConfig.chaserCol,
         chaserColFound: chaserCol >= 0,
+        statusColConfigured: tabConfig.statusCol,
+        statusColFound: statusCol >= 0,
         conclusionColConfigured: tabConfig.conclusionCol,
         conclusionColFound: conclusionCol >= 0,
         totalDataRows: Math.max(0, data.length - 1),
         matchingDateRows: []
       };
 
-      if (feedbackCol >= 0 && chaserCol >= 0) {
+      if (chaserCol >= 0 && statusCol >= 0 && conclusionCol >= 0) {
         for (let r = 1; r < data.length; r++) {
-          const feedback = String(data[r][feedbackCol] || "").trim();
-          const chaser   = String(data[r][chaserCol]   || "").trim();
-          if (!feedback) continue;
-          const resolved = resolveRowDate(feedback, conclusionCol >= 0 ? data[r][conclusionCol] : null, tabYear);
+          const statusText = String(data[r][statusCol] || "").trim();
+          const chaser      = String(data[r][chaserCol] || "").trim();
+          if (!statusText) continue;
+          const resolved = resolveConclusionDate(data[r][conclusionCol]);
           if (resolved !== fullDateTab) continue;
           entry.matchingDateRows.push({
-            row: r + 1, feedback, chaser,
-            isApproval: isApproval(feedback), isDenial: isDenial(feedback)
+            row: r + 1, status: statusText, chaser,
+            isApproval: isApproval(statusText), isDenial: isDenial(statusText)
           });
         }
       }
@@ -1709,39 +1723,68 @@ function applyDayBordersToArchive() {
 //   It processes one month tab at a time — if it times out,
 //   just run it again (already-processed dates are skipped).
 //
-// PROGRESS KEY: "campaign_backfill_progress5"
+// PROGRESS KEY: "campaign_backfill_progress6"
 // ============================================================
 
 // This spreadsheet holds a fuller combined historical record than any live
 // day-to-day sheet ever did.
 const BACKFILL_RESPONSES_SHEET_ID = "1QVnmXYRg-IbMi46Lvi752ZbIfL5NHd666DsH0WI7SmU";
 
-// conclusionCol ("Date of conclusion") is only present on the ORT/CGM tabs
-// -- it's the actual resolution date (with a real year), authoritative
-// over anything parsed out of the feedback text. LY PUMP/LY WRAP don't
-// have it, but they've also never carried anything but current-year data,
-// so falling back to the tab's own year there is safe.
+// All 4 tabs carry their own "Date of conclusion" (the authoritative
+// resolution date, real year included) and "Status" columns now -- approval/
+// denial and the resolution date come exclusively from these two columns
+// plus the chaser column; the fax-feedback text column is never read.
 const BACKFILL_RESPONSES_TABS = [
-  { tabName: "ORT Overall 2026",     campaignKey: "ort",    idCol: "MBI",                feedbackCol: "FAX FEEDBACK",   chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: "IDN", conclusionCol: "Date of conclusion" },
-  { tabName: "CGM Overall 2026",     campaignKey: "cgm",    idCol: "MBI",                feedbackCol: "FAX SENT ON EST", chaserCol: "Chaser",      submissionCol: "Submission Date", idnCol: "IDN", conclusionCol: "Date of conclusion" },
-  { tabName: "LY PUMP Overall 2026", campaignKey: "lymphc", idCol: "Insurance ID Number", feedbackCol: "FAX FEEDBACK",   chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: null,  conclusionCol: null },
-  { tabName: "LY WRAP Overall 2026", campaignKey: "lymphw", idCol: "MBI",                feedbackCol: "Fax Feedback",   chaserCol: "Chaser Name", submissionCol: "Submission Date", idnCol: null,  conclusionCol: null },
+  { tabName: "ORT Overall 2026",     campaignKey: "ort",    chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
+  { tabName: "CGM Overall 2026",     campaignKey: "cgm",    chaserCol: "Chaser",      statusCol: "Status", conclusionCol: "Date of conclusion" },
+  { tabName: "LY PUMP Overall 2026", campaignKey: "lymphc", chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
+  { tabName: "LY WRAP Overall 2026", campaignKey: "lymphw", chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
 ];
 
-// Reads BACKFILL_RESPONSES_TABS for one date and returns per-chaser totals
-// in the same shape the live path produces (readResponsesForDate +
-// readChaserCampaignCountsForDate combined into one pass): overall
-// approvals/denials summed across all 4 campaigns, plus a per-campaign
-// breakdown -- so a chaser+date combo missing from the archive entirely can
-// be inserted with real data, not just have an existing row updated.
-function readChaserTotalsFromBackfillSource(dateTab) {
-  const result = {};
+// Resolves a row's "Date of conclusion" cell into a full "M/D/YYYY" string.
+// This is the ONLY date source for every campaign now -- no feedback-text
+// parsing, no tab-year fallback. A row with no conclusion date is skipped
+// entirely rather than guessed at.
+function resolveConclusionDate(conclusionCellValue) {
+  if (conclusionCellValue === null || conclusionCellValue === undefined || conclusionCellValue === "") return null;
+  if (conclusionCellValue instanceof Date && !isNaN(conclusionCellValue)) {
+    return (conclusionCellValue.getMonth()+1) + "/" + conclusionCellValue.getDate() + "/" + conclusionCellValue.getFullYear();
+  }
+  const parts = String(conclusionCellValue).trim().split("/");
+  if (parts.length < 3) return null;
+  const m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
+  let y = parseInt(parts[2], 10);
+  if (isNaN(m) || isNaN(d) || isNaN(y)) return null;
+  if (y < 100) y += 2000;
+  return m + "/" + d + "/" + y;
+}
+
+// Reads BACKFILL_RESPONSES_TABS ONCE and buckets every row by its resolved
+// "M/D/YYYY" date -- approval/denial comes from the Status column, the date
+// from Date of conclusion, and credit from the Chaser column, exclusively;
+// the fax-feedback text column is never read. Returns
+// { "M/D/YYYY": { chaserTotals: {name: {approvals,denials,campaigns}},
+//                  campaignTotals: {ort:{approved,denied}, cgm:..., ...} } }
+//
+// This replaces what used to be 3 separate functions (readChaserTotals-
+// FromBackfillSource, collectDatesFromCombinedSheet, readCombinedCampaign-
+// TotalsForDate) that each independently re-opened the spreadsheet and
+// re-scanned all 4 tabs -- called once per date, that meant the same ~4
+// tabs got fully re-read dozens of times per weekly pull or backfill run.
+// Every caller now calls this ONCE and looks up dates from the result.
+function parseBackfillResponses() {
+  const byDate = {};
+  function bucketFor(dateTab) {
+    if (!byDate[dateTab]) byDate[dateTab] = { chaserTotals: {}, campaignTotals: zeroCampaignTotals() };
+    return byDate[dateTab];
+  }
+
   let ss;
   try {
     ss = SpreadsheetApp.openById(BACKFILL_RESPONSES_SHEET_ID);
   } catch (err) {
     Logger.log("Could not open backfill responses spreadsheet: " + err.message);
-    return result;
+    return byDate;
   }
 
   for (const tabConfig of BACKFILL_RESPONSES_TABS) {
@@ -1752,46 +1795,51 @@ function readChaserTotalsFromBackfillSource(dateTab) {
     if (data.length < 2) continue;
 
     const headers       = data[0].map(h => String(h).trim().toUpperCase());
-    const feedbackCol   = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
     const chaserCol     = headers.indexOf(tabConfig.chaserCol.toUpperCase());
-    const conclusionCol = tabConfig.conclusionCol ? headers.indexOf(tabConfig.conclusionCol.toUpperCase()) : -1;
-    if (feedbackCol < 0) { Logger.log("Feedback column not found: " + tabConfig.feedbackCol + " in " + tabConfig.tabName); continue; }
-    if (chaserCol   < 0) { Logger.log("Chaser column not found: "   + tabConfig.chaserCol   + " in " + tabConfig.tabName); continue; }
+    const statusCol     = headers.indexOf(tabConfig.statusCol.toUpperCase());
+    const conclusionCol = headers.indexOf(tabConfig.conclusionCol.toUpperCase());
+    if (chaserCol     < 0) { Logger.log("Chaser column not found: "     + tabConfig.chaserCol     + " in " + tabConfig.tabName); continue; }
+    if (statusCol     < 0) { Logger.log("Status column not found: "     + tabConfig.statusCol     + " in " + tabConfig.tabName); continue; }
+    if (conclusionCol < 0) { Logger.log("Conclusion column not found: " + tabConfig.conclusionCol + " in " + tabConfig.tabName); continue; }
 
     const campaignKey = tabConfig.campaignKey;
-    const tabYear      = resolveYearFromTabName(tabConfig.tabName);
 
     for (let r = 1; r < data.length; r++) {
-      const feedback   = String(data[r][feedbackCol] || "").trim();
-      const chaserText = String(data[r][chaserCol]   || "").trim();
-      if (!feedback || !chaserText) continue;
-      // ORT/CGM's "Date of conclusion" is authoritative when present (see
-      // resolveRowDate); LY PUMP/LY WRAP fall back to the feedback text
-      // with this tab's own year as default -- same reasoning as the
-      // combined-sheet backfill functions above.
-      const fullDate = resolveRowDate(feedback, conclusionCol >= 0 ? data[r][conclusionCol] : null, tabYear);
-      if (fullDate !== dateTab) continue;
+      const statusText = String(data[r][statusCol] || "").trim();
+      const chaserText = String(data[r][chaserCol] || "").trim();
+      if (!statusText || !chaserText) continue;
 
-      const approval = isApproval(feedback);
-      const denial   = isDenial(feedback);
+      const approval = isApproval(statusText);
+      const denial   = isDenial(statusText);
       if (!approval && !denial) continue;
 
+      const fullDate = resolveConclusionDate(data[r][conclusionCol]);
+      if (!fullDate) continue;
+
+      const entry = bucketFor(fullDate);
+
+      // Campaign-level totals: one count per lead row, chasers irrelevant
+      // for this half (matches the old readCombinedCampaignTotalsForDate).
+      if (approval) entry.campaignTotals[campaignKey].approved++;
+      if (denial)   entry.campaignTotals[campaignKey].denied++;
+
+      // Per-chaser totals: each chaser listed on this lead gets +1.
       const chasers = chaserText.split("/").map(x => normalizeChaserName(x.trim())).filter(Boolean);
       for (const chaser of chasers) {
-        if (!result[chaser]) {
-          result[chaser] = { approvals: 0, denials: 0, campaigns: zeroCampaignTotals() };
+        if (!entry.chaserTotals[chaser]) {
+          entry.chaserTotals[chaser] = { approvals: 0, denials: 0, campaigns: zeroCampaignTotals() };
         }
-        if (approval) result[chaser].approvals++;
-        if (denial)   result[chaser].denials++;
-        if (result[chaser].campaigns[campaignKey]) {
-          if (approval) result[chaser].campaigns[campaignKey].approved++;
-          if (denial)   result[chaser].campaigns[campaignKey].denied++;
+        if (approval) entry.chaserTotals[chaser].approvals++;
+        if (denial)   entry.chaserTotals[chaser].denials++;
+        if (entry.chaserTotals[chaser].campaigns[campaignKey]) {
+          if (approval) entry.chaserTotals[chaser].campaigns[campaignKey].approved++;
+          if (denial)   entry.chaserTotals[chaser].campaigns[campaignKey].denied++;
         }
       }
     }
   }
 
-  return result;
+  return byDate;
 }
 
 // Updates one date's archive rows with per-chaser campaign data (Approvals,
@@ -1803,18 +1851,15 @@ function readChaserTotalsFromBackfillSource(dateTab) {
 // read back unchanged from the row itself. Returns { updated, inserted }.
 // Shared by backfillCampaignColumns() (full history, progress-tracked) and
 // pullWeeklyCampaignData() (trailing window, no progress tracking).
-function updateChaserCampaignColumnsForDate(fullDate) {
+// parsedBucket: the result of ONE parseBackfillResponses() call, made by the
+// caller and reused across every date it processes -- keeps this function
+// from re-scanning the whole backfill spreadsheet on every single date.
+function updateChaserCampaignColumnsForDate(fullDate, parsedBucket) {
   const ss      = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
   const tabName = monthTabName(fullDate);
   const sheet   = getOrCreateMonthTab(ss, tabName);
 
-  let chaserTotals;
-  try {
-    chaserTotals = readChaserTotalsFromBackfillSource(fullDate);
-  } catch (err) {
-    Logger.log("Error reading backfill source for " + fullDate + ": " + err.message);
-    return { updated: 0, inserted: 0 };
-  }
+  const chaserTotals = (parsedBucket[fullDate] || {}).chaserTotals || {};
 
   const data = sheet.getDataRange().getValues();
 
@@ -1908,12 +1953,16 @@ function updateChaserCampaignColumnsForDate(fullDate) {
 }
 
 function backfillCampaignColumns() {
-  const PROGRESS_KEY  = "campaign_backfill_progress5";
+  const PROGRESS_KEY  = "campaign_backfill_progress6";
   const props         = PropertiesService.getScriptProperties();
   const doneDates     = JSON.parse(props.getProperty(PROGRESS_KEY) || "[]");
 
   const ss           = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
   const monthPattern  = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i;
+
+  // Parse the backfill spreadsheet ONCE and reuse it for every date below,
+  // instead of each date re-scanning the same ~4 tabs from scratch.
+  const parsedBucket = parseBackfillResponses();
 
   let totalUpdated  = 0;
   let totalInserted = 0;
@@ -1974,7 +2023,7 @@ function backfillCampaignColumns() {
 
     for (const fullDate of datesToProcess) {
       Logger.log("  Fetching per-chaser campaign counts for: " + fullDate);
-      const { updated, inserted } = updateChaserCampaignColumnsForDate(fullDate);
+      const { updated, inserted } = updateChaserCampaignColumnsForDate(fullDate, parsedBucket);
       Logger.log("  Updated " + updated + " rows, inserted " + inserted + " rows for " + fullDate);
       totalUpdated  += updated;
       totalInserted += inserted;
@@ -1994,14 +2043,14 @@ function backfillCampaignColumns() {
 
 // Reset campaign backfill progress
 function resetCampaignBackfill() {
-  PropertiesService.getScriptProperties().deleteProperty("campaign_backfill_progress5");
+  PropertiesService.getScriptProperties().deleteProperty("campaign_backfill_progress6");
   Logger.log("Campaign backfill progress reset.");
 }
 
 // Check progress
 function checkCampaignBackfillProgress() {
   const done = JSON.parse(
-    PropertiesService.getScriptProperties().getProperty("campaign_backfill_progress5") || "[]"
+    PropertiesService.getScriptProperties().getProperty("campaign_backfill_progress6") || "[]"
   );
   Logger.log("Dates with campaign data backfilled: " + done.length);
 }
@@ -2024,13 +2073,17 @@ function pullWeeklyCampaignData() {
   let totalUpdated = 0, totalInserted = 0, totalCampaignRows = 0;
   const datesProcessed = [];
 
+  // Parse the backfill spreadsheet ONCE and reuse it for all 14 dates below,
+  // instead of each date re-scanning the same ~4 tabs from scratch.
+  const parsedBucket = parseBackfillResponses();
+
   for (let i = 0; i < WEEKLY_PULL_DAYS; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const fullDate = (d.getMonth()+1) + "/" + d.getDate() + "/" + d.getFullYear();
 
-    const { updated, inserted } = updateChaserCampaignColumnsForDate(fullDate);
-    totalCampaignRows += writeCombinedCampaignResponses(fullDate);
+    const { updated, inserted } = updateChaserCampaignColumnsForDate(fullDate, parsedBucket);
+    totalCampaignRows += writeCombinedCampaignResponses(fullDate, parsedBucket);
     totalUpdated  += updated;
     totalInserted += inserted;
     datesProcessed.push(fullDate);
@@ -2152,133 +2205,12 @@ function getArchiveCampaignResponses() {
 // Resumable — saves progress after each date, safe to re-run if it times out.
 // ============================================================
 
-// Scan every tab in the combined sheet and collect every unique "M/D" date
-// found embedded in the feedback column text.
-// Resolves a year from a backfill tab's own name (e.g. "ORT Overall 2026"
-// -> 2026) -- same pattern as the main archive's month tabs. Used as the
-// last-resort default year, for tabs (LY PUMP/LY WRAP) that have no
-// conclusionCol to fall back on.
-function resolveYearFromTabName(tabName) {
-  const m = String(tabName || "").match(/(\d{4})\s*$/);
-  return m ? parseInt(m[1], 10) : new Date().getFullYear();
-}
-
-// Resolves a row's true full "M/D/YYYY" date. The ORT and CGM tabs carry a
-// "Date of conclusion" column -- the actual resolution date, including a
-// real year -- which is authoritative and used directly whenever present,
-// bypassing feedback-text parsing (and its year ambiguity) entirely. LY
-// PUMP/LY WRAP tabs have no such column, so they fall back to parsing the
-// feedback text's own first date token, defaulting to the tab's own year
-// when that token doesn't carry one -- safe there since neither of those
-// campaigns has ever carried anything but current-year data.
-function resolveRowDate(feedback, conclusionCellValue, tabYear) {
-  if (conclusionCellValue !== null && conclusionCellValue !== undefined && conclusionCellValue !== "") {
-    if (conclusionCellValue instanceof Date && !isNaN(conclusionCellValue)) {
-      return (conclusionCellValue.getMonth()+1) + "/" + conclusionCellValue.getDate() + "/" + conclusionCellValue.getFullYear();
-    }
-    const parts = String(conclusionCellValue).trim().split("/");
-    if (parts.length >= 3) {
-      const m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
-      let y = parseInt(parts[2], 10);
-      if (!isNaN(m) && !isNaN(d) && !isNaN(y)) {
-        if (y < 100) y += 2000;
-        return m + "/" + d + "/" + y;
-      }
-    }
-  }
-
-  const match = feedback.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
-  if (!match) return null;
-  const month = parseInt(match[1], 10), day = parseInt(match[2], 10);
-  let year = match[3] ? parseInt(match[3], 10) : null;
-  if (year !== null && year < 100) year += 2000;
-  if (year === null) year = tabYear;
-  return month + "/" + day + "/" + year;
-}
-
-// Scan every tab in the combined sheet and collect every unique "M/D/YYYY"
-// date, resolved per row via resolveRowDate() above (conclusionCol when
-// present, else the feedback text with the tab's year as default).
-function collectDatesFromCombinedSheet() {
-  const dates = new Set();
-  let ss;
-  try { ss = SpreadsheetApp.openById(BACKFILL_RESPONSES_SHEET_ID); }
-  catch(e) { Logger.log("Cannot open combined sheet: " + e.message); return []; }
-
-  for (const tabConfig of BACKFILL_RESPONSES_TABS) {
-    const sheet = ss.getSheetByName(tabConfig.tabName);
-    if (!sheet) { Logger.log("Tab not found: " + tabConfig.tabName); continue; }
-
-    const data = sheet.getDataRange().getValues();
-    if (data.length < 2) continue;
-
-    const headers       = data[0].map(h => String(h).trim().toUpperCase());
-    const feedbackCol   = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
-    const conclusionCol = tabConfig.conclusionCol ? headers.indexOf(tabConfig.conclusionCol.toUpperCase()) : -1;
-    if (feedbackCol < 0) { Logger.log("Feedback col not found in " + tabConfig.tabName + ": " + tabConfig.feedbackCol); continue; }
-
-    const tabYear = resolveYearFromTabName(tabConfig.tabName);
-
-    for (let r = 1; r < data.length; r++) {
-      const feedback = String(data[r][feedbackCol] || "").trim();
-      if (!feedback) continue;
-      const fullDate = resolveRowDate(feedback, conclusionCol >= 0 ? data[r][conclusionCol] : null, tabYear);
-      if (fullDate) dates.add(fullDate);
-    }
-  }
-
-  return [...dates];
-}
-
-// Read campaign totals (one count per lead row, chasers irrelevant) for ONE
-// full "M/D/YYYY" date from the combined historical sheet. Matches each
-// row's own resolveRowDate() result exactly against dateTab.
-function readCombinedCampaignTotalsForDate(dateTab) {
-  const camps = zeroCampaignTotals();
-
-  let ss;
-  try { ss = SpreadsheetApp.openById(BACKFILL_RESPONSES_SHEET_ID); }
-  catch(e) { return camps; }
-
-  for (const tabConfig of BACKFILL_RESPONSES_TABS) {
-    const sheet = ss.getSheetByName(tabConfig.tabName);
-    if (!sheet) continue;
-
-    const data = sheet.getDataRange().getValues();
-    if (data.length < 2) continue;
-
-    const headers       = data[0].map(h => String(h).trim().toUpperCase());
-    const feedbackCol   = headers.indexOf(tabConfig.feedbackCol.toUpperCase());
-    const chaserCol     = headers.indexOf(tabConfig.chaserCol.toUpperCase());
-    const conclusionCol = tabConfig.conclusionCol ? headers.indexOf(tabConfig.conclusionCol.toUpperCase()) : -1;
-    if (feedbackCol < 0 || chaserCol < 0) continue;
-
-    const key     = tabConfig.campaignKey;
-    const tabYear = resolveYearFromTabName(tabConfig.tabName);
-
-    for (let r = 1; r < data.length; r++) {
-      const feedback = String(data[r][feedbackCol] || "").trim();
-      if (!feedback) continue;
-      const fullDate = resolveRowDate(feedback, conclusionCol >= 0 ? data[r][conclusionCol] : null, tabYear);
-      if (fullDate !== dateTab) continue;
-
-      const approval = isApproval(feedback);
-      const denial   = isDenial(feedback);
-      if (!approval && !denial) continue;
-
-      if (approval) camps[key].approved++;
-      if (denial)   camps[key].denied++;
-    }
-  }
-
-  return camps;
-}
-
 // Write/overwrite Campaign Responses rows for ONE full "M/D/YYYY" date using
-// the combined sheet's data (BACKFILL_RESPONSES_TABS). Called by both
+// the combined sheet's data (BACKFILL_RESPONSES_TABS, already parsed once by
+// the caller -- see parseBackfillResponses()). Called by both
 // backfillFromCombinedSheet() (one-time historical) and
 // pullWeeklyCampaignData() (ongoing weekly pull).
-function writeCombinedCampaignResponses(dateTab) {
+function writeCombinedCampaignResponses(dateTab, parsedBucket) {
   const sheet = getOrCreateCampaignResponsesTab();
   const data  = sheet.getDataRange().getValues();
 
@@ -2305,7 +2237,7 @@ function writeCombinedCampaignResponses(dateTab) {
   }
   toDelete.reverse().forEach(rowNum => sheet.deleteRow(rowNum));
 
-  const camps = readCombinedCampaignTotalsForDate(dateTab);
+  const camps = (parsedBucket[dateTab] || {}).campaignTotals || zeroCampaignTotals();
 
   let written = 0;
   for (const [key, label] of Object.entries(CAMPAIGN_LABELS)) {
@@ -2336,11 +2268,14 @@ function writeCombinedCampaignResponses(dateTab) {
 // resetCombinedSheetBackfill() first -- otherwise dates already marked
 // done will be skipped even though the data underneath them is gone.
 function backfillFromCombinedSheet() {
-  const PROGRESS_KEY = "combined_sheet_backfill4";
+  const PROGRESS_KEY = "combined_sheet_backfill5";
   const props        = PropertiesService.getScriptProperties();
   const doneDates    = JSON.parse(props.getProperty(PROGRESS_KEY) || "[]");
 
-  const allDates = collectDatesFromCombinedSheet().filter(d => !doneDates.includes(d));
+  // One parse covers every date this backfill will ever need -- both the
+  // date list itself (the bucket's keys) and each date's totals.
+  const parsedBucket = parseBackfillResponses();
+  const allDates = Object.keys(parsedBucket).filter(d => !doneDates.includes(d));
   Logger.log("Dates found in combined sheet: " + (allDates.length + doneDates.length) + " | Remaining: " + allDates.length);
 
   let totalCampaignRows = 0;
@@ -2349,8 +2284,8 @@ function backfillFromCombinedSheet() {
 
   for (const dateTab of allDates) {
     try {
-      totalCampaignRows += writeCombinedCampaignResponses(dateTab);
-      const { updated, inserted } = updateChaserCampaignColumnsForDate(dateTab);
+      totalCampaignRows += writeCombinedCampaignResponses(dateTab, parsedBucket);
+      const { updated, inserted } = updateChaserCampaignColumnsForDate(dateTab, parsedBucket);
       totalChaserUpdated  += updated;
       totalChaserInserted += inserted;
     } catch(e) {
@@ -2366,6 +2301,6 @@ function backfillFromCombinedSheet() {
 }
 
 function resetCombinedSheetBackfill() {
-  PropertiesService.getScriptProperties().deleteProperty("combined_sheet_backfill4");
+  PropertiesService.getScriptProperties().deleteProperty("combined_sheet_backfill5");
   Logger.log("Combined sheet backfill progress reset.");
 }
