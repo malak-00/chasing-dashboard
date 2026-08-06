@@ -137,11 +137,12 @@ function zeroCampaignTotals(withTotal) {
 // APPROVAL / DENIAL MATCHERS
 // ============================================================
 // Patterns are matched as substrings against a Status cell's text (case-
-// insensitive) -- "RECEIVED DENIAL" is kept for old feedback-text-derived
-// data, "DENIED"/"DENIAL" cover a dedicated Status column just saying
-// "Denied" plainly, which is the actual source for all 4 campaigns now.
-const APPROVAL_PATTERNS = ["APPROVED", "APPROVED+CN"];
-const DENIAL_PATTERNS   = ["RECEIVED DENIAL", "DENIED", "DENIAL"];
+// insensitive). Matching is substring-based specifically so "Denied" and
+// "Denial" both hit with one entry each -- no need to enumerate every
+// phrasing a Status column might use (e.g. "RECEIVED DENIAL" already
+// matches "DENIAL" as a substring, so it doesn't need its own entry).
+const APPROVAL_PATTERNS = ["APPROVED"];
+const DENIAL_PATTERNS   = ["DENIED", "DENIAL"];
 
 function isApproval(text) {
   const upper = text.toUpperCase();
@@ -406,11 +407,9 @@ function archiveDayData(dateTab) {
     headerRange.setFontSize(10);
   }
 
-  // If this is the first chaser row for a new date (not Monday but new day),
-  // write a subtle date separator row
-  if (!alreadyHasRows && !isMonday) {
-    // No separator needed — days flow naturally, week headers mark the groups
-  }
+  // A new day that isn't a Monday needs no separator of its own -- days
+  // flow naturally within a week, and the week-header row above already
+  // marks each new week's start.
 
   let written = 0;
   let updated = 0;
@@ -1073,13 +1072,15 @@ function buildResponse(payload) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+// Manual "clear everything" utility for the Apps Script editor -- forces
+// every cached endpoint to refetch on its next request instead of waiting
+// out its TTL. Every write path already invalidates its own specific key
+// (saveChaser -> chasers_config, saveShiftSetting -> settings_data, etc.);
+// this is only for when you want a full reset from the editor, e.g. after
+// editing a tab by hand outside the app.
 function clearCache() {
-  CacheService.getScriptCache().removeAll([
-    "day_" + getTodayTab(),
-    "week_" + getTodayTab(),
-    "archive_all"
-  ]);
-  Logger.log("Cache cleared");
+  ["archive_all", "settings_data", "campaign_responses", "chasers_config"].forEach(invalidateCache);
+  Logger.log("Cache cleared: archive_all, settings_data, campaign_responses, chasers_config");
 }
 
 // getArchiveData defined above (monthly tab version)
@@ -1385,9 +1386,14 @@ function getDebugInfoForDate(dateTab) {
 // ============================================================
 // UTILITY
 // ============================================================
+// Reads the CURRENT active roster (Chasers tab), not the frozen CHASER_SHEETS
+// seed -- a chaser added purely through the dashboard's Settings tab won't
+// have an entry in CHASER_SHEETS at all, and one repointed to a new tracker
+// Sheet ID from there would show the old sheet's tabs if this still read
+// CHASER_SHEETS directly.
 function getAvailableTabs() {
   const tabs = {};
-  for (const [name, sheetId] of Object.entries(CHASER_SHEETS)) {
+  for (const [name, sheetId] of Object.entries(getActiveChaserSheetMap())) {
     try {
       const ss   = SpreadsheetApp.openById(sheetId);
       tabs[name] = ss.getSheets().map(s => s.getName());
@@ -1414,7 +1420,7 @@ function testArchive() {
 function testAllChasers() {
   const dateTab = "6/25";
   let grandCases = 0, grandPositive = 0, grandTime = 0, grandFaxes = 0;
-  Object.entries(CHASER_SHEETS).forEach(([name, sheetId]) => {
+  Object.entries(getActiveChaserSheetMap()).forEach(([name, sheetId]) => {
     const data = readChaserTab(sheetId, dateTab, name);
     Logger.log(name + " | Cases=" + data.totalCases + " | Positive=" + data.totalPositive +
                " | Time=" + data.totalTimeMins + " | Faxes=" + data.totalFaxes);
@@ -1427,8 +1433,14 @@ function testAllChasers() {
              " | Time=" + grandTime + " | Faxes=" + grandFaxes);
 }
 
-function debugAlex() {
-  const ss = SpreadsheetApp.openById(CHASER_SHEETS.Alex);
+// Lists every tab in one chaser's tracker spreadsheet, looked up by name
+// from the current active roster (e.g. debugChaser("Alex")) -- handy when
+// findChaserTrackerSheet() can't find today's tab and you need to see what
+// the tracker sheet actually named it.
+function debugChaser(name) {
+  const sheetId = getActiveChaserSheetMap()[name];
+  if (!sheetId) { Logger.log("No active chaser named \"" + name + "\" in the Chasers tab."); return; }
+  const ss = SpreadsheetApp.openById(sheetId);
   ss.getSheets().forEach(sheet => Logger.log("Tab: " + sheet.getName()));
 }
 
@@ -1468,26 +1480,23 @@ const EXISTING_SHEETS = [
   "1C-8cmILCoPvXqTgcJwe-mYFv1cNI_p5CU_FrdArzdBw"   // Team 2
 ];
 
-// Column header → archive field mapping (case-insensitive matching)
+// Column header → archive field mapping (case-insensitive matching).
+// Only fields collectRowsFromWeekTab() actually reads via get() belong
+// here -- an entry for a header collectRowsFromWeekTab() never looks up
+// (e.g. a "Faxes Sent" variant, back when the archive had a Faxes column)
+// is silently never used, so it was pruned rather than kept as clutter.
 const COL_MAP = {
   "chaser name":           "chaser",
   "total shift":           "totalShift",
   "total calls":           "calls",
-  "total duration":        "totalDuration",
   "total duration (min)":  "totalDurationMins",
   "acw duration":          "acwDuration",
-  "faxes\nsent\n(duration)": "faxes",
-  "faxes sent (duration)": "faxes",
-  "faxes sent":            "faxes",
   "productive time":       "productiveTime",
   "total chased cases":    "cases",
   "total positive":        "positive",
   "total time taken":      "timeMins",
   "approvals":             "approvals",
   "denials":               "denials",
-  "total responses":       "totalResponses",
-  "productivity target":   "productivityTarget",
-  "efficiency target":     "efficiencyTarget",
   "productivity":          "productivity",
   "efficiency":            "efficiency",
 };
@@ -1746,33 +1755,6 @@ function dryRunMigration() {
     }
   }
 }
-// renameArchiveFaxColumn removed — faxes column deleted from archive
-function renameArchiveFaxColumn_DEPRECATED() {
-  const ss           = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
-  const MONTH_NAMES  = ["jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec"];
-  let   tabsUpdated  = 0;
-
-  for (const sheet of ss.getSheets()) {
-    const tabName = sheet.getName().trim().toLowerCase().replace(/\s+/g," ");
-    const isMonth = MONTH_NAMES.some(m => tabName.startsWith(m + " ") && /\d{4}$/.test(tabName));
-    if (!isMonth) continue;
-
-    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-    const faxIdx  = headers.findIndex(h => String(h).trim() === "Faxes");
-
-    if (faxIdx >= 0) {
-      sheet.getRange(1, faxIdx + 1).setValue("FaxDurationMins");
-      Logger.log("Updated: " + sheet.getName() + " col " + (faxIdx+1));
-      tabsUpdated++;
-    } else {
-      Logger.log("Already updated or not found: " + sheet.getName());
-    }
-  }
-
-  Logger.log("Done. Tabs updated: " + tabsUpdated);
-}
-
-
 // ============================================================
 // ONE-TIME: Add bottom borders to last chaser row of each day
 // Run once to apply borders to all existing archive data
