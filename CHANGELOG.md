@@ -10,7 +10,49 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ---
 
-## PR #26 — Rewrite campaign-response pipeline, presentable archive sheet, fix migration write-order (2026-08-06)
+## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06)
+
+### Executive UI/UX overhaul (third batch of commits on this PR)
+Researched 2026 KPI/executive dashboard best practices (decision-first
+layout, color reserved for status only, no-scroll primary view,
+progressive disclosure) and applied them:
+- **New Overview tab**, now the default landing page — status-colored KPI
+  cards against configured Productivity/Efficiency targets (not bare
+  numbers), a ranked team-comparison bar strip for today's Productivity,
+  a campaign approval-rate snapshot for the week, and drill-down links
+  into Leaderboard/Compare/History. Reuses `buildRowFromTotals()` (the
+  Leaderboard's own row-building logic) so the numbers never disagree
+  between the two. Verified via Playwright with injected mock data —
+  status colors, sort order, and the "no Utlatel data" stub all render
+  correctly, and it fits one 1440x900 screen with no scroll.
+- **Consolidated sync controls** — the header's Sync button and the
+  Controls tab's separate "Pull Weekly Responses" button are now one
+  grouped header control: `[date picker] [Sync] | [week picker] [Pull
+  Weekly]`. The week picker is functional: `pullWeeklyCampaignData()`
+  takes an optional anchor date, and `mode=weeklycampaignsync` accepts an
+  ISO week param (`"YYYY-Www"`, the native `<input type="week">` value
+  format) that anchors the same self-correcting 14-day trailing window to
+  that week's Sunday instead of today. Verified the ISO week math
+  round-trips correctly against real calendar dates.
+- **Status-colored Productivity/Efficiency everywhere** — new
+  `statusColorForMetric()`/`statusPill()` helpers applied to Leaderboard
+  and History (previously bare numbers or an always-teal pill regardless
+  of value). Consolidated the Chaser detail tab's pre-existing
+  `getGoalStatus()` (same met/close/miss thresholds, independently
+  duplicated) to delegate to the shared helper instead.
+- **Two real bugs found and fixed during verification**: the Compare
+  tab's per-chaser change table showed Denials increasing as a green "up"
+  change (the sibling panel right next to it already had an
+  invert-for-denials rule, this table just never got it); and
+  `getCachedOrFetch()` silently stopped caching once a payload crossed
+  ~90KB (CacheService's per-key limit) with no fallback, meaning every
+  dashboard load would eventually re-scan every month tab from scratch as
+  the archive grows, with no visible sign caching had stopped working —
+  now chunks large payloads across multiple keys, with a new
+  `invalidateCache()` so the 6 existing cache-bust call sites clear
+  chunked entries too instead of leaving stale ones being served.
+
+### Presentable archive sheet + migration fixes (second batch)
 
 ### Campaign-response pipeline (Status+conclusion only, single-pass parse)
 Three changes to the campaign/backfill-response reading layer:
