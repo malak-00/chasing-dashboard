@@ -12,6 +12,24 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06)
 
+### Dead-code cleanup from the Code.gs review (sixth batch)
+Removed everything flagged as genuinely redundant/unreachable in a full
+read-through of Code.gs — see the findings list from that review (in
+conversation, not repeated here since none of it changed behavior):
+`clearCache()` fixed to actually clear the 4 real cache keys instead of 2
+that nothing ever wrote to; deleted `renameArchiveFaxColumn_DEPRECATED()`
+(dead, referenced a column that no longer exists); simplified
+`APPROVAL_PATTERNS`/`DENIAL_PATTERNS` (2 entries were fully subsumed by
+another entry via substring matching, e.g. `"DENIAL"` already catches
+`"RECEIVED DENIAL"`); pruned 7 unused `COL_MAP` entries left over from a
+since-removed Faxes archive column; removed a no-op empty `if` block in
+`archiveDayData()`; and pointed `getAvailableTabs()`/`testAllChasers()`/
+the renamed `debugChaser(name)` (was `debugAlex()`) at the current active
+roster instead of the frozen `CHASER_SHEETS` seed, so they reflect chasers
+added or repointed purely through the dashboard's Settings tab. Verified
+with `node --check` and by re-running the mocked-Sheets test from the
+`dryRunCampaignBackfill()` commit — identical output before/after.
+
 ### `dryRunCampaignBackfill()` — read-only preview before running the real backfills (fifth batch)
 Added a new dry-run test function alongside the existing `dryRunMigration()`,
 for the two functions that actually write data (`backfillCampaignColumns()`,
