@@ -12,6 +12,54 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06)
 
+### Card depth, fonts, header decluttering, bar animation (fourth batch)
+Follow-up visual pass on top of the Overview/status-color work below, based
+on the same "make it look like a modern exec dashboard" research:
+- **Fonts**: only static weights 300/400/500/600/700 were loaded from
+  Google Fonts, so the 7 existing `font-weight:650` rules (a non-loaded
+  weight) would snap unpredictably to whichever static weight the browser
+  picked as "nearest" — inconsistent across browsers. Switched to loading
+  Inter as a variable font (`wght@300..800` range syntax) so every weight
+  in between renders as requested.
+- **Real shadows/depth**: `--shadow-sm`/`--shadow-md` were tuned for a
+  light background and read as almost invisible against the dark theme's
+  near-black surfaces. Strengthened both, added a new `--shadow-lg` for
+  hover-lifted cards, and a `--card-elevated` surface-color step (a shade
+  lighter than `--card`) so hover/elevation reads as an actual lift, not
+  just a barely-there outline change. Same treatment mirrored for light
+  mode's `body.light` block.
+- **Card interactivity**: `.metric`, `.campaign-card`, `.ov-camp-card`, and
+  `.ov-rank-row` now lift (`translateY(-2px)` + `--shadow-md`/`--card`) on
+  hover. Deliberately scoped to card-level elements only — large panel
+  containers and table rows keep their existing (non-lift) treatment,
+  where a hover-lift would look wrong.
+- **Header decluttering**: the header was accumulating buttons (Load,
+  Sync, Pull Weekly, CSV, PDF, theme toggle) competing for space. Moved
+  the theme toggle and CSV/PDF export — all occasional-use actions — into
+  a single `⋮` overflow menu (closes on outside click or Escape,
+  `aria-expanded`/`role="menu"` for accessibility), leaving the persistent
+  toolbar down to what's used every day: date picker, Load, and the
+  Sync/Pull-Weekly group. Also removed a now-stale `.theme-btn` reference
+  in the `@media print` block (that button no longer exists in the
+  header) and pointed it at `.header-menu-panel` instead, so PDF export
+  still correctly hides the menu button/panel from print output.
+- **Overview bar animation**: the ranking bars' width was baked directly
+  into the initial `innerHTML`, so the existing `transition:width .4s
+  ease` CSS never actually animated on first render (only on later
+  re-renders after data changed). Bars now render at `width:0%` with the
+  real value in a `data-target-width` attribute, then a new
+  `animateRankBars()` sets the real width one double-`requestAnimationFrame`
+  later so the transition has something to animate from. Verified via
+  Playwright that the bars are synchronously at 0% immediately after
+  `renderOverview()` and settle at their correct target widths shortly
+  after.
+- Verified via Playwright: header menu opens/closes/closes-on-outside-
+  click/closes-on-Escape, theme toggle updates the menu's icon+label and
+  auto-closes the menu, hover-elevation visible on a metric card in both
+  themes, bars animate from 0% as described above. `node --check` clean
+  on both `Code.gs` and the extracted `dashboard.html` script contents;
+  grepped for stray `.theme-btn`/`themeBtn` references (none left).
+
 ### Executive UI/UX overhaul (third batch of commits on this PR)
 Researched 2026 KPI/executive dashboard best practices (decision-first
 layout, color reserved for status only, no-scroll primary view,
