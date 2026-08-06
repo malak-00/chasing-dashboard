@@ -104,7 +104,7 @@ function saveChaser(params) {
     sheet.appendRow([name, sheetId, active]);
   }
 
-  CacheService.getScriptCache().remove("chasers_config");
+  invalidateCache("chasers_config");
   return { success: true, name, sheetId, active };
 }
 
@@ -792,7 +792,7 @@ function saveShiftSetting(chaser, shiftType, effectiveDate, notes) {
   sheet.appendRow([chaser, shiftType, effectiveDate, notes || ""]);
   Logger.log("Saved shift: " + chaser + " = " + shiftType + " from " + effectiveDate);
   // Clear archive cache so dashboard reloads fresh settings
-  CacheService.getScriptCache().remove("settings_data");
+  invalidateCache("settings_data");
 }
 
 // ── SAVE UTLATEL ──────────────────────────────────────────────
@@ -841,7 +841,7 @@ function saveUtlatelData(rows) {
   }
 
   Logger.log("Utlatel saved: " + written + " new, " + updated + " updated");
-  CacheService.getScriptCache().remove("settings_data");
+  invalidateCache("settings_data");
   return { written, updated };
 }
 
@@ -916,7 +916,7 @@ function doGet(e) {
       archiveDayData(syncDate);
 
       // Clear archive cache so next dashboard load gets fresh data
-      CacheService.getScriptCache().remove("archive_all");
+      invalidateCache("archive_all");
 
       payload = { success: true, synced: syncDate, message: "Archived " + syncDate + " from trackers" };
 
@@ -924,10 +924,12 @@ function doGet(e) {
       // The manual "weekly response pull" button -- reprocesses the
       // trailing WEEKLY_PULL_DAYS days against the backfill source for
       // every chaser, updating campaign columns + the Campaign Responses
-      // tab. See pullWeeklyCampaignData().
-      payload = pullWeeklyCampaignData();
-      CacheService.getScriptCache().remove("archive_all");
-      CacheService.getScriptCache().remove("campaign_responses");
+      // tab. See pullWeeklyCampaignData(). Optional "week" param (ISO
+      // "YYYY-Www", from the header's week picker) anchors the window to
+      // that week's Sunday instead of today.
+      payload = pullWeeklyCampaignData(resolveWeekParamToAnchorDate(params.week));
+      invalidateCache("archive_all");
+      invalidateCache("campaign_responses");
 
     } else if (mode === "campaignresponses") {
       payload = getCachedOrFetch("campaign_responses", getArchiveCampaignResponses, 300);
@@ -986,21 +988,81 @@ function deleteArchiveRowsForDate(dateTab) {
   Logger.log("Deleted " + toDelete.length + " rows for " + dateTab);
 }
 
-// Generic cache helper — fetches and caches if not already cached
-function getCachedOrFetch(key, fetchFn, ttlSeconds) {
-  const cache  = CacheService.getScriptCache();
-  const cached = cache.get(key);
-  if (cached) {
-    Logger.log("Cache hit: " + key);
-    return JSON.parse(cached);
+// Removes a value written by getCachedOrFetch(), including any chunks it
+// may have been split across -- a bare CacheService.remove(key) only
+// clears the unchunked form, so anywhere that invalidates a key possibly
+// written by getCachedOrFetch() should use this instead, or a Sync/backfill
+// meant to bust the cache would leave stale chunked data being served.
+function invalidateCache(key) {
+  const cache = CacheService.getScriptCache();
+  const chunkCountStr = cache.get(key + "_chunks");
+  if (chunkCountStr) {
+    const chunkCount = parseInt(chunkCountStr, 10);
+    const keys = [key + "_chunks"];
+    for (let i = 0; i < chunkCount; i++) keys.push(key + "_" + i);
+    cache.removeAll(keys);
   }
+  cache.remove(key);
+}
+
+// Generic cache helper — fetches and caches if not already cached
+// CacheService rejects any single value over ~100KB. The archive (and
+// anything else that grows over time, e.g. more months accumulating) will
+// eventually cross that -- previously the write was just silently skipped
+// once it did, so every dashboard load re-scanned every month tab from
+// scratch forever after, with no way to tell from the outside that caching
+// had quietly stopped working. Payloads at or above CACHE_CHUNK_SIZE are
+// now split across multiple keys instead.
+const CACHE_CHUNK_SIZE = 90000;
+
+function getCachedOrFetch(key, fetchFn, ttlSeconds) {
+  const cache = CacheService.getScriptCache();
+
+  const chunkCountStr = cache.get(key + "_chunks");
+  if (chunkCountStr) {
+    const chunkCount = parseInt(chunkCountStr, 10);
+    const parts = [];
+    for (let i = 0; i < chunkCount; i++) {
+      const part = cache.get(key + "_" + i);
+      if (part === null) { parts.length = 0; break; } // one chunk expired/evicted -- treat as a full miss
+      parts.push(part);
+    }
+    if (parts.length === chunkCount) {
+      try {
+        Logger.log("Cache hit (chunked, " + chunkCount + " parts): " + key);
+        return JSON.parse(parts.join(""));
+      } catch (e) {
+        Logger.log("Chunked cache corrupt for " + key + ", refetching: " + e.message);
+      }
+    }
+  } else {
+    const cached = cache.get(key);
+    if (cached) {
+      Logger.log("Cache hit: " + key);
+      return JSON.parse(cached);
+    }
+  }
+
   Logger.log("Cache miss: " + key);
   const data = fetchFn();
   try {
     const json = JSON.stringify(data);
-    if (json.length < 90000) cache.put(key, json, ttlSeconds);
+    if (json.length < CACHE_CHUNK_SIZE) {
+      cache.put(key, json, ttlSeconds);
+      cache.remove(key + "_chunks");
+    } else {
+      const puts = {};
+      let chunkCount = 0;
+      for (let i = 0; i < json.length; i += CACHE_CHUNK_SIZE, chunkCount++) {
+        puts[key + "_" + chunkCount] = json.slice(i, i + CACHE_CHUNK_SIZE);
+      }
+      puts[key + "_chunks"] = String(chunkCount);
+      cache.putAll(puts, ttlSeconds);
+      cache.remove(key);
+      Logger.log("Cached " + key + " across " + chunkCount + " chunks (" + json.length + " chars)");
+    }
   } catch(e) {
-    Logger.log("Cache write failed: " + e.message);
+    Logger.log("Cache write failed for " + key + ": " + e.message);
   }
   return data;
 }
@@ -2147,8 +2209,35 @@ function checkCampaignBackfillProgress() {
 // ============================================================
 const WEEKLY_PULL_DAYS = 14;
 
-function pullWeeklyCampaignData() {
-  const today = new Date();
+// Converts an ISO week string ("YYYY-Www", the value format of an
+// <input type="week">) into that week's Sunday, per ISO 8601: week 1 is the
+// week containing the year's first Thursday (equivalently, containing
+// Jan 4th). Returns null for anything blank/malformed, so callers can just
+// pass it straight through to pullWeeklyCampaignData() and fall back to
+// its own "today" default.
+function resolveWeekParamToAnchorDate(weekParam) {
+  const m = String(weekParam || "").match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return null;
+  const year = parseInt(m[1], 10), week = parseInt(m[2], 10);
+  const jan4     = new Date(year, 0, 4);
+  const jan4Day  = jan4.getDay() || 7; // Sunday=0 -> 7
+  const week1Mon = new Date(jan4);
+  week1Mon.setDate(jan4.getDate() - jan4Day + 1);
+  const monday = new Date(week1Mon);
+  monday.setDate(week1Mon.getDate() + (week - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return sunday;
+}
+
+// anchorDate: optional -- the window's END date. Defaults to today (the
+// header button's normal behavior). Passing a specific date (e.g. a past
+// week's Sunday, from the header's week picker) lets you target that week
+// while keeping the same self-correcting WEEKLY_PULL_DAYS-day trailing
+// window, instead of a fixed 7-day window that wouldn't re-check anything
+// just outside it.
+function pullWeeklyCampaignData(anchorDate) {
+  const today = (anchorDate instanceof Date && !isNaN(anchorDate)) ? anchorDate : new Date();
   let totalUpdated = 0, totalInserted = 0, totalCampaignRows = 0;
   const datesProcessed = [];
 
