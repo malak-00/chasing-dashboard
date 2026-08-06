@@ -10,7 +10,9 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ---
 
-## PR #26 — Rewrite campaign-response pipeline: Status+conclusion only, single-pass parse (2026-08-06)
+## PR #26 — Rewrite campaign-response pipeline, presentable archive sheet, fix migration write-order (2026-08-06)
+
+### Campaign-response pipeline (Status+conclusion only, single-pass parse)
 Three changes to the campaign/backfill-response reading layer:
 - **Name variants**: `normalizeChaserName()` only did an exact lowercase
   match, so `"ALEX WOODS"` matched fine but `"Alex Woods."` (trailing
@@ -41,6 +43,35 @@ Three changes to the campaign/backfill-response reading layer:
   `combined_sheet_backfill4->5`) since the underlying matching logic
   changed — old "done" dates need reprocessing under the new
   Status-column-based reading, not silent skipping.
+
+### Presentable archive sheet + migration fixes
+People other than dashboard users look directly at the raw archive
+spreadsheet, so:
+- **Neater sheet**: month tabs now get real header styling (matching the
+  dark navy/teal look already used for week-separator rows), Date/Chaser
+  columns frozen, sized column widths, alternating row banding that
+  survives future appended rows, and Efficiency/Productivity displayed
+  with a "%" suffix (display-only, stored values unchanged). Shared via
+  `applyMonthTabFormatting()` between `getOrCreateMonthTab()` (new tabs)
+  and a new `reformatArchiveTabs()` (one-time pass over existing tabs, no
+  data touched).
+- **Migration write order**: `migrateExistingSheets()` processed Team 1's
+  entire spreadsheet before starting Team 2 at all, and always
+  `appendRow()`'d — every Team 2 row landed after every Team 1 row in
+  each shared month tab, requiring a manual re-sort afterward.
+  `parseWeekTab()` is now `collectRowsFromWeekTab()`, a pure parser with
+  no archive writes; `migrateExistingSheets()` collects every row from
+  both spreadsheets first, sorts chronologically, then writes in that
+  order — both teams now interleave correctly by date regardless of
+  which spreadsheet gets read first. Also normalizes the chaser name at
+  collection time, so the archive shows clean canonical names instead of
+  raw tracker text.
+- **"Total" rows**: the source week tabs' own weekly "Total" summary row
+  had no skip-check (unlike the archive-reading side, which already skips
+  names starting with "TOTAL") — it was getting written into the archive
+  as a fake chaser row, permanently stuck at 0 for Approvals/Denials/
+  campaign columns since the campaign backfills explicitly skip TOTAL
+  rows. Now skipped at collection time.
 
 ## PR #25 — Fix migrateExistingSheets() duplicate-check key format mismatch (2026-07-21)
 Root cause of `migrateExistingSheets()` looking "stuck" and writing
