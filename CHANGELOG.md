@@ -12,6 +12,20 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Fixed misleading "No Shift Set" label (fifteenth batch)
+Reported immediately after the previous batch's NaN% fix: setting a
+chaser's shift to 0 (both directly in the archive and via the Controls
+tab) still showed "No Shift Set", as if the input wasn't being saved.
+Root cause: `"No Shift Set"` and "shift explicitly recorded as 0" are
+indistinguishable by the time `buildRowFromTotals()` sees the value --
+`Number("")||0` (genuinely blank) and `Number(0)||0` (explicitly zero)
+both collapse to the same plain `0`. The stub behavior itself was already
+correct (excluding a 0-shift chaser from productivity math, since
+dividing by 0 isn't meaningful); only the label was wrong, presuming
+"nothing configured" when the user had in fact set it, to exactly 0 (e.g.
+a day off). Changed the label to `"0 Shift"`, which states the fact
+without presuming which case it is.
+
 ### Organized the Campaign Responses tab + fixed Team Productivity NaN% (fourteenth batch)
 - **Campaign Responses tab readability**: it was written in whatever order
   `parseBackfillResponses()` happened to discover dates in (grouped by
