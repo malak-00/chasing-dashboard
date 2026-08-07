@@ -12,6 +12,34 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Fixed Productivity/Efficiency % scale bug + stopped capping the Overview ranking bar at 100% (tenth batch)
+Two data-display bugs reported directly:
+- **Productivity/Efficiency showing e.g. "0.4%" instead of "38.4%"**:
+  `collectRowsFromWeekTab()` (the historical migration path) only ever
+  stripped a literal "%" suffix from text cells. A source cell that's a
+  real Sheets-percentage-formatted number (Format > Number > Percent)
+  comes back from `getValues()` as the raw underlying fraction (0.384),
+  not the string "38.4%" -- that fraction was written straight into the
+  archive on the wrong scale, and once the archive's own percent number
+  format was applied it displayed as "0.4%". New `parsePercentField()`
+  handles both cases (verified against 7 cases including 0%/100% edges).
+  Only affected `migrateExistingSheets()`-written data -- the daily Sync
+  path already multiplies by 100 itself and was never affected.
+- **Overview ranking bar capped at 100%**: Productivity can legitimately
+  exceed 100% (e.g. ACW-inflated productive time vs. nominal shift
+  minutes), but the bar's width was hard-capped via `Math.min(pct,100)`
+  while the adjacent number was never capped -- a standout performer at
+  150% correctly showed "150.0%" but their bar looked identical to someone
+  at exactly 100%. Fixed by scaling every bar to the highest value actually
+  present today (floored at 100, so the normal everyone-under-100% case is
+  visually unchanged) instead of a hard cap -- simply removing the
+  `Math.min()` alone wouldn't have worked, since `.ov-rank-bar-bg` has
+  `overflow:hidden` and a >100% width would just get silently clipped at
+  the container edge, visually indistinguishable from the original bug.
+  Verified via Playwright: a chaser at 150% fills the bar (today's max)
+  while one at 80% renders proportionally shorter (53.3% width) instead of
+  both looking identically capped.
+
 ### Full names as the canonical chaser identity everywhere (ninth batch)
 Requested after noticing the archive only ever showed first names.
 `CHASER_SHEETS`/`CHASER_NAME_MAP` (Code.gs) and `CHASERS`/`CHASER_COLORS`
