@@ -814,6 +814,20 @@ const CHASER_NAME_MAP = {
   "jamie williams":   "Jamie Williams",
   "rick nelson":      "Rick Nelson",
   "caroline richards":"Caroline Richards",
+  // The campaign fax-response sheets (BACKFILL_RESPONSES_TABS) use bare
+  // first names in their Chaser column, not full names -- these short-name
+  // keys let those resolve to the same canonical full name as their
+  // full-name counterparts above, instead of falling through unresolved
+  // and creating a separate "chaser" per bare first name.
+  "alex":     "Alex Woods",
+  "hope":     "Hope Smith",
+  "rose":     "Rose Simon",
+  "frank":    "Frank Clarkson",
+  "nova":     "Nova Grace",
+  "nora":     "Nora Atkins",
+  "jamie":    "Jamie Williams",
+  "rick":     "Rick Nelson",
+  "caroline": "Caroline Richards",
 };
 
 // Keys above are written without periods -- match against them the same way:
@@ -2136,7 +2150,7 @@ const BACKFILL_RESPONSES_TABS = [
   { tabName: "ORT Overall 2026",     campaignKey: "ort",    chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
   { tabName: "CGM Overall 2026",     campaignKey: "cgm",    chaserCol: "Chaser",      statusCol: "Status", conclusionCol: "Date of conclusion" },
   { tabName: "LY PUMP Overall 2026", campaignKey: "lymphc", chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
-  { tabName: "LY WRAP Overall 2026", campaignKey: "lymphw", chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
+  { tabName: "LY WRAP NORMAL Overall 2026", campaignKey: "lymphw", chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
   { tabName: "PPO (ORT)",            campaignKey: "ppoOrt", chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
   { tabName: "PPO (LY)",             campaignKey: "ppoLy",  chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
   { tabName: "UTI Overall 2026",     campaignKey: "uti",    chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },

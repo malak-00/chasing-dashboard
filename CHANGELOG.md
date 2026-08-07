@@ -12,6 +12,31 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Verified dry-run numbers against raw CSVs, resolved bare first-name variants, fixed LY WRAP tab name (thirteenth batch)
+Given the 4 campaign fax-response CSVs (ORT, CGM, LY PUMP, LY WRAP NORMAL)
+directly, and independently verified the reported `dryRunCampaignBackfill()`
+numbers by parsing the raw exports with a standalone script (proper CSV
+parsing -- these files have quoted multi-line fields that break naive
+comma-splitting) replicating the exact same Status/conclusion-date
+substring-matching logic `parseBackfillResponses()` uses. All 4 matched
+exactly: ORT 581/502, CGM 507/52, LymphC 34/1, LymphW 49/14.
+
+Two real issues found in the process:
+- `CHASER_NAME_MAP` only had full two-word keys (`"alex woods"` ->
+  `"Alex Woods"`), but the campaign fax-response sheets use bare first
+  names in their Chaser column (`"Alex"`, `"ALEX"`, `"Jamie."`), which had
+  nothing to match against and fell through to "return as-is" -- creating
+  a separate, spurious "chaser" per bare-name variant instead of resolving
+  to the same canonical full name as its full-name counterpart. Added 9
+  short-name keys (alex/hope/rose/frank/nova/nora/jamie/rick/caroline).
+  Verified every previously-unrecognized name from the dry-run output
+  (`ALEX`, `Alex`, `CAROLINE`, `Caroline`, `Frank`, `Hope`, `Jamie`,
+  `Jamie.`, `Nora`, `Nora.`, `Nova`, `Rick`, `Rose`, `caroline`) now
+  resolves correctly.
+- `BACKFILL_RESPONSES_TABS`' `lymphw` entry pointed at `"LY WRAP Overall
+  2026"`; the live tab is `"LY WRAP NORMAL Overall 2026"` -- updated to
+  match.
+
 ### Whole-number Total Duration (twelfth batch)
 `durationMins` is a sum of per-day call-duration minutes, and the
 underlying values can be fractional (Utlatel's own "H,M" duration text
