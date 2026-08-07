@@ -12,6 +12,44 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Day-separator borders on the historical rebuild path + a denials-flag rule (eighth batch)
+Prompted by rebuilding the archive from scratch (delete month tabs +
+Campaign Responses, re-run `migrateExistingSheets()` +
+`backfillFromCombinedSheet()`) and finding the rebuilt sheet had no visual
+separation between days:
+- `migrateExistingSheets()` now adds the same bottom teal border under each
+  day's last row that `archiveDayData()` (the daily Sync write) already
+  did -- it was the one write path missing this, so a full historical
+  rebuild left every day's block looking identical to the next.
+- Fixed a real bug in `applyDayBordersToArchive()` (the retroactive
+  one-time border utility, for anyone with existing un-bordered data):
+  it compared raw `String(dateCell)` values, which mis-groups a day
+  whenever Sheets silently auto-coerced only some of that day's rows into
+  real Date objects -- switched to `normalizeDateCellToTab()`, the same
+  helper every other date comparison in this file already uses for exactly
+  this reason.
+- `applyMonthTabFormatting()` now also adds a conditional-format rule that
+  lightly highlights any row where Denials > Approvals, so a day/chaser
+  needing attention is visible while scanning. Deliberately a formatting
+  rule and not a sortable Filter -- a Filter would let someone sort a
+  column and scramble the manually-built week-header/day-border structure
+  this whole feature exists to create.
+- Extracted `columnLetter()` out of `forcePlainTextColumns()` into its own
+  reusable helper.
+- Considered and deliberately did NOT add: a basic Filter/sort control
+  (risks destroying the manual row structure, see above); a per-day
+  subtotal row (bigger scope, would need a decision on what should be
+  summed -- worth a follow-up if wanted); per-week alternating shading
+  instead of per-row banding (marginal benefit once day borders exist).
+
+Verified via 3 Node `vm`-sandboxed tests: `migrateExistingSheets()`
+borders land on the correct last-row-of-each-day (including the
+end-of-run flush for the final date), `applyDayBordersToArchive()`
+correctly groups a day whose rows are a mix of Date-object and string
+date cells (previously mis-grouped this), and the conditional format rule
+is added once and not duplicated on repeat `applyMonthTabFormatting()`
+calls (important since it's re-applied by `reformatArchiveTabs()`).
+
 ### Added 3 new campaigns: PPO (ORT), PPO (LY), UTI (seventh batch)
 Extended the campaign roster from 4 to 7 by adding `PPO (ORT)`, `PPO (LY)`,
 and `UTI` to `CAMPAIGN_LABELS`, plus 3 matching entries in
