@@ -1861,12 +1861,17 @@ function migrateExistingSheets() {
 // 100 here or it silently lands on the wrong scale and (once the archive's
 // own percent number format is applied) displays as "0.4%" instead of
 // "38.4%".
-function parsePercentField(rawValue) {
+//
+// cellFormat (from getNumberFormats(), same shape/position as getValues())
+// is the ONLY reliable way to tell a percent-formatted 1.8 (meaning 180%,
+// since Productivity can legitimately exceed 100%) apart from a plain
+// number cell that's genuinely just 1.8 -- guessing from the value's
+// magnitude alone (an earlier version of this function did "<=1 must be a
+// fraction") breaks the moment the true percentage exceeds 100%, since a
+// percent-formatted cell's underlying fraction can then be >1 too.
+function parsePercentField(rawValue, cellFormat) {
   if (typeof rawValue === "number") {
-    // A real percent-formatted cell's underlying fraction is <=1 for any
-    // realistic percentage; a plain number cell (someone typed "38.4"
-    // directly with no percent formatting) is already on the 0-100 scale.
-    return Math.abs(rawValue) <= 1 ? rawValue * 100 : rawValue;
+    return String(cellFormat || "").includes("%") ? rawValue * 100 : rawValue;
   }
   return parseFloat(String(rawValue || "").replace("%", "").trim());
 }
@@ -1875,14 +1880,16 @@ function parsePercentField(rawValue) {
 // side effects, so migrateExistingSheets() can collect every row from both
 // source spreadsheets and sort them chronologically before writing anything.
 function collectRowsFromWeekTab(tab) {
-  const data = tab.getDataRange().getValues();
+  const data    = tab.getDataRange().getValues();
+  const formats = tab.getDataRange().getNumberFormats(); // same shape/position as data -- see parsePercentField()
   const rows = [];
   let currentDate = null;
   let colIndex    = {};   // field name → column index, reset per date block
 
   for (let r = 0; r < data.length; r++) {
-    const row      = data[r];
-    const firstVal = String(row[0] || "").trim();
+    const row        = data[r];
+    const rowFormats = formats[r];
+    const firstVal   = String(row[0] || "").trim();
 
     // ── Blank row: reset date context ──────────────────────
     if (row.every(c => String(c).trim() === "")) {
@@ -1922,7 +1929,8 @@ function collectRowsFromWeekTab(tab) {
     // text a tracker tab happened to have ("ALEX WOODS", "Tom", etc.).
     const chaser = normalizeChaserName(rawChaser);
 
-    const get = field => colIndex[field] !== undefined ? row[colIndex[field]] : "";
+    const get       = field => colIndex[field] !== undefined ? row[colIndex[field]] : "";
+    const getFormat = field => colIndex[field] !== undefined ? rowFormats[colIndex[field]] : "";
 
     rows.push({
       date:  currentDate,
@@ -1932,8 +1940,8 @@ function collectRowsFromWeekTab(tab) {
       approvals:         Number(get("approvals"))         || 0,
       denials:           Number(get("denials"))           || 0,
       timeMins:          Number(get("timeMins"))           || 0,
-      eff:               parsePercentField(get("efficiency"))   || "",
-      prod:              parsePercentField(get("productivity")) || "",
+      eff:               parsePercentField(get("efficiency"),   getFormat("efficiency"))   || "",
+      prod:              parsePercentField(get("productivity"), getFormat("productivity")) || "",
       totalShift:        Number(get("totalShift"))         || 0,
       calls:             Number(get("calls"))               || 0,
       totalDurationMins: Number(get("totalDurationMins"))  || 0,

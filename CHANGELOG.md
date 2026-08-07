@@ -12,6 +12,60 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Fixed Productivity/Efficiency over 100% showing as e.g. "1.8%" in the archive (eleventh batch)
+Follow-up to the previous batch's percent-scale fix, reported immediately
+after: that fix guessed "a real percent-formatted cell's value is always
+`<=1`" to tell it apart from a plain number already on the 0-100 scale --
+which breaks the moment the true percentage exceeds 100%. A percent-
+formatted cell showing "180%" has an underlying value of `1.8`, which is
+`>1`, so the old logic treated it as "already correct" and left it as
+`1.8` -- written into the archive and displayed as "1.8%" via its percent
+number format. Value magnitude alone can never reliably disambiguate this
+(`1.8` could mean "180%, percent-formatted" or "literally 1.8, a plain
+number" -- both are valid raw `getValues()` outputs).
+
+Switched to checking the cell's ACTUAL number format via
+`getNumberFormats()` instead of guessing from magnitude: if the format
+contains a literal "%", the value is a fraction and gets multiplied by
+100 regardless of how large it is; otherwise it's taken as-is. This is
+unambiguous in every case. `collectRowsFromWeekTab()` now reads
+`getNumberFormats()` alongside `getValues()` (same shape/position) and
+threads the relevant cell's format through to `parsePercentField()` for
+both Efficiency and Productivity.
+
+Verified with 8 unit cases (including the exact reported 180%-showing-as-
+1.8% scenario) and a full `migrateExistingSheets()` integration test
+confirming a 180%-percent-formatted source cell writes `180` (not `1.8`)
+into the real archive row.
+
+### Fixed Productivity/Efficiency % scale bug + stopped capping the Overview ranking bar at 100% (tenth batch)
+Two data-display bugs reported directly:
+- **Productivity/Efficiency showing e.g. "0.4%" instead of "38.4%"**:
+  `collectRowsFromWeekTab()` (the historical migration path) only ever
+  stripped a literal "%" suffix from text cells. A source cell that's a
+  real Sheets-percentage-formatted number (Format > Number > Percent)
+  comes back from `getValues()` as the raw underlying fraction (0.384),
+  not the string "38.4%" -- that fraction was written straight into the
+  archive on the wrong scale, and once the archive's own percent number
+  format was applied it displayed as "0.4%". New `parsePercentField()`
+  handles both cases (verified against 7 cases including 0%/100% edges).
+  Only affected `migrateExistingSheets()`-written data -- the daily Sync
+  path already multiplies by 100 itself and was never affected.
+- **Overview ranking bar capped at 100%**: Productivity can legitimately
+  exceed 100% (e.g. ACW-inflated productive time vs. nominal shift
+  minutes), but the bar's width was hard-capped via `Math.min(pct,100)`
+  while the adjacent number was never capped -- a standout performer at
+  150% correctly showed "150.0%" but their bar looked identical to someone
+  at exactly 100%. Fixed by scaling every bar to the highest value actually
+  present today (floored at 100, so the normal everyone-under-100% case is
+  visually unchanged) instead of a hard cap -- simply removing the
+  `Math.min()` alone wouldn't have worked, since `.ov-rank-bar-bg` has
+  `overflow:hidden` and a >100% width would just get silently clipped at
+  the container edge, visually indistinguishable from the original bug.
+  Verified via Playwright: a chaser at 150% fills the bar (today's max)
+  while one at 80% renders proportionally shorter (53.3% width) instead of
+  both looking identically capped.
+
 ### Full names as the canonical chaser identity everywhere (ninth batch)
 Requested after noticing the archive only ever showed first names.
 `CHASER_SHEETS`/`CHASER_NAME_MAP` (Code.gs) and `CHASERS`/`CHASER_COLORS`
