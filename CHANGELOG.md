@@ -12,6 +12,33 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Header date now drives every picker in the app, not just Day (eighteenth batch)
+Follow-up to the previous batch: the header date already live-synced
+Chasers' Day picker, but Campaigns' Week/Month/Quarter pickers and every
+range picker elsewhere still sat still when the header date changed,
+showing a period that no longer matched what the rest of the app was
+looking at. `syncDependentDatePickers()` (called from the header date's
+`onchange`) now handles both:
+- **Campaigns' Week/Month/Quarter pickers** are set to the week/month/
+  quarter containing the new header date and immediately reloaded (`campWeekPicker`
+  → `loadCampaignWeek()`, `campMonthPicker` → `loadCampaignMonth()`,
+  `campQuarterSelect`/`campQuarterYear` → `loadCampaignQuarter()`), so
+  their panels never show a date-picker value that doesn't match the data
+  underneath it.
+- **Every range picker (Leaderboard Custom, History Custom Range, Chasers
+  Range mode, Chart Builder)** gets nudged by new `includeDateInRange()`:
+  if the header date already falls inside the picker's From–To span,
+  it's left alone; if not, the whole span shifts (keeping its length) just
+  far enough that the header date is included, then re-applies. This
+  means changing the header date only disturbs a range when it actually
+  would have fallen outside the currently-shown period -- it doesn't
+  reset an unrelated range back to a single day.
+  Verified via Playwright: Week/Month/Quarter pickers and their panel
+  labels updating correctly for a header date in a different quarter; a
+  Leaderboard custom range left untouched when the new header date is
+  already inside it, and correctly shifted (preserving its width) when
+  the header date lands before or after it.
+
 ### Made the header date the single source of truth; clarified Leaderboard's period (seventeenth batch)
 Follow-up to the previous batch: the previous fix stopped each tab from
 duplicating preset-range *logic*, but didn't stop tabs from asking you to

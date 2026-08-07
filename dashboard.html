@@ -1185,12 +1185,60 @@ function headerDateAsDate() {
 // the header day changed.
 function syncDependentDatePickers() {
   const val = document.getElementById("datePicker").value;
+  if (!val) return;
+  const [y, m, d] = val.split("-").map(Number);
+  const headerDate = new Date(y, m-1, d);
+
   const chaserDateEl = document.getElementById("chaserDate");
   if (chaserDateEl && !chaserRangeMode) {
     chaserDateEl.value = val;
     if (activeTab === "chasers") renderChaserPage();
   }
+
+  // Campaigns' Week/Month/Quarter pickers follow the header date too, and
+  // reload immediately so the picker's value and the panel underneath it
+  // never drift apart (same rule the Day panel already follows).
+  document.getElementById("campWeekPicker").value  = getISOWeekString(headerDate);
+  loadCampaignWeek();
+  document.getElementById("campMonthPicker").value = val.slice(0,7);
+  loadCampaignMonth();
+  document.getElementById("campQuarterSelect").value = Math.ceil(m/3);
+  document.getElementById("campQuarterYear").value   = y;
+  loadCampaignQuarter();
+
+  // Every other range picker in the app just needs the header date to
+  // fall somewhere inside it -- shifts the range (keeping its length)
+  // only when the header date landed outside it, so a range someone is
+  // actively reviewing isn't reset back to a single day every time.
+  includeDateInRange("lbFrom",     "lbTo",     headerDate, applyLbCustomRange);
+  includeDateInRange("histFrom",   "histTo",   headerDate, applyCustomRange);
+  includeDateInRange("chaserFrom", "chaserTo", headerDate, renderChaserPage);
+  includeDateInRange("cbFrom",     "cbTo",     headerDate, null);
+
   updateLbShowingLabel();
+}
+
+// Shifts a From/To date-input pair (keeping its length) just enough to
+// bring `headerDate` inside it, if it isn't already -- the "range" half
+// of syncDependentDatePickers(). No-ops on a still-blank pair (those get
+// seeded on first open instead, see setLbView/setHistView/
+// setChaserRangeMode) and leaves an already-including range untouched.
+function includeDateInRange(fromId, toId, headerDate, onApply) {
+  const fromEl = document.getElementById(fromId), toEl = document.getElementById(toId);
+  if (!fromEl || !toEl || !fromEl.value || !toEl.value) return;
+  const parseISO = v => { const [py,pm,pd] = v.split("-").map(Number); return new Date(py,pm-1,pd); };
+  const from = parseISO(fromEl.value), to = parseISO(toEl.value);
+  if (headerDate >= from && headerDate <= to) return;
+  const widthDays = Math.round((to - from) / 86400000);
+  const fmt = dt => dt.toISOString().slice(0,10);
+  if (headerDate < from) {
+    const newTo = new Date(headerDate); newTo.setDate(newTo.getDate() + widthDays);
+    fromEl.value = fmt(headerDate); toEl.value = fmt(newTo);
+  } else {
+    const newFrom = new Date(headerDate); newFrom.setDate(newFrom.getDate() - widthDays);
+    fromEl.value = fmt(newFrom); toEl.value = fmt(headerDate);
+  }
+  if (typeof onApply === "function") onApply();
 }
 
 // Sets a From/To date-input pair to a standard preset range and calls the
