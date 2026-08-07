@@ -116,11 +116,29 @@ function saveChaser(params) {
 // writeCombinedCampaignResponses() below.
 // ============================================================
 
-// Single source of truth for the campaign roster -- add a 5th campaign
-// here and it's picked up everywhere a per-campaign totals object is
-// built (see zeroCampaignTotals below), instead of updating a dozen
+// Single source of truth for the campaign roster -- add a new campaign
+// here (plus one entry in BACKFILL_RESPONSES_TABS below, and one in
+// CAMPAIGN_COL_PREFIX just below) and it's picked up everywhere a
+// per-campaign totals object is built (see zeroCampaignTotals below) or the
+// archive's per-campaign columns are read/written (see ARCHIVE_HEADERS and
+// updateChaserCampaignColumnsForDate below), instead of updating a dozen
 // hand-copied literals scattered through this file.
-const CAMPAIGN_LABELS = { ort: "ORT", cgm: "CGM", lymphc: "LymphC", lymphw: "LymphW" };
+const CAMPAIGN_LABELS = {
+  ort: "ORT", cgm: "CGM", lymphc: "LymphC", lymphw: "LymphW",
+  ppoOrt: "PPO (ORT)", ppoLy: "PPO (LY)", uti: "UTI",
+};
+
+// Column-safe prefix per campaign, used only to build ARCHIVE_HEADERS'
+// column names -- kept distinct from CAMPAIGN_LABELS' display label (which
+// may contain spaces/parens for UI display, e.g. "PPO (ORT)") purely so
+// spreadsheet column headers stay clean. The first 4 match their existing
+// display label exactly (unchanged from before this map existed, so no
+// existing column header text changes); new campaigns get a compact
+// no-space prefix instead of reusing their punctuated display label.
+const CAMPAIGN_COL_PREFIX = {
+  ort: "ORT", cgm: "CGM", lymphc: "LymphC", lymphw: "LymphW",
+  ppoOrt: "PPOORT", ppoLy: "PPOLY", uti: "UTI",
+};
 
 // Returns a FRESH { ort:{approved,denied[,total]}, cgm:..., ... } object --
 // fresh on every call since callers mutate these in place (c.total++ etc.),
@@ -163,16 +181,49 @@ const ARCHIVE_SHEET_ID = "1eRjelUuuEt0JJCPWw6ohhYe9utWlWdQHlontpOZQnEw";
 // ARCHIVE HELPERS
 // ============================================================
 
-// Standard column headers used in every month tab
-const ARCHIVE_HEADERS = [
+// The "tracker-owned" columns every month tab starts with (Date through
+// ProductiveTime) -- written exclusively by archiveDayData()/the daily Sync.
+const ARCHIVE_BASE_HEADERS = [
   "Date","Chaser","Cases","Positive",
   "Approvals","Denials","TimeMins","Efficiency","Productivity",
   "TotalShift","TotalCalls","TotalDurationMins","ACWDuration","ProductiveTime",
-  "ORT_Approved","ORT_Denied",
-  "CGM_Approved","CGM_Denied",
-  "LymphC_Approved","LymphC_Denied",
-  "LymphW_Approved","LymphW_Denied"
 ];
+
+// Ordered campaign keys, in the same order their Approved/Denied column
+// pair appears at the end of ARCHIVE_HEADERS -- every function that reads
+// or writes those columns loops CAMPAIGN_KEYS instead of hardcoding column
+// numbers, so adding another campaign is just one entry in CAMPAIGN_LABELS
+// + CAMPAIGN_COL_PREFIX + BACKFILL_RESPONSES_TABS, nothing else.
+const CAMPAIGN_KEYS = Object.keys(CAMPAIGN_LABELS);
+
+// Full month-tab column headers: the tracker-owned block, then one
+// Approved/Denied pair per campaign in CAMPAIGN_KEYS order. Existing
+// archive tabs written before a campaign was added here will be missing
+// its columns until addNewCampaignColumnsToExistingTabs() (one-time, see
+// near backfillCampaignColumns() below) backfills their header row --
+// archiveDayData()/updateChaserCampaignColumnsForDate() already pad any
+// row shorter than this out to full width the next time they touch it.
+const ARCHIVE_HEADERS = ARCHIVE_BASE_HEADERS.concat(
+  CAMPAIGN_KEYS.reduce((cols, key) => cols.concat([CAMPAIGN_COL_PREFIX[key] + "_Approved", CAMPAIGN_COL_PREFIX[key] + "_Denied"]), [])
+);
+
+// Index (0-based) of the first campaign Approved/Denied column -- everything
+// from here to the end of the row is the campaign-owned block, owned
+// exclusively by updateChaserCampaignColumnsForDate(), never by the daily
+// archive write.
+const CAMPAIGN_COLS_START = ARCHIVE_BASE_HEADERS.length;
+
+// Extends a row's values out to ARCHIVE_HEADERS' current full width,
+// padding any missing trailing cells with 0 -- needed wherever an existing
+// row's values are read back and reused for a setValues() rewrite, since a
+// row written before a campaign was added to CAMPAIGN_LABELS is shorter
+// than ARCHIVE_HEADERS.length and Sheets rejects a values array that
+// doesn't match the target range's width exactly.
+function padRowToArchiveWidth(rowValues) {
+  const padded = rowValues.slice();
+  while (padded.length < ARCHIVE_HEADERS.length) padded.push(0);
+  return padded;
+}
 
 // Returns the tab name for a given date: "Jun 2026"
 function monthTabName(dateStr) {
@@ -285,6 +336,47 @@ function reformatArchiveTabs() {
     count++;
   }
   Logger.log("Reformatted " + count + " month tab(s).");
+}
+
+// One-time utility: run this once after adding a new campaign to
+// CAMPAIGN_LABELS (e.g. the PPO (ORT)/PPO (LY)/UTI addition) -- every
+// EXISTING month tab's header row still only has the columns for whatever
+// campaigns existed when that tab was created, so this appends the missing
+// header cells (with the same styling as the rest of the header row) to
+// bring every tab's header up to the current full ARCHIVE_HEADERS. Data
+// rows need no action here: archiveDayData()/updateChaserCampaignColumns-
+// ForDate() already pad a short row out to full width via
+// padRowToArchiveWidth() the next time either one touches it, so existing
+// data is never at risk of misalignment -- this only fixes up the header
+// row + column widths/number formats on tabs that predate a given
+// campaign. New tabs created after the campaign was added get the full
+// header from getOrCreateMonthTab() automatically and don't need this.
+function addNewCampaignColumnsToExistingTabs() {
+  const ss = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
+  const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i;
+  let updated = 0, alreadyCurrent = 0;
+
+  for (const sheet of ss.getSheets()) {
+    if (!monthPattern.test(sheet.getName().trim())) continue;
+
+    const existingLastCol = sheet.getLastColumn();
+    if (existingLastCol >= ARCHIVE_HEADERS.length) { alreadyCurrent++; continue; }
+
+    const missingHeaders = ARCHIVE_HEADERS.slice(existingLastCol);
+    const startCol       = existingLastCol + 1;
+
+    const headerRange = sheet.getRange(1, startCol, 1, missingHeaders.length);
+    headerRange.setValues([missingHeaders]);
+    headerRange.setBackground("#1A2C42").setFontColor("#00C2A8")
+      .setFontWeight("bold").setHorizontalAlignment("center");
+
+    for (let c = startCol; c <= ARCHIVE_HEADERS.length; c++) sheet.setColumnWidth(c, 110);
+
+    Logger.log(sheet.getName() + ": added " + missingHeaders.length + " missing header column(s) -- " + missingHeaders.join(", "));
+    updated++;
+  }
+
+  Logger.log("=== DONE === Tabs updated: " + updated + " | Already current: " + alreadyCurrent);
 }
 
 // Maps "date|chaser" -> { rowNum, values } for a specific month tab, so
@@ -459,13 +551,16 @@ function archiveDayData(dateTab) {
       productivity   = shiftMins > 0 ? (productiveTime / shiftMins * 100).toFixed(1) : "";
     }
 
-    // Approvals(4)/Denials(5)/campaign columns(14-21) are owned by the weekly
-    // campaign pull, never by this daily write. Start from the existing row's
-    // values (so those columns are preserved untouched) if there is one, else
-    // default the whole row to blank/0 for a brand-new date+chaser combo.
+    // Approvals(4)/Denials(5)/campaign columns (CAMPAIGN_COLS_START onward)
+    // are owned by the weekly campaign pull, never by this daily write.
+    // Start from the existing row's
+    // values (so those columns are preserved untouched, padded out to the
+    // current full width first in case this row predates a since-added
+    // campaign) if there is one, else default the whole row to blank/0 for
+    // a brand-new date+chaser combo.
     const rowValues = existingRow
-      ? existingRow.values.slice()
-      : [dateTab, c.name, 0, 0, 0, 0, 0, "", "", "", "", "", "", "", 0,0,0,0,0,0,0,0];
+      ? padRowToArchiveWidth(existingRow.values)
+      : [dateTab, c.name, 0, 0, 0, 0, 0, "", "", "", "", "", "", ""].concat(new Array(CAMPAIGN_KEYS.length * 2).fill(0));
 
     rowValues[0] = dateTab;
     rowValues[1] = c.name;
@@ -1602,10 +1697,10 @@ function migrateExistingSheets() {
       row.cases, row.positive, row.approvals, row.denials, row.timeMins,   // no faxes col
       row.eff, row.prod,
       row.totalShift, row.calls, row.totalDurationMins, row.acwDuration, row.productiveTime,
-      // Campaign columns — not in source sheets, default to 0
-      // (the weekly campaign pull fills these going forward)
-      0, 0, 0, 0, 0, 0, 0, 0
-    ]);
+      // Campaign columns — not in source sheets, default to 0 for every
+      // campaign currently in CAMPAIGN_KEYS (the weekly campaign pull fills
+      // these in going forward).
+    ].concat(new Array(CAMPAIGN_KEYS.length * 2).fill(0)));
 
     existing.add(key);
     totalWritten++;
@@ -1828,7 +1923,8 @@ function applyDayBordersToArchive() {
 //
 // Reads BACKFILL_RESPONSES_SHEET_ID/BACKFILL_RESPONSES_TABS below (a
 // combined "Overall 2026" history spreadsheet) and:
-//   - updates ORT/CGM/LymphC/LymphW approved/denied columns on existing rows
+//   - updates every campaign's (CAMPAIGN_LABELS) approved/denied columns on
+//     existing rows
 //   - INSERTS a new row (Cases/Positive/TimeMins at 0) for a chaser+date that
 //     has real campaign credit but no existing archive row at all -- e.g. no
 //     tracker tab existed for that chaser that day, so nothing was ever
@@ -1853,8 +1949,8 @@ function applyDayBordersToArchive() {
 // day-to-day sheet ever did.
 const BACKFILL_RESPONSES_SHEET_ID = "1QVnmXYRg-IbMi46Lvi752ZbIfL5NHd666DsH0WI7SmU";
 
-// All 4 tabs carry their own "Date of conclusion" (the authoritative
-// resolution date, real year included) and "Status" columns now -- approval/
+// Every tab carries its own "Date of conclusion" (the authoritative
+// resolution date, real year included) and "Status" columns -- approval/
 // denial and the resolution date come exclusively from these two columns
 // plus the chaser column; the fax-feedback text column is never read.
 const BACKFILL_RESPONSES_TABS = [
@@ -1862,6 +1958,9 @@ const BACKFILL_RESPONSES_TABS = [
   { tabName: "CGM Overall 2026",     campaignKey: "cgm",    chaserCol: "Chaser",      statusCol: "Status", conclusionCol: "Date of conclusion" },
   { tabName: "LY PUMP Overall 2026", campaignKey: "lymphc", chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
   { tabName: "LY WRAP Overall 2026", campaignKey: "lymphw", chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
+  { tabName: "PPO (ORT)",            campaignKey: "ppoOrt", chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
+  { tabName: "PPO (LY)",             campaignKey: "ppoLy",  chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
+  { tabName: "UTI Overall 2026",     campaignKey: "uti",    chaserCol: "Chaser Name", statusCol: "Status", conclusionCol: "Date of conclusion" },
 ];
 
 // Resolves a row's "Date of conclusion" cell into a full "M/D/YYYY" string.
@@ -1892,8 +1991,9 @@ function resolveConclusionDate(conclusionCellValue) {
 // This replaces what used to be 3 separate functions (readChaserTotals-
 // FromBackfillSource, collectDatesFromCombinedSheet, readCombinedCampaign-
 // TotalsForDate) that each independently re-opened the spreadsheet and
-// re-scanned all 4 tabs -- called once per date, that meant the same ~4
-// tabs got fully re-read dozens of times per weekly pull or backfill run.
+// re-scanned every BACKFILL_RESPONSES_TABS tab -- called once per date,
+// that meant the same tabs got fully re-read dozens of times per weekly
+// pull or backfill run.
 // Every caller now calls this ONCE and looks up dates from the result.
 function parseBackfillResponses() {
   const byDate = {};
@@ -1966,8 +2066,9 @@ function parseBackfillResponses() {
 }
 
 // Updates one date's archive rows with per-chaser campaign data (Approvals,
-// Denials, and the 8 ORT/CGM/LymphC/LymphW columns) from the backfill
-// source, and inserts a new row (tracker columns blank/0) for any chaser
+// Denials, and every campaign's Approved/Denied column pair -- see
+// CAMPAIGN_KEYS) from the backfill source, and inserts a new row (tracker
+// columns blank/0) for any chaser
 // with real credit on this date but no existing row (no tracker tab that
 // day). Only the campaign-owned columns (4,5,14-21) are ever touched on an
 // existing row -- everything else (owned by the daily archive write) is
@@ -2023,14 +2124,16 @@ function updateChaserCampaignColumnsForDate(fullDate, parsedBucket) {
 
     // Patch only the campaign-owned columns into the row's existing values
     // -- Cases/Positive/TimeMins/etc (owned by the daily archive write)
-    // pass through untouched.
-    const rowValues = data[r].slice();
+    // pass through untouched. padRowToArchiveWidth() extends a row written
+    // before a campaign existed in CAMPAIGN_KEYS out to the current full
+    // width first, so a short row doesn't crash the setValues() below.
+    const rowValues = padRowToArchiveWidth(data[r]);
     rowValues[4] = totals ? totals.approvals : 0;
     rowValues[5] = totals ? totals.denials   : 0;
-    rowValues[14] = cc.ort.approved;    rowValues[15] = cc.ort.denied;
-    rowValues[16] = cc.cgm.approved;    rowValues[17] = cc.cgm.denied;
-    rowValues[18] = cc.lymphc.approved; rowValues[19] = cc.lymphc.denied;
-    rowValues[20] = cc.lymphw.approved; rowValues[21] = cc.lymphw.denied;
+    CAMPAIGN_KEYS.forEach((key, i) => {
+      rowValues[CAMPAIGN_COLS_START + i*2]     = cc[key].approved;
+      rowValues[CAMPAIGN_COLS_START + i*2 + 1] = cc[key].denied;
+    });
     sheet.getRange(r+1, 1, 1, ARCHIVE_HEADERS.length).setValues([rowValues]);
     rowsUpdated++;
   }
@@ -2057,16 +2160,13 @@ function updateChaserCampaignColumnsForDate(fullDate, parsedBucket) {
     }
 
     const cc = totals.campaigns;
+    const campaignCols = CAMPAIGN_KEYS.reduce((cols, key) => cols.concat([cc[key].approved, cc[key].denied]), []);
     sheet.appendRow([
       fullDate, chaserName, 0, 0,
       totals.approvals, totals.denials, 0, "",  // Cases,Positive,TimeMins,Efficiency
       productivity, shiftMins, utl.calls || "", utl.mins || "",
       acwDuration, productiveTime,
-      cc.ort.approved,    cc.ort.denied,
-      cc.cgm.approved,    cc.cgm.denied,
-      cc.lymphc.approved, cc.lymphc.denied,
-      cc.lymphw.approved, cc.lymphw.denied,
-    ]);
+    ].concat(campaignCols));
     rowsInserted++;
     Logger.log("Inserted missing-tracker row for " + chaserName + " on " + fullDate +
       " (Approvals=" + totals.approvals + ", Denials=" + totals.denials + ")");
@@ -2084,7 +2184,7 @@ function backfillCampaignColumns() {
   const monthPattern  = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})$/i;
 
   // Parse the backfill spreadsheet ONCE and reuse it for every date below,
-  // instead of each date re-scanning the same ~4 tabs from scratch.
+  // instead of each date re-scanning the same tabs from scratch.
   const parsedBucket = parseBackfillResponses();
 
   let totalUpdated  = 0;
@@ -2224,7 +2324,7 @@ function pullWeeklyCampaignData(anchorDate) {
   const datesProcessed = [];
 
   // Parse the backfill spreadsheet ONCE and reuse it for all 14 dates below,
-  // instead of each date re-scanning the same ~4 tabs from scratch.
+  // instead of each date re-scanning the same tabs from scratch.
   const parsedBucket = parseBackfillResponses();
 
   for (let i = 0; i < WEEKLY_PULL_DAYS; i++) {
@@ -2338,8 +2438,9 @@ function getArchiveCampaignResponses() {
 // ============================================================
 // ONE-TIME HISTORICAL BACKFILL — Combined Weekly Sheet
 // ============================================================
-// A separate sheet was found that holds responses for ALL 4 campaigns,
-// updated weekly, in 4 tabs (one per campaign). This is used ONCE to
+// A separate sheet was found that holds responses for every campaign in
+// CAMPAIGN_LABELS, updated weekly, in one tab per campaign (see
+// BACKFILL_RESPONSES_TABS). This is used ONCE to
 // backfill historical Campaign Responses + per-chaser campaign columns
 // in the archive. For ongoing data, the "Pull Weekly Responses" dashboard
 // button (pullWeeklyCampaignData()) covers the trailing weeks automatically
@@ -2408,8 +2509,8 @@ function writeCombinedCampaignResponses(dateTab, parsedBucket) {
 //    (independent of the archive -- works even if a month tab has been
 //    deleted entirely, e.g. before re-running migrateExistingSheets()).
 // 2. For each date: writes Campaign Responses rows (deduplicated totals).
-// 3. For each date: updates per-chaser ORT/CGM/LymphC/LymphW/Approvals/
-//    Denials columns via updateChaserCampaignColumnsForDate() -- this
+// 3. For each date: updates per-chaser Approvals/Denials + every campaign's
+//    columns (CAMPAIGN_KEYS) via updateChaserCampaignColumnsForDate() -- this
 //    creates the monthly archive tab if it doesn't exist yet, and inserts
 //    a row (tracker columns blank/0) for any chaser with real campaign
 //    credit but no existing row for that date.

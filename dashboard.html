@@ -8,7 +8,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-:root{--bg:#1A1A1A;--surface:#242424;--card:#2E2E2E;--card-hover:#383838;--border:#454545;--teal:#004D61;--teal-text:#4DB2CB;--teal-dim:rgba(0,77,97,.35);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#822659;--purple-dim:rgba(130,38,89,.30);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);--btn:#3E5641;--btn-text:#F0F0F0;--text:#F0F0F0;--text-2:#B8B8B8;--text-3:#868686;--radius:12px;--font:'Inter',system-ui,sans-serif;
+:root{--bg:#1A1A1A;--surface:#242424;--card:#2E2E2E;--card-hover:#383838;--border:#454545;--teal:#004D61;--teal-text:#4DB2CB;--teal-dim:rgba(0,77,97,.35);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#822659;--purple-dim:rgba(130,38,89,.30);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);
+  /* Categorical-only extras for campaign identity (never status) -- picked
+     to sit apart from --green/--red (reserved for status) and from the
+     existing campaign hues (--teal-text, --purple, --blue, --amber). */
+  --violet:#9B7ADE;--orange:#E8935A;--slate:#8899C4;
+  --btn:#3E5641;--btn-text:#F0F0F0;--text:#F0F0F0;--text-2:#B8B8B8;--text-3:#868686;--radius:12px;--font:'Inter',system-ui,sans-serif;
   /* Flat drop shadows read as almost invisible against a dark surface --
      depth here comes from a stronger, wider shadow PLUS a lighter
      "elevated" surface step (--card-hover, --card-elevated), not shadow
@@ -70,11 +75,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .resp-value{font-size:25px;font-weight:650;line-height:1.1;letter-spacing:-.01em}
 .approved .resp-value{color:var(--green)}.denied .resp-value{color:var(--red)}
 .resp-pct{font-size:11px;color:var(--text-3);margin-top:2px}
-.campaign-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;margin-bottom:15px}
+.campaign-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:11px;margin-bottom:15px}
 .campaign-card{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:13px;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease}
 .campaign-card:hover{border-color:var(--text-3);transform:translateY(-2px);box-shadow:var(--shadow-md);background:var(--card-elevated)}
 .campaign-name{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-bottom:9px;display:flex;align-items:center;gap:6px}
-.campaign-stats{display:flex;gap:16px}
+/* 2x2 grid instead of a single flex row of 4 -- a fixed row of 4 stats
+   only had room to breathe when campaign-grid forced exactly 2 wide
+   columns; once campaign-grid went responsive (auto-fill, to fit more than
+   4 campaigns without a lopsided last row) cards can be as narrow as
+   160px, where 4 stats in one row collide. A 2x2 grid stays legible at
+   any card width instead of only the one width it happened to be tuned for. */
+.campaign-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 4px}
 .cstat{text-align:center}
 .cstat-val{font-size:18px;font-weight:650;letter-spacing:-.01em}
 .cstat-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-top:3px}
@@ -90,7 +101,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .ov-rank-bar-bg{flex:1;height:8px;background:var(--card);border-radius:4px;overflow:hidden}
 .ov-rank-bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
 .ov-rank-val{width:64px;flex-shrink:0;text-align:right;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}
-.ov-camp-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.ov-camp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px}
 .ov-camp-card{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;text-align:center;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease}
 .ov-camp-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--teal-dim);background:var(--card-elevated)}
 .ov-camp-name{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-bottom:5px}
@@ -200,6 +211,7 @@ body.light {
   --red:#C84358;--red-dim:rgba(200,67,88,.09);
   --purple:#822659;--purple-dim:rgba(130,38,89,.10);
   --blue:#3373C4;--blue-dim:rgba(51,115,196,.09);
+  --violet:#6B46C1;--orange:#B8621E;--slate:#4C5C8C;
   --btn:#3E5641;--btn-text:#F0F0F0;
   --shadow-sm:0 1px 2px rgba(16,39,60,.06);--shadow-md:0 4px 16px rgba(16,39,60,.08);--shadow-lg:0 10px 28px rgba(16,39,60,.12);--card-elevated:#FFFFFF;
 }
@@ -969,21 +981,28 @@ let CHASERS  = ["Alex","Hope","Rose","Frank","Nova"];
 let chasterRoster = []; // [{ name, sheetId, active }, ...] -- full detail for the Settings UI
 
 const CAMPAIGNS = [
-  { key:"ort",    label:"ORT",               color:"var(--teal-text)"   },
-  { key:"cgm",    label:"CGM",               color:"var(--purple)" },
-  { key:"lymphc", label:"Lymph Compression", color:"var(--blue)"   },
-  { key:"lymphw", label:"Lymph Wraps",        color:"var(--amber)"  },
+  { key:"ort",    label:"ORT",               color:"var(--teal-text)" },
+  { key:"cgm",    label:"CGM",               color:"var(--purple)"    },
+  { key:"lymphc", label:"Lymph Compression", color:"var(--blue)"      },
+  { key:"lymphw", label:"Lymph Wraps",       color:"var(--amber)"     },
+  { key:"ppoOrt", label:"PPO (ORT)",         color:"var(--violet)"    },
+  { key:"ppoLy",  label:"PPO (LY)",          color:"var(--orange)"    },
+  { key:"uti",    label:"UTI",               color:"var(--slate)"     },
 ];
 const CAMPAIGN_KEYS = CAMPAIGNS.map(c=>c.key);
 
 // Archive column names per campaign -- the one place to update if a column
 // is ever renamed, instead of the same four-way mapping retyped wherever
-// campaign totals are read straight from archive rows.
+// campaign totals are read straight from archive rows. Must match
+// CAMPAIGN_COL_PREFIX in Code.gs exactly.
 const CAMPAIGN_ARCHIVE_COLS = {
   ort:    { app: "ORT_Approved",    den: "ORT_Denied"    },
   cgm:    { app: "CGM_Approved",    den: "CGM_Denied"    },
   lymphc: { app: "LymphC_Approved", den: "LymphC_Denied" },
   lymphw: { app: "LymphW_Approved", den: "LymphW_Denied" },
+  ppoOrt: { app: "PPOORT_Approved", den: "PPOORT_Denied" },
+  ppoLy:  { app: "PPOLY_Approved",  den: "PPOLY_Denied"  },
+  uti:    { app: "UTI_Approved",    den: "UTI_Denied"    },
 };
 
 // Fresh { ort:{approved,denied,total}, cgm:..., ... } zeroed object -- fresh
@@ -1348,13 +1367,16 @@ async function fetchFromArchive() {
 
 // ── CAMPAIGN RESPONSES HELPERS ───────────────────────────────
 // campaignLeads: rows from "Campaign Responses" tab in archive.
-// Format: [{ Date:"M/D/YYYY", Campaign:"ORT"|"CGM"|"LymphC"|"LymphW",
-//            Approved:N, Denied:N, ApprovalPct:N }]
+// Format: [{ Date:"M/D/YYYY", Campaign: one of CAMPAIGNS' display labels
+//            (e.g. "ORT", "PPO (ORT)"), Approved:N, Denied:N, ApprovalPct:N }]
 // One row per date+campaign — no chaser-multiplication, no double-counting.
 
 // Normalize campaign label to lowercase key used in byCampaign objects
 function campLabelToKey(label) {
-  const m = { "ORT":"ort", "CGM":"cgm", "LYMPHC":"lymphc", "LYMPHW":"lymphw" };
+  const m = {
+    "ORT":"ort", "CGM":"cgm", "LYMPHC":"lymphc", "LYMPHW":"lymphw",
+    "PPO (ORT)":"ppoOrt", "PPO (LY)":"ppoLy", "UTI":"uti",
+  };
   return m[String(label).toUpperCase()] || String(label).toLowerCase();
 }
 
@@ -2503,7 +2525,7 @@ function spinner(){return `<div class="state-block"><div class="spinner"></div>L
 function updateRangeVal(s,v){document.getElementById(v).textContent=document.getElementById(s).value;}
 
 // ── MOCK DATA ─────────────────────────────────────────────────
-function mockCampaignData(){return{ort:{approved:6,denied:2,total:10},cgm:{approved:5,denied:1,total:8},lymphc:{approved:4,denied:2,total:7},lymphw:{approved:4,denied:1,total:6}};}
+function mockCampaignData(){return{ort:{approved:6,denied:2,total:10},cgm:{approved:5,denied:1,total:8},lymphc:{approved:4,denied:2,total:7},lymphw:{approved:4,denied:1,total:6},ppoOrt:{approved:3,denied:1,total:4},ppoLy:{approved:3,denied:2,total:5},uti:{approved:2,denied:1,total:3}};}
 
 // ══════════════════════════════════════════════════════════════
 // HISTORY / ARCHIVE
@@ -3446,25 +3468,22 @@ function filterByChaserDateRange(r, fromIso, toIso) {
 }
 
 function renderChaserCampaigns(rows) {
-  // Approximate from archive campaign cols
-  const campaigns = [
-    { key:"ORT",    app:"ORT_Approved",    den:"ORT_Denied"    },
-    { key:"CGM",    app:"CGM_Approved",    den:"CGM_Denied"    },
-    { key:"LymphC", app:"LymphC_Approved", den:"LymphC_Denied" },
-    { key:"LymphW", app:"LymphW_Approved", den:"LymphW_Denied" },
-  ];
-  const colors = ["var(--teal-text)","var(--purple)","var(--blue)","var(--amber)"];
-  return campaigns.map((c,i) => {
-    const app   = rows.reduce((s,r)=>s+(Number(r[c.app])||0),0);
-    const den   = rows.reduce((s,r)=>s+(Number(r[c.den])||0),0);
+  // Approximate from archive campaign cols -- reuses the shared CAMPAIGNS/
+  // CAMPAIGN_ARCHIVE_COLS (top of file) instead of its own independently
+  // hardcoded campaign list, so a new campaign added there shows up here
+  // automatically.
+  return CAMPAIGNS.map(c => {
+    const cols  = CAMPAIGN_ARCHIVE_COLS[c.key];
+    const app   = rows.reduce((s,r)=>s+(Number(r[cols.app])||0),0);
+    const den   = rows.reduce((s,r)=>s+(Number(r[cols.den])||0),0);
     const total = app+den;
     const pct   = total ? (app/total*100).toFixed(1) : "--";
     return `<div class="campaign-card">
-      <div class="campaign-name" style="color:${colors[i]}">${c.key}</div>
+      <div class="campaign-name" style="color:${c.color}">${c.label}</div>
       <div class="campaign-stats">
         <div class="cstat"><div class="cstat-val" style="color:var(--green)">${app}</div><div class="cstat-lbl">Approved</div></div>
         <div class="cstat"><div class="cstat-val" style="color:var(--red)">${den}</div><div class="cstat-lbl">Denied</div></div>
-        <div class="cstat"><div class="cstat-val" style="color:${colors[i]}">${pct}${pct!=="--"?"%":""}</div><div class="cstat-lbl">Rate</div></div>
+        <div class="cstat"><div class="cstat-val" style="color:${c.color}">${pct}${pct!=="--"?"%":""}</div><div class="cstat-lbl">Rate</div></div>
       </div></div>`;
   }).join("");
 }

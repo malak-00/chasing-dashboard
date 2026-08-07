@@ -10,7 +10,78 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ---
 
-## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06)
+## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
+
+### Added 3 new campaigns: PPO (ORT), PPO (LY), UTI (seventh batch)
+Extended the campaign roster from 4 to 7 by adding `PPO (ORT)`, `PPO (LY)`,
+and `UTI` to `CAMPAIGN_LABELS`, plus 3 matching entries in
+`BACKFILL_RESPONSES_TABS` pointing at their real tabs in the "Overall 2026"
+spreadsheet (`"PPO (ORT)"`, `"PPO (LY)"`, `"UTI Overall 2026"` — the first
+two have no `" Overall 2026"` suffix, unlike the other 5 tabs), all reading
+Chaser Name/Status/Date of conclusion exactly like the existing 4.
+
+This required refactoring the archive schema itself rather than just adding
+config, since the old code hardcoded "8 campaign columns at indices 14-21"
+in 3 different places:
+- `ARCHIVE_HEADERS` is now built by concatenating a fixed tracker-owned
+  block with one Approved/Denied column pair per entry in the new
+  `CAMPAIGN_KEYS` (derived from `CAMPAIGN_LABELS`), via a new
+  `CAMPAIGN_COL_PREFIX` map that keeps column header text clean
+  (`PPOORT_Approved` etc.) independent of the display label used in the UI
+  (`"PPO (ORT)"`, which has spaces/parens). The first 4 campaigns' column
+  text is unchanged from before this refactor.
+- `updateChaserCampaignColumnsForDate()`, `archiveDayData()`'s new-row
+  default, and `migrateExistingSheets()`'s campaign-columns-default now all
+  loop `CAMPAIGN_KEYS` instead of writing 8 literal array slots/zeros, so
+  adding another campaign in the future is one line in `CAMPAIGN_LABELS` +
+  `CAMPAIGN_COL_PREFIX` + `BACKFILL_RESPONSES_TABS`, nothing else.
+- New `padRowToArchiveWidth()` extends any row shorter than the current
+  `ARCHIVE_HEADERS.length` (i.e. every row written before this change, at
+  22 columns) out to the new 28-column width with zeros before it's reused
+  in a `setValues()` rewrite -- without this, the very next Sync or weekly
+  pull touching an old row would throw a range-width-mismatch error the
+  first time it tried to write 28 values into what Sheets still measured as
+  a 22-column range.
+- New one-time `addNewCampaignColumnsToExistingTabs()` (companion to the
+  existing `reformatArchiveTabs()`) backfills just the 6 missing header
+  cells + column widths/formatting onto every month tab that predates this
+  change, so the header row matches the data going forward. Data rows need
+  no separate migration -- they're padded automatically the next time
+  anything touches them.
+
+Frontend: added the 3 campaigns to `CAMPAIGNS` and `CAMPAIGN_ARCHIVE_COLS`
+(dashboard.html), plus matching entries in `campLabelToKey()`. Added 3 new
+CSS color tokens (`--violet`, `--orange`, `--slate`, with light-mode
+variants) distinct from the existing campaign colors and from
+`--green`/`--red` (reserved for status). Found and fixed a genuine
+redundancy while doing this: `renderChaserCampaigns()` (chaser detail tab)
+had its own third independently-hardcoded 4-campaign list instead of
+reusing the shared `CAMPAIGNS`/`CAMPAIGN_ARCHIVE_COLS` -- consolidated so
+it picks up new campaigns automatically. Every other campaign-rendering
+spot (Overview snapshot, Compare tab totals, CSV export, weekly trend
+chart) already looped `CAMPAIGNS`/`CAMPAIGN_KEYS` generically and needed no
+changes.
+
+Also found and fixed a real layout bug introduced mid-change: widening
+`.campaign-grid`/`.ov-camp-grid` from a fixed 2-column layout to a
+responsive `auto-fill` (needed so 7 cards don't leave an awkward orphaned
+card in a 4-row 2-column layout) shrank card width enough that the
+existing 4-stats-in-a-flex-row `.campaign-stats` layout started clipping/
+overlapping text. Changed `.campaign-stats` to a 2x2 grid instead, which
+stays legible at any card width instead of only the one width the old
+fixed 2-column grid happened to produce.
+
+Verified end-to-end: a Node `vm`-sandboxed mock of `SpreadsheetApp`/
+`PropertiesService` confirmed `ARCHIVE_HEADERS` is exactly 28 columns,
+`updateChaserCampaignColumnsForDate()` correctly pads and rewrites a
+legacy 22-column row without a range-mismatch error, new campaign values
+land in the correct columns, and both the update and insert code paths
+work correctly together. Playwright confirmed all 7 campaign cards render
+without overlap on the Overview tab, Campaigns tab, and a chaser's
+Campaign Breakdown panel (the last one specifically exercising the
+consolidated `renderChaserCampaigns()`), with zero console errors.
+`node --check` clean on both files; grepped for and fixed every remaining
+comment that hardcoded "4 campaigns"/"~4 tabs" from before this change.
 
 ### Dead-code cleanup from the Code.gs review (sixth batch)
 Removed everything flagged as genuinely redundant/unreachable in a full
