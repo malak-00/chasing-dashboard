@@ -1641,6 +1641,14 @@ function renderOverview() {
     const bv = b.productivityStub ? -1 : Number(b.productivity);
     return bv - av;
   });
+  // Productivity can legitimately run past 100% (e.g. ACW-inflated
+  // productive time vs. nominal shift minutes), so the bar's scale is the
+  // highest value actually present today (floored at 100, so the normal
+  // everyone-under-100% case renders exactly as before) instead of a hard
+  // 100% cap -- capping the bar while leaving the adjacent number uncapped
+  // made a standout performer's bar look identical to someone sitting
+  // right at their target, defeating the point of a ranking view.
+  const barScale = Math.max(100, ...ranked.filter(r => !r.productivityStub).map(r => Number(r.productivity)));
   setEl("ovTeamRanking", ranked.map(r => {
     if (r.productivityStub) {
       return `<div class="ov-rank-row">
@@ -1654,7 +1662,7 @@ function renderOverview() {
     const color = status ? `var(--${status})` : "var(--teal-text)";
     return `<div class="ov-rank-row">
       <span class="ov-rank-name">${r.name}</span>
-      <div class="ov-rank-bar-bg"><div class="ov-rank-bar-fill" data-target-width="${Math.min(pct,100)}" style="width:0%;background:${color}"></div></div>
+      <div class="ov-rank-bar-bg"><div class="ov-rank-bar-fill" data-target-width="${(pct / barScale * 100)}" style="width:0%;background:${color}"></div></div>
       <span class="ov-rank-val" style="color:${color}">${pct.toFixed(1)}%</span>
     </div>`;
   }).join("") || `<div class="state-block" style="color:var(--text-3)">No chaser data for today yet.</div>`);
