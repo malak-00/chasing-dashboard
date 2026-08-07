@@ -12,11 +12,11 @@
 // Settings tab, no code change or redeploy needed. Do not add new
 // chasers here -- add them from the dashboard instead.
 const CHASER_SHEETS = {
-  Alex:  "1byPJ-RjIQzA4IcwuMieDXHpVb3EyR5Q8kJBnAs-npCU",
-  Hope:  "1LGKRvxveag0hdiVSuiPNWgbd_o6RDLDlYuWDMFNrlb0",
-  Rose:  "1pk4UmN6sH4qZVnLo3L1UphMaIOwUlGydDkHwOS9smzY",
-  Frank: "1-CuYnkkj8w9KO5RSjt6tyQ4l9xo4Pv5zZT_Gg1sfddA",
-  Nova:  "1_KrQtNWg3L-QMv1CedqT_qfNPZ215Bv6Z31nWqbg0D0"
+  "Alex Woods":     "1byPJ-RjIQzA4IcwuMieDXHpVb3EyR5Q8kJBnAs-npCU",
+  "Hope Smith":     "1LGKRvxveag0hdiVSuiPNWgbd_o6RDLDlYuWDMFNrlb0",
+  "Rose Simon":     "1pk4UmN6sH4qZVnLo3L1UphMaIOwUlGydDkHwOS9smzY",
+  "Frank Clarkson": "1-CuYnkkj8w9KO5RSjt6tyQ4l9xo4Pv5zZT_Gg1sfddA",
+  "Nova Grace":     "1_KrQtNWg3L-QMv1CedqT_qfNPZ215Bv6Z31nWqbg0D0"
 };
 
 // ============================================================
@@ -319,6 +319,25 @@ function applyMonthTabFormatting(sheet) {
   const prodCol = ARCHIVE_HEADERS.indexOf("Productivity") + 1;
   sheet.getRange(2, effCol,  998, 1).setNumberFormat('0.0"%"');
   sheet.getRange(2, prodCol, 998, 1).setNumberFormat('0.0"%"');
+
+  // Flag any row where Denials outnumber Approvals -- a light red tint that
+  // draws the eye straight to a bad day/chaser while scanning the raw
+  // sheet, on top of the day borders separating one day's block from the
+  // next. Purely visual (a conditional format rule, not a sort/filter) so
+  // it can never disturb the manually-built week-header/day-border
+  // structure the way a sortable Filter could.
+  const approvalsCol = ARCHIVE_HEADERS.indexOf("Approvals") + 1;
+  const denialsCol   = ARCHIVE_HEADERS.indexOf("Denials") + 1;
+  const dataRange     = sheet.getRange(2, 1, 998, ARCHIVE_HEADERS.length);
+  const denialsHigherRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied("=AND($B2<>\"\",$" + columnLetter(denialsCol) + "2>$" + columnLetter(approvalsCol) + "2)")
+    .setBackground("#FADBD8")  // light red tint -- the sheet itself has Sheets' normal white/grey-banded background, not the dashboard's dark theme
+    .setRanges([dataRange])
+    .build();
+  const existingRules = sheet.getConditionalFormatRules().filter(r =>
+    !r.getRanges().some(rg => rg.getA1Notation() === dataRange.getA1Notation())
+  );
+  sheet.setConditionalFormatRules(existingRules.concat([denialsHigherRule]));
 }
 
 // One-time utility: applies applyMonthTabFormatting() to every EXISTING
@@ -379,6 +398,80 @@ function addNewCampaignColumnsToExistingTabs() {
   Logger.log("=== DONE === Tabs updated: " + updated + " | Already current: " + alreadyCurrent);
 }
 
+// ============================================================
+// ONE-TIME: Rename chasers from short display names to full names
+// throughout the whole app -- run once after CHASER_SHEETS/CHASER_NAME_MAP
+// were switched to use full names ("Alex Woods" instead of "Alex") as the
+// canonical form. Renames:
+//   - the "Chasers" roster tab's Name column
+//   - every archive month tab's Chaser column
+// Both are exact-match renames against CHASER_RENAME_MAP below, so a row
+// already renamed (or a name that was never one of the old short forms) is
+// left untouched -- safe to re-run.
+// ============================================================
+const CHASER_RENAME_MAP = {
+  "Alex":     "Alex Woods",
+  "Hope":     "Hope Smith",
+  "Rose":     "Rose Simon",
+  "Frank":    "Frank Clarkson",
+  "Nova":     "Nova Grace",
+  "Nora":     "Nora Atkins",
+  "Jamie":    "Jamie Williams",
+  "Rick":     "Rick Nelson",
+  "Caroline": "Caroline Richards",
+};
+
+function renameChasersToFullNames() {
+  const archiveSS = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
+
+  // ── Roster ("Chasers" tab): rename the Name column ──
+  const chasersSheet = getOrCreateChasersTab();
+  const chasersData  = chasersSheet.getDataRange().getValues();
+  let rosterRenamed = 0;
+  for (let r = 1; r < chasersData.length; r++) {
+    const name    = String(chasersData[r][0]).trim();
+    const newName = CHASER_RENAME_MAP[name];
+    if (newName && newName !== name) {
+      chasersData[r][0] = newName;
+      rosterRenamed++;
+    }
+  }
+  if (rosterRenamed) {
+    chasersSheet.getRange(1, 1, chasersData.length, chasersData[0].length).setValues(chasersData);
+  }
+  Logger.log("Roster ('Chasers' tab): renamed " + rosterRenamed + " row(s).");
+
+  // ── Every archive month tab's Chaser column (column B) -- one batched
+  // read + write per tab, not one API call per row, since a tab can have
+  // hundreds of rows.
+  const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i;
+  let totalRowsRenamed = 0;
+  for (const sheet of archiveSS.getSheets()) {
+    if (!monthPattern.test(sheet.getName().trim())) continue;
+
+    const data = sheet.getDataRange().getValues();
+    let tabRenamed = 0;
+    for (let r = 1; r < data.length; r++) {
+      const chaserVal = String(data[r][1]).trim();
+      const newName   = CHASER_RENAME_MAP[chaserVal];
+      if (newName && newName !== chaserVal) {
+        data[r][1] = newName;
+        tabRenamed++;
+      }
+    }
+    if (tabRenamed) {
+      sheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+      Logger.log(sheet.getName() + ": renamed " + tabRenamed + " row(s).");
+    }
+    totalRowsRenamed += tabRenamed;
+  }
+
+  invalidateCache("chasers_config");
+  invalidateCache("archive_all");
+
+  Logger.log("=== DONE === Roster rows renamed: " + rosterRenamed + " | Archive rows renamed: " + totalRowsRenamed);
+}
+
 // Maps "date|chaser" -> { rowNum, values } for a specific month tab, so
 // archiveDayData() can update an existing row in place (fresh Cases/
 // Positive/etc. from a re-sync) instead of either skipping it (leaving
@@ -402,9 +495,18 @@ function buildExistingRowMap(sheet) {
 function buildUtlatelLookup(dateTab) {
   const utlatelForDate = getUtlatelData().filter(r => r.Date === dateTab);
   return function utlatelTotalsForChaser(chaserName) {
+    // Match on the chaser's FIRST NAME only, not their full canonical
+    // display name -- the Utlatel report's own "Agent" column is raw
+    // call-system text (may carry extensions/department tags around the
+    // name, and may only ever have used a first name to begin with), so a
+    // substring match against a full "Alex Woods" would silently stop
+    // matching an Agent value that's just "Alex" (shorter than what it's
+    // being searched for). The first name is virtually always enough to
+    // disambiguate within one team's roster.
+    const firstName = chaserName.split(" ")[0];
     let mins = 0, calls = 0;
     utlatelForDate.forEach(r => {
-      if (String(r.Agent || "").toLowerCase().includes(chaserName.toLowerCase())) {
+      if (String(r.Agent || "").toLowerCase().includes(firstName.toLowerCase())) {
         mins  += Number(r.DurationMins) || 0;
         calls += Number(r.Calls)        || 0;
       }
@@ -686,21 +788,24 @@ function checkTriggers() {
 // ============================================================
 // ============================================================
 // CHASER NAME NORMALIZATION
-// Maps full names from historical sheets to display names
-// Add entries here if new name variants appear
+// Maps every name variant a source sheet might use down to ONE canonical
+// full display name -- add entries here if new name variants appear.
+// Canonical names are full names throughout the whole app (roster, archive,
+// dashboard) since PR #26's batch 9 rename; see renameChasersToFullNames()
+// for the one-time migration that renamed already-written data to match.
 // ============================================================
 const CHASER_NAME_MAP = {
-  "alex woods":       "Alex",
-  "hope smith":       "Hope",
-  "rose simon":       "Rose",
-  "frank clarkson":   "Frank",
-  "nova grace":       "Nova",
+  "alex woods":       "Alex Woods",
+  "hope smith":       "Hope Smith",
+  "rose simon":       "Rose Simon",
+  "frank clarkson":   "Frank Clarkson",
+  "nova grace":       "Nova Grace",
   "tom":              "Tom Walker",
   // Former chasers — kept as-is for historical data
-  "nora atkins":      "Nora",
-  "jamie williams":   "Jamie",
-  "rick nelson":      "Rick",
-  "caroline richards":"Caroline",
+  "nora atkins":      "Nora Atkins",
+  "jamie williams":   "Jamie Williams",
+  "rick nelson":      "Rick Nelson",
+  "caroline richards":"Caroline Richards",
 };
 
 // Keys above are written without periods -- match against them the same way:
@@ -770,6 +875,17 @@ function getArchiveData() {
 
 
 
+// Converts a 1-based column number to its spreadsheet letter (1->A, 27->AA, ...).
+function columnLetter(n) {
+  let letter = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letter;
+}
+
 // Force the given column names to Plain Text formatting on the whole column
 // so Google Sheets never silently auto-converts a written date string (e.g.
 // "6/20/2026") into a real Date value with a guessed year. Every getOrCreate*Tab
@@ -779,12 +895,7 @@ function forcePlainTextColumns(sheet, headers, fieldNames) {
   fieldNames.forEach(function(field) {
     const idx = headers.indexOf(field);
     if (idx === -1) return;
-    let letter = "", n = idx + 1;
-    while (n > 0) {
-      const rem = (n - 1) % 26;
-      letter = String.fromCharCode(65 + rem) + letter;
-      n = Math.floor((n - 1) / 26);
-    }
+    const letter = columnLetter(idx + 1);
     sheet.getRange(letter + ":" + letter).setNumberFormat("@");
   });
 }
@@ -1529,7 +1640,7 @@ function testAllChasers() {
 }
 
 // Lists every tab in one chaser's tracker spreadsheet, looked up by name
-// from the current active roster (e.g. debugChaser("Alex")) -- handy when
+// from the current active roster (e.g. debugChaser("Alex Woods")) -- handy when
 // findChaserTrackerSheet() can't find today's tab and you need to see what
 // the tracker sheet actually named it.
 function debugChaser(name) {
@@ -1671,6 +1782,26 @@ function migrateExistingSheets() {
   let totalWritten = 0;
   let totalSkipped = 0;
 
+  // Bottom border under the last row of each date, same visual treatment as
+  // archiveDayData()'s daily write -- without this, a full historical
+  // rebuild via this function left every day's rows looking identical to
+  // the next, with nothing but the Date column itself to tell them apart.
+  // Tracks the most recently WRITTEN row (sheet + row number); a day
+  // boundary is detected when the next row's date differs from the last
+  // one written. Only accounts for rows this run actually writes -- a
+  // partial re-run that skips some already-existing rows for a date and
+  // only appends a few new ones after them may not land the border on that
+  // date's true last row, but a normal full rebuild (the common case this
+  // exists for) never hits that since there's nothing to skip.
+  let lastWrittenSheet = null, lastWrittenRow = -1, lastWrittenDate = null;
+  function borderLastRowOfPreviousDate() {
+    if (lastWrittenSheet && lastWrittenRow > 0) {
+      lastWrittenSheet.getRange(lastWrittenRow, 1, 1, ARCHIVE_HEADERS.length).setBorder(
+        null, null, true, null, null, null, "#00C2A8", SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+    }
+  }
+
   for (const row of allRows) {
     const key = row.date + "|" + row.chaser;
     if (existing.has(key)) { totalSkipped++; continue; }
@@ -1692,6 +1823,10 @@ function migrateExistingSheets() {
       existing.add(weekKey);
     }
 
+    if (row.date !== lastWrittenDate) {
+      borderLastRowOfPreviousDate();
+    }
+
     rowSheet.appendRow([
       row.date, row.chaser,
       row.cases, row.positive, row.approvals, row.denials, row.timeMins,   // no faxes col
@@ -1702,13 +1837,38 @@ function migrateExistingSheets() {
       // these in going forward).
     ].concat(new Array(CAMPAIGN_KEYS.length * 2).fill(0)));
 
+    lastWrittenSheet = rowSheet;
+    lastWrittenRow   = rowSheet.getLastRow();
+    lastWrittenDate  = row.date;
+
     existing.add(key);
     totalWritten++;
   }
+  borderLastRowOfPreviousDate(); // border the very last date's last row too
 
   Logger.log("=== MIGRATION COMPLETE ===");
   Logger.log("Written: " + totalWritten + " rows");
   Logger.log("Skipped (duplicates): " + totalSkipped + " rows");
+}
+
+// Parses a Productivity/Efficiency source cell onto the same 0-100 scale
+// archiveDayData()'s own live calculation always uses (it multiplies by
+// 100 -- e.g. `(positive/cases*100).toFixed(1)`). A source cell can be
+// EITHER plain text with a literal "%" ("38.4%", strip and parse as-is,
+// already 0-100) OR a real Sheets-percentage-formatted number (Format >
+// Number > Percent) -- getValues() returns THAT as the raw underlying
+// fraction (0.384), not the string "38.4%", so it has to be multiplied by
+// 100 here or it silently lands on the wrong scale and (once the archive's
+// own percent number format is applied) displays as "0.4%" instead of
+// "38.4%".
+function parsePercentField(rawValue) {
+  if (typeof rawValue === "number") {
+    // A real percent-formatted cell's underlying fraction is <=1 for any
+    // realistic percentage; a plain number cell (someone typed "38.4"
+    // directly with no percent formatting) is already on the 0-100 scale.
+    return Math.abs(rawValue) <= 1 ? rawValue * 100 : rawValue;
+  }
+  return parseFloat(String(rawValue || "").replace("%", "").trim());
 }
 
 // ── Parse one weekly tab into plain row records -- no archive writes, no
@@ -1758,15 +1918,11 @@ function collectRowsFromWeekTab(tab) {
     if (!rawChaser || rawChaser.toUpperCase() === "CHASER NAME" || rawChaser.toUpperCase().startsWith("TOTAL")) continue;
 
     // Normalize here (not just at read time) so the archive itself shows
-    // clean canonical names ("Alex", "Tom Walker") instead of whatever raw
+    // clean canonical names ("Alex Woods", "Tom Walker") instead of whatever raw
     // text a tracker tab happened to have ("ALEX WOODS", "Tom", etc.).
     const chaser = normalizeChaserName(rawChaser);
 
     const get = field => colIndex[field] !== undefined ? row[colIndex[field]] : "";
-
-    // Parse productivity/efficiency — strip % if stored as string
-    const prodRaw = String(get("productivity") || "").replace("%","").trim();
-    const effRaw  = String(get("efficiency")   || "").replace("%","").trim();
 
     rows.push({
       date:  currentDate,
@@ -1776,8 +1932,8 @@ function collectRowsFromWeekTab(tab) {
       approvals:         Number(get("approvals"))         || 0,
       denials:           Number(get("denials"))           || 0,
       timeMins:          Number(get("timeMins"))           || 0,
-      eff:               parseFloat(effRaw)  || "",
-      prod:              parseFloat(prodRaw) || "",
+      eff:               parsePercentField(get("efficiency"))   || "",
+      prod:              parsePercentField(get("productivity")) || "",
       totalShift:        Number(get("totalShift"))         || 0,
       calls:             Number(get("calls"))               || 0,
       totalDurationMins: Number(get("totalDurationMins"))  || 0,
@@ -1873,7 +2029,14 @@ function applyDayBordersToArchive() {
     let lastRowForDate = -1;
 
     for (let r = 1; r < data.length; r++) {
-      const dateVal   = String(data[r][0]).trim();
+      // normalizeDateCellToTab() collapses both a Date object (which Sheets
+      // may have silently auto-coerced this cell into) and a plain "M/D" or
+      // "M/D/YYYY" string down to the same "M/D" form -- comparing raw
+      // String(cellValue) instead would mis-group rows of the same day
+      // whenever some of that day's rows ended up typed differently from
+      // others (a real, previously-seen failure mode elsewhere in this
+      // file; see buildExistingRowMap()/deleteArchiveRowsForDate()).
+      const dateVal   = normalizeDateCellToTab(data[r][0]);
       const chaserVal = String(data[r][1]).trim();
 
       // Skip blank, WEEK header, and Total rows

@@ -12,6 +12,94 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Full names as the canonical chaser identity everywhere (ninth batch)
+Requested after noticing the archive only ever showed first names.
+`CHASER_SHEETS`/`CHASER_NAME_MAP` (Code.gs) and `CHASERS`/`CHASER_COLORS`
+(dashboard.html) switched from short names to full names ("Alex Woods"
+instead of "Alex") for every chaser, active and former -- matching the
+"Tom Walker" convention already used for a newer chaser, now applied
+consistently everywhere instead of as a one-off exception.
+
+Short names turned out to be a real matching KEY in a few places, not
+just display text, so this needed more than a find-and-replace:
+- `buildUtlatelLookup()` matched Utlatel's raw "Agent" text as a substring
+  of the chaser name -- a full-name substring match would silently stop
+  matching an Agent value that's just "Alex" (shorter than "Alex Woods"),
+  breaking duration/calls credit for every renamed chaser going forward.
+  Now matches on just the first-name token, robust to both old short-name
+  Utlatel exports and any future full-name text.
+- The exact same substring-match issue existed twice on the frontend
+  (`buildAgentMapUI`, `applyUtlatelPersist`, both auto-detecting which
+  chaser a raw Utlatel agent string refers to) -- consolidated both into
+  one `autoMapAgentToChaser()` helper with the same first-name-token fix,
+  removing a pre-existing duplication in the process.
+- Found and deleted a dead, already-out-of-sync duplicate of
+  `CHASER_NAME_MAP`/`normalizeName()` sitting in dashboard.html -- never
+  called anywhere, and missing the "tom" entry Code.gs's real copy already
+  had (a drift that had already happened once with only 2 copies of the
+  same map).
+- Found and fixed a stale hardcoded 5-name `<option>` list in the Custom
+  Chart Builder's chaser multi-select (never included Tom Walker even
+  before this change, would now be actively wrong) -- populated
+  dynamically from `CHASERS` like the app's other chaser dropdowns.
+- Found and fixed a real width-clipping bug via a Playwright screenshot:
+  `.ov-rank-name` (Overview tab's ranking rows) was sized for short names
+  and truncated "Frank Clarkson" to "Frank Clar…" -- widened 90px -> 130px.
+
+Added a new one-time `renameChasersToFullNames()` (Code.gs) to bring
+already-written data in line: renames the "Chasers" roster tab's Name
+column and every archive month tab's Chaser column (exact match against a
+`CHASER_RENAME_MAP`, batched per-tab, idempotent -- safe to re-run),
+invalidates the roster/archive caches afterward. **Needs to be run once**
+after this deploys, or the roster/archive will still show short names
+until it's run.
+
+Verified via a Node `vm`-sandboxed test of `renameChasersToFullNames()`
+(roster + archive rename, WEEK/TOTAL rows correctly left alone, idempotent
+re-run, cache invalidation) and Playwright (`CHASER_COLORS`/
+`autoMapAgentToChaser` resolve correctly for full names given short-name
+and short-name-with-extension inputs, `cbChasers` populates dynamically,
+zero console errors, no truncated names on the Overview tab after the
+width fix).
+
+### Day-separator borders on the historical rebuild path + a denials-flag rule (eighth batch)
+Prompted by rebuilding the archive from scratch (delete month tabs +
+Campaign Responses, re-run `migrateExistingSheets()` +
+`backfillFromCombinedSheet()`) and finding the rebuilt sheet had no visual
+separation between days:
+- `migrateExistingSheets()` now adds the same bottom teal border under each
+  day's last row that `archiveDayData()` (the daily Sync write) already
+  did -- it was the one write path missing this, so a full historical
+  rebuild left every day's block looking identical to the next.
+- Fixed a real bug in `applyDayBordersToArchive()` (the retroactive
+  one-time border utility, for anyone with existing un-bordered data):
+  it compared raw `String(dateCell)` values, which mis-groups a day
+  whenever Sheets silently auto-coerced only some of that day's rows into
+  real Date objects -- switched to `normalizeDateCellToTab()`, the same
+  helper every other date comparison in this file already uses for exactly
+  this reason.
+- `applyMonthTabFormatting()` now also adds a conditional-format rule that
+  lightly highlights any row where Denials > Approvals, so a day/chaser
+  needing attention is visible while scanning. Deliberately a formatting
+  rule and not a sortable Filter -- a Filter would let someone sort a
+  column and scramble the manually-built week-header/day-border structure
+  this whole feature exists to create.
+- Extracted `columnLetter()` out of `forcePlainTextColumns()` into its own
+  reusable helper.
+- Considered and deliberately did NOT add: a basic Filter/sort control
+  (risks destroying the manual row structure, see above); a per-day
+  subtotal row (bigger scope, would need a decision on what should be
+  summed -- worth a follow-up if wanted); per-week alternating shading
+  instead of per-row banding (marginal benefit once day borders exist).
+
+Verified via 3 Node `vm`-sandboxed tests: `migrateExistingSheets()`
+borders land on the correct last-row-of-each-day (including the
+end-of-run flush for the final date), `applyDayBordersToArchive()`
+correctly groups a day whose rows are a mix of Date-object and string
+date cells (previously mis-grouped this), and the conditional format rule
+is added once and not duplicated on repeat `applyMonthTabFormatting()`
+calls (important since it's re-applied by `reformatArchiveTabs()`).
+
 ### Added 3 new campaigns: PPO (ORT), PPO (LY), UTI (seventh batch)
 Extended the campaign roster from 4 to 7 by adding `PPO (ORT)`, `PPO (LY)`,
 and `UTI` to `CAMPAIGN_LABELS`, plus 3 matching entries in
