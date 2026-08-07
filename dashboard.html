@@ -2045,7 +2045,14 @@ function buildRowFromTotals(name,t){
   // Number(r.productivity) without checking the stub flag first (Overview
   // ranking, Leaderboard sort) gets Number("--") = NaN instead of a clean
   // "no data yet" state.
-  if(shiftMins<=0){productivityStub=true;productivityStubReason="No Shift Set";}
+  // shiftMins<=0 covers BOTH "nothing was ever configured" and "shift was
+  // explicitly recorded as 0 minutes" (e.g. a day off) -- there's no way to
+  // tell those apart once the value has already collapsed to a plain 0
+  // (Number("")||0 and Number(0)||0 are indistinguishable here). "0 Shift"
+  // states the fact without presuming which case it is -- "No Shift Set"
+  // previously implied nothing was configured even when the user HAD set
+  // it, to exactly 0, which read as if their input was being ignored.
+  if(shiftMins<=0){productivityStub=true;productivityStubReason="0 Shift";}
   else if(!durationMins){productivityStub=true;productivityStubReason="No Utlatel";}
   else { productivity=(productiveTime/shiftMins*100).toFixed(1); }
   return {name,cases,positive,approvals,denials,efficiency,productivity,productivityStub,productivityStubReason,shiftMins,calls,durationMins,
