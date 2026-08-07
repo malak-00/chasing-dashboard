@@ -1664,7 +1664,7 @@ function renderOverview() {
       return `<div class="ov-rank-row">
         <span class="ov-rank-name">${r.name}</span>
         <div class="ov-rank-bar-bg"></div>
-        <span class="ov-rank-val" style="color:var(--text-3);font-size:11px">No Utlatel</span>
+        <span class="ov-rank-val" style="color:var(--text-3);font-size:11px">${r.productivityStubReason || "No Utlatel"}</span>
       </div>`;
     }
     const pct = Number(r.productivity);
@@ -2019,7 +2019,7 @@ function renderLbCell(c, r, mxC, targets) {
   if (c.key === "approvals") return `<td><span class="pill pill-green">${v}</span></td>`;
   if (c.key === "denials")   return `<td><span class="pill pill-red">${v}</span></td>`;
   if (c.key === "productivity") {
-    return `<td>${r.productivityStub?`<span class="pill pill-stub">Upload Utlatel</span>`:statusPill(v, targets?.productivity, "%")}</td>`;
+    return `<td>${r.productivityStub?`<span class="pill pill-stub">${r.productivityStubReason || "Upload Utlatel"}</span>`:statusPill(v, targets?.productivity, "%")}</td>`;
   }
   if (c.key === "efficiency") return `<td>${statusPill(v, targets?.efficiency, "")}</td>`;
   return `<td>${c.format ? c.format(v) : (v ?? "--")}</td>`;
@@ -2039,11 +2039,16 @@ function buildRowFromTotals(name,t){
   const timeMins=t.timeMins||0, acwDuration=t.acwDuration||0;
   const totalResponses=approvals+denials;
   const efficiency=cases?(positive/cases*100).toFixed(1):"--";
-  let productivity="--",productivityStub=false;
-  if(shiftMins<=0){productivity="--";}
-  else if(!durationMins){productivityStub=true;}
+  let productivity="--",productivityStub=false,productivityStubReason="";
+  // Both branches leave productivity as the unparseable "--" placeholder --
+  // productivityStub must be set for BOTH, or a caller that does
+  // Number(r.productivity) without checking the stub flag first (Overview
+  // ranking, Leaderboard sort) gets Number("--") = NaN instead of a clean
+  // "no data yet" state.
+  if(shiftMins<=0){productivityStub=true;productivityStubReason="No Shift Set";}
+  else if(!durationMins){productivityStub=true;productivityStubReason="No Utlatel";}
   else { productivity=(productiveTime/shiftMins*100).toFixed(1); }
-  return {name,cases,positive,approvals,denials,efficiency,productivity,productivityStub,shiftMins,calls,durationMins,
+  return {name,cases,positive,approvals,denials,efficiency,productivity,productivityStub,productivityStubReason,shiftMins,calls,durationMins,
           productiveTime,timeMins,acwDuration,totalResponses};
 }
 

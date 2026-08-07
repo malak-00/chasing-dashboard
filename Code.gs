@@ -2532,6 +2532,12 @@ function pullWeeklyCampaignData(anchorDate) {
     datesProcessed.push(fullDate);
   }
 
+  // Each date's rows land wherever writeCombinedCampaignResponses()'s
+  // delete-then-append happened to put them, not necessarily in date
+  // order -- this puts the whole tab back into chronological order with
+  // day-separator borders in one pass, same as the month tabs.
+  sortAndBorderCampaignResponsesTab();
+
   Logger.log("pullWeeklyCampaignData(): processed " + datesProcessed.length + " days (" +
     datesProcessed[datesProcessed.length-1] + " to " + datesProcessed[0] + ") | " +
     "Rows updated: " + totalUpdated + " | Rows inserted: " + totalInserted +
@@ -2572,24 +2578,115 @@ function pullWeeklyCampaignData(anchorDate) {
 
 const CAMPAIGN_RESPONSES_HEADERS = ["Date","Campaign","Approved","Denied","ApprovalPct"];
 
+// Per-campaign accent color for the Campaign column, matching the
+// dashboard's own CAMPAIGNS palette -- light-mode values specifically,
+// since the actual Google Sheet has a plain white background, not the
+// dashboard's dark theme.
+const CAMPAIGN_RESPONSES_COLORS = {
+  ort: "#004D61", cgm: "#822659", lymphc: "#3373C4", lymphw: "#B07F12",
+  ppoOrt: "#6B46C1", ppoLy: "#B8621E", uti: "#4C5C8C",
+};
+
 function getOrCreateCampaignResponsesTab() {
   const ss    = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
   let   sheet = ss.getSheetByName("Campaign Responses");
   if (!sheet) {
     sheet = ss.insertSheet("Campaign Responses");
     sheet.appendRow(CAMPAIGN_RESPONSES_HEADERS);
-    sheet.setFrozenRows(1);
-    sheet.getRange(1, 1, 1, CAMPAIGN_RESPONSES_HEADERS.length)
-         .setFontWeight("bold")
-         .setBackground("#1A2C42")
-         .setFontColor("#00C2A8");
     Logger.log("Created Campaign Responses tab");
   }
+  applyCampaignResponsesFormatting(sheet);
   // Without this, a bare "6/25" Date value gets auto-coerced by Sheets into
   // a real Date cell using Sheets' own year guess -- a guessed year silently
   // breaks the dashboard's Month/Quarter views.
   forcePlainTextColumns(sheet, CAMPAIGN_RESPONSES_HEADERS, ["Date"]);
   return sheet;
+}
+
+// Styles the Campaign Responses tab for readability: header styled like
+// every other archive tab, frozen header row, sized column widths, and
+// ApprovalPct shown as a real percentage over a generous fixed range (so
+// rows added later automatically inherit it, same reasoning as month
+// tabs' applyMonthTabFormatting()). Purely presentation -- never touches
+// which rows exist or what values they hold. Row order/grouping/borders
+// are handled separately by sortAndBorderCampaignResponsesTab(), since
+// those need to run AFTER every write (not just on tab creation) to stay
+// correct as rows get added.
+function applyCampaignResponsesFormatting(sheet) {
+  sheet.setFrozenRows(1);
+
+  const headerRange = sheet.getRange(1, 1, 1, CAMPAIGN_RESPONSES_HEADERS.length);
+  headerRange.setBackground("#1A2C42").setFontColor("#00C2A8")
+    .setFontWeight("bold").setHorizontalAlignment("center");
+
+  sheet.setColumnWidth(1, 100); // Date
+  sheet.setColumnWidth(2, 140); // Campaign
+  sheet.setColumnWidth(3, 90);  // Approved
+  sheet.setColumnWidth(4, 90);  // Denied
+  sheet.setColumnWidth(5, 100); // ApprovalPct
+
+  const pctCol = CAMPAIGN_RESPONSES_HEADERS.indexOf("ApprovalPct") + 1;
+  sheet.getRange(2, pctCol, 5000, 1).setNumberFormat('0.0"%"');
+}
+
+// Sorts every existing row chronologically by Date, then by campaign in
+// CAMPAIGN_KEYS order within each date (so each date's block of campaigns
+// always appears in the same, predictable order), applies a bottom border
+// under each date's last row -- the same day-separator treatment the
+// month tabs already use -- and color-codes the Campaign column to match
+// the dashboard's own palette for quick visual scanning.
+//
+// Called automatically at the end of backfillFromCombinedSheet() and
+// pullWeeklyCampaignData(), so the tab is always left organized without a
+// separate manual step -- also safe to run standalone anytime (e.g. after
+// editing the tab by hand), since it only ever reorders/restyles rows
+// that already exist, never changes a value.
+function sortAndBorderCampaignResponsesTab() {
+  const sheet = getOrCreateCampaignResponsesTab();
+  const data  = sheet.getDataRange().getValues();
+  if (data.length < 2) { Logger.log("Campaign Responses tab has no data rows yet."); return; }
+
+  const headers = data[0];
+  const dateIdx = headers.indexOf("Date");
+  const campIdx = headers.indexOf("Campaign");
+
+  const campaignOrder = {};
+  CAMPAIGN_KEYS.forEach((key, i) => { campaignOrder[CAMPAIGN_LABELS[key]] = i; });
+  const labelToKey = {};
+  CAMPAIGN_KEYS.forEach(key => { labelToKey[CAMPAIGN_LABELS[key]] = key; });
+
+  const rows = data.slice(1);
+  rows.sort((a, b) => {
+    const da = new Date(a[dateIdx]), db = new Date(b[dateIdx]);
+    const dd = da - db;
+    if (dd !== 0) return dd;
+    const oa = campaignOrder[a[campIdx]] ?? 999;
+    const ob = campaignOrder[b[campIdx]] ?? 999;
+    return oa - ob;
+  });
+
+  const fullRange = sheet.getRange(2, 1, rows.length, headers.length);
+  fullRange.setValues(rows);
+  fullRange.setBorder(false, false, false, false, false, false); // clear stale borders from a previous sort before reapplying
+
+  const fontColors = rows.map(r => {
+    const color = CAMPAIGN_RESPONSES_COLORS[labelToKey[r[campIdx]]] || null;
+    return headers.map((h, i) => i === campIdx ? color : null);
+  });
+  fullRange.setFontColors(fontColors);
+
+  for (let i = 1; i < rows.length; i++) {
+    if (String(rows[i][dateIdx]) !== String(rows[i-1][dateIdx])) {
+      sheet.getRange(i + 1, 1, 1, headers.length).setBorder(
+        null, null, true, null, null, null, "#00C2A8", SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+    }
+  }
+  sheet.getRange(rows.length + 1, 1, 1, headers.length).setBorder(
+    null, null, true, null, null, null, "#00C2A8", SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+  );
+
+  Logger.log("Sorted and bordered Campaign Responses tab: " + rows.length + " rows.");
 }
 
 // readCampaignTotalsForDate/readChaserCampaignCountsForDate/archiveCampaignResponses/
@@ -2738,6 +2835,18 @@ function backfillFromCombinedSheet() {
     doneDates.push(dateTab);
     props.setProperty(PROGRESS_KEY, JSON.stringify(doneDates));
   }
+
+  // Each date's rows land wherever writeCombinedCampaignResponses()'s
+  // delete-then-append happened to put them, not necessarily in date
+  // order (dates here are processed in whatever order parseBackfillResponses()
+  // discovered them, not chronologically) -- this puts the whole tab back
+  // into chronological order with day-separator borders in one pass, same
+  // as the month tabs. If this run times out mid-loop (a full historical
+  // backfill can span many runs -- see the file header comment above),
+  // this line simply won't execute for that run; the sort operates on
+  // whatever's in the sheet at call time regardless of which run wrote it,
+  // so the next run that DOES finish the loop leaves everything sorted.
+  sortAndBorderCampaignResponsesTab();
 
   Logger.log("=== DONE ===");
   Logger.log("Campaign Responses rows written: " + totalCampaignRows);

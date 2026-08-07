@@ -12,6 +12,41 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Organized the Campaign Responses tab + fixed Team Productivity NaN% (fourteenth batch)
+- **Campaign Responses tab readability**: it was written in whatever order
+  `parseBackfillResponses()` happened to discover dates in (grouped by
+  which source tab introduced a date first, not chronological), with no
+  header styling and `ApprovalPct` shown as a bare number. New
+  `applyCampaignResponsesFormatting()` (header styling, frozen row, column
+  widths, real percent format -- wired into
+  `getOrCreateCampaignResponsesTab()` like the month tabs' own formatting
+  helper) plus new `sortAndBorderCampaignResponsesTab()` (sorts every row
+  chronologically by Date then by campaign in `CAMPAIGN_KEYS` order,
+  day-separator borders matching the month tabs, Campaign column
+  color-coded to the dashboard's own campaign palette). The sort/border
+  pass runs automatically at the end of `backfillFromCombinedSheet()` and
+  `pullWeeklyCampaignData()` -- no separate manual step needed -- and is
+  also callable standalone anytime. Verified with a mocked test: scrambled
+  2-date input sorts to chronological + campaign order with borders
+  landing exactly under each date's last row.
+- **Team Productivity showing "NaN%"**: `buildRowFromTotals()` had two
+  distinct "insufficient data" cases (no shift minutes set; shift set but
+  no Utlatel call-duration data) but only ever flagged `productivityStub`
+  for the second one. The first left `productivity` as the unparseable
+  `"--"` placeholder while `productivityStub` stayed `false` -- every
+  caller that reads productivity numerically (Overview's team average,
+  ranking bar scale/sort, Leaderboard sort) checks `productivityStub`
+  first specifically to avoid this, so a chaser with no shift set produced
+  `Number("--")` = `NaN`, which then poisoned the team average (`NaN` +
+  anything = `NaN`) and displayed as "NaN%" both for that chaser and for
+  the whole team. Both cases now set `productivityStub`, with a new
+  `productivityStubReason` ("No Shift Set" vs "No Utlatel") so the two
+  causes show accurate, actionable text instead of a misleading "Upload
+  Utlatel" label when the real issue is a missing shift assignment.
+  Verified via Playwright: a 3-chaser mix (no-shift, normal, no-Utlatel)
+  now shows a clean team average instead of NaN%, each with the correct
+  individual stub reason.
+
 ### Verified dry-run numbers against raw CSVs, resolved bare first-name variants, fixed LY WRAP tab name (thirteenth batch)
 Given the 4 campaign fax-response CSVs (ORT, CGM, LY PUMP, LY WRAP NORMAL)
 directly, and independently verified the reported `dryRunCampaignBackfill()`
