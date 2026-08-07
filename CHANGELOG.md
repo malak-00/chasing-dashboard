@@ -12,6 +12,53 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Made the header date the single source of truth; clarified Leaderboard's period (seventeenth batch)
+Follow-up to the previous batch: the previous fix stopped each tab from
+duplicating preset-range *logic*, but didn't stop tabs from asking you to
+re-pick the same day the header already had. This batch removes that
+duplication where a picker was a true duplicate, and makes range pickers
+inherit the header's day instead of starting blank.
+- **Campaigns tab's "Day" picker was a pure duplicate**: `loadData()` was
+  already rebuilding the campaign Day panel from the header date on every
+  load (`campDayData = dayData`), so the separate `campDayPicker` input +
+  "Load Day" button never did anything the header date wasn't already
+  doing. Removed both; the panel now just always follows the header date,
+  with a small note ("Day panel follows the header date ↑") in its place.
+  `loadCampaignDay()` (still used by the "Refresh" button) now reads the
+  header date directly instead of the removed input.
+- **Chasers tab's "Day" picker stayed** (unlike Campaigns, it's a genuine
+  independent feature — picking a *different* day than the header's to
+  inspect one chaser's history — not a duplicate), but now live-syncs to
+  the header date via a new `syncDependentDatePickers()` (wired into the
+  header date's `onchange`) so switching tabs after changing the header
+  date doesn't show stale data. A manual edit within the Chasers tab still
+  works normally; it just starts from the header's day instead of
+  whatever day happened to be on screen when the page first loaded.
+  Range-mode inputs are untouched by this sync — only the single-day mode
+  mirrors the header, since a range someone is actively reviewing
+  shouldn't be silently discarded by an unrelated header change.
+- **Range pickers (Leaderboard Custom, History Custom Range, Chasers
+  Range mode, Chart Builder) now seed From/To from the header date the
+  first time each is opened**, instead of requiring a full re-pick (or,
+  for Chart Builder, silently defaulting to the literal browser "today"
+  even if the header was set to a different day). Once a real range has
+  been set it's left alone on later visits/toggles — this only removes
+  the *first* blank-field friction, it doesn't fight a range someone is
+  actively adjusting.
+- **Leaderboard didn't say what period it was showing**: the three view
+  toggles (Today/Week/Custom) only showed which button was lit up, not
+  the actual date(s) behind it. Added a `"Showing: ..."` label under the
+  toggle row that always states it explicitly — `"Showing: Today — Aug 7,
+  2026"`, `"Showing: Week of Aug 3, 2026 – Aug 7, 2026"`, or `"Showing:
+  Aug 1, 2026 – Aug 7, 2026"` for Custom — kept in sync via a new
+  `updateLbShowingLabel()` called from `setLbView()`, `renderLeaderboard()`,
+  and `applyLbCustomRange()`. New `niceDateFromTab()`/`niceDateFromISO()`
+  helpers do the "Aug 7, 2026"-style formatting from the app's two date
+  formats (archive `"M/D"` tabs and `<input type="date">`'s ISO values).
+  Verified via Playwright across all three views plus the live header-sync
+  behavior, the auto-seeded ranges, and that Chart Builder doesn't clobber
+  a manually-set range on tab re-visit.
+
 ### Unified the scattered date pickers into one reusable pattern (sixteenth batch)
 Requested as the final cleanup for this PR: date-range inputs had been
 built independently in each tab (Leaderboard, History, Chasers, Custom

@@ -311,7 +311,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
   <div class="logo"><span class="logo-dot"></span>Chasing Dashboard</div>
   <div class="header-right">
     <span class="status-badge" id="statusBadge">Live</span>
-    <input type="date" class="date-input" id="datePicker" onchange="loadData(); updateSyncLabel();">
+    <input type="date" class="date-input" id="datePicker" onchange="loadData(); updateSyncLabel(); syncDependentDatePickers();">
     <button class="btn" onclick="loadData()">&#8635; Load</button>
     <div class="sync-group" title="Manual sync controls — nothing runs automatically">
       <button class="btn btn-ghost" id="syncBtn" onclick="syncSelectedDate()" title="Re-reads the selected date's chaser trackers and updates the archive">&#9650; Sync <span id="syncDateLabel">Today</span></button>
@@ -386,9 +386,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
 
     <!-- Campaign controls bar -->
     <div class="lb-range-bar" style="margin-bottom:18px">
-      <label>Day</label>
-      <input type="date" class="date-input" id="campDayPicker">
-      <button class="btn" style="padding:5px 12px;font-size:11px" onclick="loadCampaignDay()">Load Day</button>
+      <span style="font-size:11px;color:var(--text-3)">Day panel follows the header date &uarr;</span>
       <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
       <label>Week of</label>
       <input type="week" class="date-input" id="campWeekPicker">
@@ -465,6 +463,9 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
         </div>
         <div class="sort-btns" id="sortBtns"></div>
       </div>
+    </div>
+    <div style="margin:-6px 0 12px">
+      <span class="panel-date" id="lbShowingLabel">Showing: —</span>
     </div>
     <div class="lb-range-bar hidden" id="lbRangeBar">
       <label>From</label>
@@ -1144,6 +1145,54 @@ function isoWeekStringToMonday(weekStr) {
   return monday;
 }
 
+// Human-readable "Aug 7, 2026" formatting shared by the "Showing: ..."
+// indicators (Leaderboard, Campaigns panel headers) -- one from the
+// "M/D" or "M/D/YYYY" archive tab format, one from the ISO "YYYY-MM-DD"
+// <input type="date"> value format.
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function niceDateFromTab(dateTab, fallbackYear) {
+  if (!dateTab) return "";
+  const parts = String(dateTab).split("/");
+  const m = parseInt(parts[0], 10), d = parseInt(parts[1], 10);
+  if (!m || !d) return String(dateTab);
+  const y = parts[2] ? parseInt(parts[2], 10) : (fallbackYear || new Date().getFullYear());
+  return `${MONTH_ABBR[m-1]} ${d}, ${y}`;
+}
+function niceDateFromISO(iso) {
+  if (!iso) return "";
+  const parts = String(iso).split("-").map(Number);
+  const y = parts[0], m = parts[1], d = parts[2];
+  if (!y || !m || !d) return iso;
+  return `${MONTH_ABBR[m-1]} ${d}, ${y}`;
+}
+
+// The header date picker is the single source of truth for "which day" --
+// returns it as a real local-midnight Date, falling back to today if blank.
+function headerDateAsDate() {
+  const val = document.getElementById("datePicker")?.value;
+  if (!val) return new Date();
+  const [y,m,d] = val.split("-").map(Number);
+  return new Date(y, m-1, d);
+}
+
+// Propagates a header date change to the other places that show a single
+// day, so switching tabs never requires re-picking the same day you
+// already chose up top. Multi-day range pickers (Leaderboard/History/
+// Chasers-range/Chart Builder) are deliberately NOT touched here -- they
+// get seeded from the header date once, the first time each is opened
+// (see setLbView/setHistView/setChaserRangeMode/initChartBuilder), but an
+// in-progress custom range shouldn't be silently blown away just because
+// the header day changed.
+function syncDependentDatePickers() {
+  const val = document.getElementById("datePicker").value;
+  const chaserDateEl = document.getElementById("chaserDate");
+  if (chaserDateEl && !chaserRangeMode) {
+    chaserDateEl.value = val;
+    if (activeTab === "chasers") renderChaserPage();
+  }
+  updateLbShowingLabel();
+}
+
 // Sets a From/To date-input pair to a standard preset range and calls the
 // tab's own apply/load function -- the ONE shared implementation behind
 // every "quick range" button row in the app (see quick-range-btn markup),
@@ -1197,7 +1246,6 @@ window.addEventListener("DOMContentLoaded", () => {
   document.getElementById("datePicker").value    = today;
   updateSyncLabel();
   document.getElementById("weekPicker").value    = getISOWeekString(new Date());
-  document.getElementById("campDayPicker").value  = today;
   document.getElementById("campWeekPicker").value = getISOWeekString(new Date());
   document.getElementById("campMonthPicker").value = today.slice(0,7); // "YYYY-MM"
   document.getElementById("chaserDate").value = today;
@@ -1823,7 +1871,7 @@ function renderCampaignPanels() {
 }
 
 async function loadCampaignDay() {
-  const val = document.getElementById("campDayPicker").value;
+  const val = document.getElementById("datePicker").value;
   if (!val) return;
   const [y,m,d] = val.split("-");
   const dateTab = `${parseInt(m)}/${parseInt(d)}`;
@@ -2008,7 +2056,42 @@ function setLbView(v) {
   document.getElementById("lbWeekBtn").classList.toggle("active",   v==="week");
   document.getElementById("lbCustomBtn").classList.toggle("active", v==="custom");
   document.getElementById("lbRangeBar").classList.toggle("hidden",  v!=="custom");
+  // Seed Custom's From/To from the header date the first time it's opened
+  // (instead of leaving it blank until Apply) -- once the user has set a
+  // real range it's left alone on subsequent visits, same rule as the
+  // other range pickers in the app.
+  if (v === "custom") {
+    const fromEl = document.getElementById("lbFrom"), toEl = document.getElementById("lbTo");
+    if (!fromEl.value || !toEl.value) {
+      const iso = document.getElementById("datePicker").value;
+      fromEl.value = iso; toEl.value = iso;
+      applyLbCustomRange();
+    }
+  }
+  updateLbShowingLabel();
   if (v !== "custom") renderLeaderboard();
+}
+
+// Keeps the "Showing: ..." label above the Leaderboard table in sync with
+// whichever view is active -- so it's always explicit what period the
+// numbers below cover, instead of having to infer it from which toggle
+// button happens to be lit up.
+function updateLbShowingLabel() {
+  const el = document.getElementById("lbShowingLabel");
+  if (!el) return;
+  const d = pickerToTab();
+  if (lbView === "day") {
+    el.textContent = "Showing: Today — " + niceDateFromTab(d);
+  } else if (lbView === "week") {
+    const tabs = getWeekTabsJS(d);
+    el.textContent = "Showing: Week of " + niceDateFromTab(tabs[0]) + " – " + niceDateFromTab(tabs[tabs.length-1]);
+  } else {
+    const from = document.getElementById("lbFrom").value;
+    const to   = document.getElementById("lbTo").value;
+    el.textContent = (from && to)
+      ? "Showing: " + niceDateFromISO(from) + " – " + niceDateFromISO(to)
+      : "Showing: pick a range and click Apply";
+  }
 }
 
 function applyLbCustomRange() {
@@ -2040,10 +2123,12 @@ function applyLbCustomRange() {
   lbCustomData = groupByChaser(rows);
   const label  = from + " → " + to;
   document.getElementById("lbRangeLabel").textContent = rows.length + " rows across " + new Set(rows.map(r=>r.Date)).size + " days";
+  updateLbShowingLabel();
   renderLeaderboard();
 }
 
 function renderLeaderboard() {
+  updateLbShowingLabel();
   let rows;
 
   if (lbView==="custom") {
@@ -2738,6 +2823,16 @@ function setHistView(v) {
     b.classList.toggle("active", b.getAttribute("onclick").includes("'" + v + "'"));
   });
   document.getElementById("histCustomRange").classList.toggle("hidden", v !== "custom");
+  // Seed Custom Range from the header date the first time it's opened,
+  // same rule as Leaderboard's Custom view.
+  if (v === "custom") {
+    const fromEl = document.getElementById("histFrom"), toEl = document.getElementById("histTo");
+    if (!fromEl.value || !toEl.value) {
+      const iso = document.getElementById("datePicker").value;
+      fromEl.value = iso; toEl.value = iso;
+      applyCustomRange();
+    }
+  }
   if (v !== "custom") renderHistView();
 }
 
@@ -3084,10 +3179,12 @@ const CB_FIELDS = {
 
 // Set default dates on tab load
 function initChartBuilder() {
-  const now = new Date();
+  const fromEl = document.getElementById("cbFrom"), toEl = document.getElementById("cbTo");
+  if (fromEl.value && toEl.value) return; // don't clobber a range the user already picked
+  const now = headerDateAsDate();
   const ago = new Date(now); ago.setDate(now.getDate()-30);
-  document.getElementById("cbFrom").value = ago.toISOString().slice(0,10);
-  document.getElementById("cbTo").value   = now.toISOString().slice(0,10);
+  fromEl.value = ago.toISOString().slice(0,10);
+  toEl.value   = now.toISOString().slice(0,10);
 }
 
 // Called when user changes any control — just shows a hint
@@ -3398,6 +3495,15 @@ let chaserRangeMode = false; // false = specific date, true = date range
 
 function setChaserRangeMode(isRange) {
   chaserRangeMode = isRange;
+  // Seed From/To from the header date the first time Range mode is opened,
+  // same rule as Leaderboard/History's custom ranges.
+  if (isRange) {
+    const fromEl = document.getElementById("chaserFrom"), toEl = document.getElementById("chaserTo");
+    if (!fromEl.value || !toEl.value) {
+      const iso = document.getElementById("datePicker").value;
+      fromEl.value = iso; toEl.value = iso;
+    }
+  }
   renderChaserPage();
 }
 
