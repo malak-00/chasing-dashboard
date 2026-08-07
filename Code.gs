@@ -1765,6 +1765,26 @@ function migrateExistingSheets() {
   Logger.log("Skipped (duplicates): " + totalSkipped + " rows");
 }
 
+// Parses a Productivity/Efficiency source cell onto the same 0-100 scale
+// archiveDayData()'s own live calculation always uses (it multiplies by
+// 100 -- e.g. `(positive/cases*100).toFixed(1)`). A source cell can be
+// EITHER plain text with a literal "%" ("38.4%", strip and parse as-is,
+// already 0-100) OR a real Sheets-percentage-formatted number (Format >
+// Number > Percent) -- getValues() returns THAT as the raw underlying
+// fraction (0.384), not the string "38.4%", so it has to be multiplied by
+// 100 here or it silently lands on the wrong scale and (once the archive's
+// own percent number format is applied) displays as "0.4%" instead of
+// "38.4%".
+function parsePercentField(rawValue) {
+  if (typeof rawValue === "number") {
+    // A real percent-formatted cell's underlying fraction is <=1 for any
+    // realistic percentage; a plain number cell (someone typed "38.4"
+    // directly with no percent formatting) is already on the 0-100 scale.
+    return Math.abs(rawValue) <= 1 ? rawValue * 100 : rawValue;
+  }
+  return parseFloat(String(rawValue || "").replace("%", "").trim());
+}
+
 // ── Parse one weekly tab into plain row records -- no archive writes, no
 // side effects, so migrateExistingSheets() can collect every row from both
 // source spreadsheets and sort them chronologically before writing anything.
@@ -1818,10 +1838,6 @@ function collectRowsFromWeekTab(tab) {
 
     const get = field => colIndex[field] !== undefined ? row[colIndex[field]] : "";
 
-    // Parse productivity/efficiency — strip % if stored as string
-    const prodRaw = String(get("productivity") || "").replace("%","").trim();
-    const effRaw  = String(get("efficiency")   || "").replace("%","").trim();
-
     rows.push({
       date:  currentDate,
       chaser,
@@ -1830,8 +1846,8 @@ function collectRowsFromWeekTab(tab) {
       approvals:         Number(get("approvals"))         || 0,
       denials:           Number(get("denials"))           || 0,
       timeMins:          Number(get("timeMins"))           || 0,
-      eff:               parseFloat(effRaw)  || "",
-      prod:              parseFloat(prodRaw) || "",
+      eff:               parsePercentField(get("efficiency"))   || "",
+      prod:              parsePercentField(get("productivity")) || "",
       totalShift:        Number(get("totalShift"))         || 0,
       calls:             Number(get("calls"))               || 0,
       totalDurationMins: Number(get("totalDurationMins"))  || 0,
