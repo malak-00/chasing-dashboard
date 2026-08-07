@@ -5,10 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chasing Dashboard </title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-:root{--bg:#1A1A1A;--surface:#242424;--card:#2E2E2E;--card-hover:#383838;--border:#454545;--teal:#004D61;--teal-text:#4DB2CB;--teal-dim:rgba(0,77,97,.35);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#822659;--purple-dim:rgba(130,38,89,.30);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);--btn:#3E5641;--btn-text:#F0F0F0;--text:#F0F0F0;--text-2:#B8B8B8;--text-3:#868686;--radius:12px;--font:'Inter',system-ui,sans-serif;--shadow-sm:0 1px 2px rgba(0,0,0,.18);--shadow-md:0 4px 16px rgba(0,0,0,.22)}
+:root{--bg:#1A1A1A;--surface:#242424;--card:#2E2E2E;--card-hover:#383838;--border:#454545;--teal:#004D61;--teal-text:#4DB2CB;--teal-dim:rgba(0,77,97,.35);--green:#4ADE9C;--green-dim:rgba(74,222,156,.10);--amber:#F2B84B;--amber-dim:rgba(242,184,75,.10);--red:#F0677A;--red-dim:rgba(240,103,122,.10);--purple:#822659;--purple-dim:rgba(130,38,89,.30);--blue:#60A5E8;--blue-dim:rgba(96,165,232,.10);
+  /* Categorical-only extras for campaign identity (never status) -- picked
+     to sit apart from --green/--red (reserved for status) and from the
+     existing campaign hues (--teal-text, --purple, --blue, --amber). */
+  --violet:#9B7ADE;--orange:#E8935A;--slate:#8899C4;
+  --btn:#3E5641;--btn-text:#F0F0F0;--text:#F0F0F0;--text-2:#B8B8B8;--text-3:#868686;--radius:12px;--font:'Inter',system-ui,sans-serif;
+  /* Flat drop shadows read as almost invisible against a dark surface --
+     depth here comes from a stronger, wider shadow PLUS a lighter
+     "elevated" surface step (--card-hover, --card-elevated), not shadow
+     alone. --shadow-lg is for hover-lifted cards specifically. */
+  --shadow-sm:0 2px 6px rgba(0,0,0,.32);--shadow-md:0 8px 24px rgba(0,0,0,.4);--shadow-lg:0 14px 34px rgba(0,0,0,.48);--card-elevated:#333333}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{font-size:14px}
 body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;font-variant-numeric:tabular-nums}
@@ -19,6 +29,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .date-input{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:6px 11px;font-family:var(--font);font-size:13px;transition:border-color .15s}
 .date-input:focus{outline:1px solid var(--teal-text);border-color:var(--teal-text)}
+.sync-group{display:flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:4px}
+.sync-group .btn-ghost{background:var(--card)}
+.sync-group .date-input{padding:5px 9px;font-size:12px}
+.sync-group-div{width:1px;align-self:stretch;background:var(--border);margin:2px 0}
+.icon-btn{padding:6px 11px;font-size:17px;line-height:1;font-weight:700}
+.header-menu{position:relative}
+.header-menu-panel{position:absolute;top:calc(100% + 8px);right:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-lg);padding:6px;min-width:190px;z-index:200;display:flex;flex-direction:column;gap:2px}
+.header-menu-panel.hidden{display:none}
+.header-menu-div{height:1px;background:var(--border);margin:4px 2px}
+.header-menu-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;background:none;border:none;color:var(--text-2);font-family:var(--font);font-size:13px;font-weight:500;cursor:pointer;text-align:left;width:100%;transition:background .12s,color .12s}
+.header-menu-item:hover{background:var(--card);color:var(--text)}
 .btn{background:var(--btn);color:var(--btn-text);border:none;border-radius:7px;padding:6px 16px;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap}
 .btn:hover{opacity:.88;transform:translateY(-1px)}
 .btn-ghost{background:var(--card);color:var(--text-2);border:1px solid var(--border);border-radius:7px}
@@ -39,7 +60,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .panel-date{font-size:12px;color:var(--teal-text);font-weight:600}
 .panel-body{padding:18px}
 .metric-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:15px}
-.metric{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:13px}
+.metric{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:13px;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease}
+.metric:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--teal-dim);background:var(--card-elevated)}
 .metric-label{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:6px}
 .metric-value{font-size:22px;font-weight:650;line-height:1;color:var(--text);letter-spacing:-.01em}
 .metric-value.teal{color:var(--teal-text)}.metric-value.green{color:var(--green)}.metric-value.amber{color:var(--amber)}.metric-value.red{color:var(--red)}.metric-value.purple{color:var(--purple)}
@@ -53,15 +75,39 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .resp-value{font-size:25px;font-weight:650;line-height:1.1;letter-spacing:-.01em}
 .approved .resp-value{color:var(--green)}.denied .resp-value{color:var(--red)}
 .resp-pct{font-size:11px;color:var(--text-3);margin-top:2px}
-.campaign-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;margin-bottom:15px}
-.campaign-card{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:13px;transition:border-color .15s}
-.campaign-card:hover{border-color:var(--text-3)}
+.campaign-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:11px;margin-bottom:15px}
+.campaign-card{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:13px;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease}
+.campaign-card:hover{border-color:var(--text-3);transform:translateY(-2px);box-shadow:var(--shadow-md);background:var(--card-elevated)}
 .campaign-name{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-bottom:9px;display:flex;align-items:center;gap:6px}
-.campaign-stats{display:flex;gap:16px}
+/* 2x2 grid instead of a single flex row of 4 -- a fixed row of 4 stats
+   only had room to breathe when campaign-grid forced exactly 2 wide
+   columns; once campaign-grid went responsive (auto-fill, to fit more than
+   4 campaigns without a lopsided last row) cards can be as narrow as
+   160px, where 4 stats in one row collide. A 2x2 grid stays legible at
+   any card width instead of only the one width it happened to be tuned for. */
+.campaign-stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px 4px}
 .cstat{text-align:center}
 .cstat-val{font-size:18px;font-weight:650;letter-spacing:-.01em}
 .cstat-lbl{font-size:9px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-top:3px}
 .ctag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border-radius:4px}
+
+/* ── OVERVIEW TAB ── */
+.ov-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:18px;margin-bottom:18px}
+@media (max-width:900px){.ov-grid{grid-template-columns:1fr}}
+.ov-rank-row{display:flex;align-items:center;gap:12px;padding:9px 10px;margin:0 -10px;border-radius:8px;border-bottom:1px solid var(--border);transition:background .15s ease}
+.ov-rank-row:last-child{border-bottom:none}
+.ov-rank-row:hover{background:var(--card)}
+.ov-rank-name{width:90px;flex-shrink:0;font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov-rank-bar-bg{flex:1;height:8px;background:var(--card);border-radius:4px;overflow:hidden}
+.ov-rank-bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
+.ov-rank-val{width:64px;flex-shrink:0;text-align:right;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}
+.ov-camp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(108px,1fr));gap:10px}
+.ov-camp-card{background:var(--card);border:1px solid var(--border);border-radius:9px;padding:11px;text-align:center;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background .18s ease}
+.ov-camp-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md);border-color:var(--teal-dim);background:var(--card-elevated)}
+.ov-camp-name{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin-bottom:5px}
+.ov-camp-pct{font-size:21px;font-weight:650;letter-spacing:-.01em}
+.ov-camp-sub{font-size:10px;color:var(--text-3);margin-top:3px}
+.ov-links{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:22px}
 .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px}
 .section-title{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text-2)}
 .sort-btns{display:flex;gap:5px;flex-wrap:wrap}
@@ -165,8 +211,9 @@ body.light {
   --red:#C84358;--red-dim:rgba(200,67,88,.09);
   --purple:#822659;--purple-dim:rgba(130,38,89,.10);
   --blue:#3373C4;--blue-dim:rgba(51,115,196,.09);
+  --violet:#6B46C1;--orange:#B8621E;--slate:#4C5C8C;
   --btn:#3E5641;--btn-text:#F0F0F0;
-  --shadow-sm:0 1px 2px rgba(16,39,60,.06);--shadow-md:0 4px 16px rgba(16,39,60,.08);
+  --shadow-sm:0 1px 2px rgba(16,39,60,.06);--shadow-md:0 4px 16px rgba(16,39,60,.08);--shadow-lg:0 10px 28px rgba(16,39,60,.12);--card-elevated:#FFFFFF;
 }
 body.light .lb-table th { background:var(--surface); }
 body.light .status-badge { border-color:rgba(0,77,97,.30); }
@@ -174,14 +221,6 @@ body.light .rank-badge { background:var(--border); }
 body.light .panel,body.light .leaderboard,body.light .chart-wrap,body.light .controls-panel,
 body.light .custom-metrics-section,body.light .goals-panel,body.light .compare-panel { box-shadow:var(--shadow-sm); }
 
-/* THEME TOGGLE BTN */
-.theme-btn {
-  background:var(--card);border:1px solid var(--border);color:var(--text-2);
-  border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600;
-  cursor:pointer;font-family:var(--font);transition:all .2s;white-space:nowrap;
-  display:flex;align-items:center;gap:5px;
-}
-.theme-btn:hover{color:var(--text);background:var(--card-hover)}
 
 
 /* LB CUSTOM RANGE */
@@ -243,7 +282,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
 /* PDF EXPORT */
 @media print {
   .header, .tab-nav, .controls-panel, .hist-cache-bar, .hist-subnav,
-  .lb-range-bar, .sort-btns, .btn, .theme-btn, .pulse-bar,
+  .lb-range-bar, .sort-btns, .btn, .header-menu-panel, .pulse-bar,
   #tab-leaderboard .section-header > div:last-child { display:none !important; }
   body { background:#fff !important; color:#000 !important; }
   .panel, .chart-wrap, .leaderboard, .metric, .resp-card, .campaign-card,
@@ -266,12 +305,23 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
   <div class="logo"><span class="logo-dot"></span>Chasing Dashboard</div>
   <div class="header-right">
     <span class="status-badge" id="statusBadge">Live</span>
-    <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">&#9790; Dark</button>
     <input type="date" class="date-input" id="datePicker" onchange="loadData(); updateSyncLabel();">
     <button class="btn" onclick="loadData()">&#8635; Load</button>
-    <button class="btn btn-ghost" id="syncBtn" onclick="syncSelectedDate()" title="Re-reads the selected date from live sheets and updates archive">&#9650; Sync <span id="syncDateLabel">Today</span></button>
-    <button class="btn btn-ghost" onclick="downloadCSV()">&#8595; CSV</button>
-    <button class="btn btn-ghost" onclick="exportPDF()">&#128438; PDF</button>
+    <div class="sync-group" title="Manual sync controls — nothing runs automatically">
+      <button class="btn btn-ghost" id="syncBtn" onclick="syncSelectedDate()" title="Re-reads the selected date's chaser trackers and updates the archive">&#9650; Sync <span id="syncDateLabel">Today</span></button>
+      <span class="sync-group-div"></span>
+      <input type="week" class="date-input" id="weekPicker" title="Pick a week to target the weekly campaign-response pull at (defaults to the trailing 14 days ending today)">
+      <button class="btn btn-ghost" id="weeklyPullBtn" onclick="withButtonGuard(this, pullWeeklyResponses)" title="Reads Approvals/Denials/campaign responses for every chaser from the backfill sheet">&#128257; Pull Weekly</button>
+    </div>
+    <div class="header-menu" id="headerMenu">
+      <button class="btn btn-ghost icon-btn" id="headerMenuBtn" onclick="toggleHeaderMenu()" title="More actions" aria-haspopup="true" aria-expanded="false">&#8942;</button>
+      <div class="header-menu-panel hidden" id="headerMenuPanel" role="menu">
+        <button class="header-menu-item" role="menuitem" onclick="toggleTheme()"><span id="themeMenuIcon">&#9790;</span><span id="themeMenuLabel">Switch to Light Mode</span></button>
+        <div class="header-menu-div"></div>
+        <button class="header-menu-item" role="menuitem" onclick="downloadCSV();closeHeaderMenu();">&#8595; Download CSV</button>
+        <button class="header-menu-item" role="menuitem" onclick="exportPDF();closeHeaderMenu();">&#128438; Export PDF</button>
+      </div>
+    </div>
   </div>
 </header>
 
@@ -280,7 +330,8 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
 <main class="main">
 
   <div class="tab-nav">
-    <button class="tab-btn active" onclick="setTab('campaigns')">Campaigns</button>
+    <button class="tab-btn active" onclick="setTab('overview')">Overview</button>
+    <button class="tab-btn" onclick="setTab('campaigns')">Campaigns</button>
     <button class="tab-btn" onclick="setTab('leaderboard')">Leaderboard</button>
     <button class="tab-btn" onclick="setTab('custom')">Custom Metrics</button>
     <button class="tab-btn" onclick="setTab('history')">History</button>
@@ -288,6 +339,40 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
     <button class="tab-btn" onclick="setTab('chasers')">Chasers</button>
     <button class="tab-btn" onclick="setTab('compare')">Compare</button>
     <button class="tab-btn" onclick="setTab('controls')">Controls</button>
+  </div>
+
+  <!-- OVERVIEW TAB -->
+  <div id="tab-overview">
+    <div class="metric-grid" id="ovPulseCards" style="margin-bottom:18px">
+      <div class="state-block"><div class="spinner"></div>Loading...</div>
+    </div>
+    <div class="ov-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Team Productivity — Today</span>
+          <span style="font-size:11px;color:var(--text-3)" id="ovRankSub"></span>
+        </div>
+        <div class="panel-body" id="ovTeamRanking">
+          <div class="state-block"><div class="spinner"></div>Loading...</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Campaign Approval Rates — This Week</span>
+          <button class="btn btn-ghost" style="padding:3px 9px;font-size:11px" onclick="setTab('campaigns')">Full breakdown &rarr;</button>
+        </div>
+        <div class="panel-body">
+          <div class="ov-camp-grid" id="ovCampaignSnapshot">
+            <div class="state-block"><div class="spinner"></div>Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="ov-links">
+      <button class="btn btn-ghost" onclick="setTab('leaderboard')">Full Leaderboard &rarr;</button>
+      <button class="btn btn-ghost" onclick="setTab('compare')">Compare Chasers &rarr;</button>
+      <button class="btn btn-ghost" onclick="setTab('history')">History &amp; Trends &rarr;</button>
+    </div>
   </div>
 
   <!-- CAMPAIGNS TAB -->
@@ -779,11 +864,8 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
           <div>
             <div class="sub-label">Weekly Campaign Responses</div>
             <div style="font-size:12px;color:var(--text-3);margin-bottom:8px">
-              Reads the backfill response sheet for every chaser, reprocessing the trailing 14 days of Approvals/Denials/campaign columns and the Campaign Responses tab.
+              Reads the backfill response sheet for every chaser, reprocessing Approvals/Denials/campaign columns and the Campaign Responses tab for the trailing 14 days (or the picked week). Use the week picker + Pull Weekly button in the header.
             </div>
-            <button class="btn" style="padding:5px 14px;font-size:12px" onclick="withButtonGuard(this, pullWeeklyResponses)">
-              &#128257; Pull Weekly Responses
-            </button>
           </div>
         </div>
       </div>
@@ -899,21 +981,28 @@ let CHASERS  = ["Alex","Hope","Rose","Frank","Nova"];
 let chasterRoster = []; // [{ name, sheetId, active }, ...] -- full detail for the Settings UI
 
 const CAMPAIGNS = [
-  { key:"ort",    label:"ORT",               color:"var(--teal-text)"   },
-  { key:"cgm",    label:"CGM",               color:"var(--purple)" },
-  { key:"lymphc", label:"Lymph Compression", color:"var(--blue)"   },
-  { key:"lymphw", label:"Lymph Wraps",        color:"var(--amber)"  },
+  { key:"ort",    label:"ORT",               color:"var(--teal-text)" },
+  { key:"cgm",    label:"CGM",               color:"var(--purple)"    },
+  { key:"lymphc", label:"Lymph Compression", color:"var(--blue)"      },
+  { key:"lymphw", label:"Lymph Wraps",       color:"var(--amber)"     },
+  { key:"ppoOrt", label:"PPO (ORT)",         color:"var(--violet)"    },
+  { key:"ppoLy",  label:"PPO (LY)",          color:"var(--orange)"    },
+  { key:"uti",    label:"UTI",               color:"var(--slate)"     },
 ];
 const CAMPAIGN_KEYS = CAMPAIGNS.map(c=>c.key);
 
 // Archive column names per campaign -- the one place to update if a column
 // is ever renamed, instead of the same four-way mapping retyped wherever
-// campaign totals are read straight from archive rows.
+// campaign totals are read straight from archive rows. Must match
+// CAMPAIGN_COL_PREFIX in Code.gs exactly.
 const CAMPAIGN_ARCHIVE_COLS = {
   ort:    { app: "ORT_Approved",    den: "ORT_Denied"    },
   cgm:    { app: "CGM_Approved",    den: "CGM_Denied"    },
   lymphc: { app: "LymphC_Approved", den: "LymphC_Denied" },
   lymphw: { app: "LymphW_Approved", den: "LymphW_Denied" },
+  ppoOrt: { app: "PPOORT_Approved", den: "PPOORT_Denied" },
+  ppoLy:  { app: "PPOLY_Approved",  den: "PPOLY_Denied"  },
+  uti:    { app: "UTI_Approved",    den: "UTI_Denied"    },
 };
 
 // Fresh { ort:{approved,denied,total}, cgm:..., ... } zeroed object -- fresh
@@ -968,7 +1057,7 @@ let weekData      = null;
 let lbView        = "day";
 let lbSort        = { col:"cases", dir:"desc" };
 let shiftMap      = {};
-let activeTab     = "campaigns";
+let activeTab     = "overview";
 let utlatelData   = {};
 let agentMap      = {};
 let customMetrics = [];
@@ -980,10 +1069,23 @@ let campDayData   = null;  // separate campaign day data
 let campWeekData  = null;  // separate campaign week data
 let cmpChaserMetric = "approvals"; // "approvals" | "denials" -- Compare tab's per-chaser Period B vs A metric
 
+// ISO 8601 week string ("YYYY-Www") for a Date -- the value format of
+// <input type="week">. Week 1 is the week containing the year's first
+// Thursday, mirroring resolveWeekParamToAnchorDate() in Code.gs.
+function getISOWeekString(date) {
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7)); // nearest Thursday
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  const weekNum = 1 + Math.round(((d - week1) / 86400000 - 3 + ((week1.getDay() + 6) % 7)) / 7);
+  return `${d.getFullYear()}-W${String(weekNum).padStart(2,"0")}`;
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   const today = new Date().toISOString().slice(0,10);
   document.getElementById("datePicker").value    = today;
   updateSyncLabel();
+  document.getElementById("weekPicker").value    = getISOWeekString(new Date());
   document.getElementById("campDayPicker").value  = today;
   document.getElementById("campWeekPicker").value = today;
   document.getElementById("campMonthPicker").value = today.slice(0,7); // "YYYY-MM"
@@ -1025,7 +1127,7 @@ function initCampaignQuarterSelectors() {
 }
 
 // ── TABS ──────────────────────────────────────────────────────
-const TABS = ["campaigns","leaderboard","custom","history","charts","chasers","compare","controls"];
+const TABS = ["overview","campaigns","leaderboard","custom","history","charts","chasers","compare","controls"];
 function setTab(tab) {
   activeTab = tab;
   TABS.forEach(t => document.getElementById("tab-"+t).classList.toggle("hidden", t!==tab));
@@ -1189,7 +1291,8 @@ async function refreshDay() { await loadData(); }
 // trigger for this; it only runs when this button is clicked.
 async function pullWeeklyResponses() {
   try {
-    const url = `${API_BASE}?mode=weeklycampaignsync`;
+    const week = document.getElementById("weekPicker")?.value;
+    const url = `${API_BASE}?mode=weeklycampaignsync` + (week ? `&week=${encodeURIComponent(week)}` : "");
     const res = await fetchWithTimeout(url, 120000);
     const result = await res.json();
     if (result.error) throw new Error(result.error);
@@ -1264,13 +1367,16 @@ async function fetchFromArchive() {
 
 // ── CAMPAIGN RESPONSES HELPERS ───────────────────────────────
 // campaignLeads: rows from "Campaign Responses" tab in archive.
-// Format: [{ Date:"M/D/YYYY", Campaign:"ORT"|"CGM"|"LymphC"|"LymphW",
-//            Approved:N, Denied:N, ApprovalPct:N }]
+// Format: [{ Date:"M/D/YYYY", Campaign: one of CAMPAIGNS' display labels
+//            (e.g. "ORT", "PPO (ORT)"), Approved:N, Denied:N, ApprovalPct:N }]
 // One row per date+campaign — no chaser-multiplication, no double-counting.
 
 // Normalize campaign label to lowercase key used in byCampaign objects
 function campLabelToKey(label) {
-  const m = { "ORT":"ort", "CGM":"cgm", "LYMPHC":"lymphc", "LYMPHW":"lymphw" };
+  const m = {
+    "ORT":"ort", "CGM":"cgm", "LYMPHC":"lymphc", "LYMPHW":"lymphw",
+    "PPO (ORT)":"ppoOrt", "PPO (LY)":"ppoLy", "UTI":"uti",
+  };
   return m[String(label).toUpperCase()] || String(label).toLowerCase();
 }
 
@@ -1478,12 +1584,107 @@ function getWeekTabsJS(dateTab) {
 function renderAll() {
   if (!dayData||!weekData) return;
   renderPulseBar();
+  renderOverview();
   renderCampaignPanels();
   renderLeaderboard();
   renderCustomMetricCards();
   renderCustomMetricTable();
 }
 function recalc() { renderAll(); }
+
+// ── OVERVIEW ──────────────────────────────────────────────────
+// "On-track/at-risk/off-track" against a target -- the one place color
+// carries meaning on this page, so it's the only thing color is used for.
+// value >= target: green. >= 85% of target: amber. Below that: red.
+// No target configured, or no data yet: null (render neutral).
+function statusColorForMetric(value, target) {
+  if (value === "" || value === null || value === undefined || isNaN(value)) return null;
+  if (!target) return null;
+  const v = Number(value);
+  if (v >= target) return "green";
+  if (v >= target * 0.85) return "amber";
+  return "red";
+}
+
+function renderOverview() {
+  const dateTab = pickerToTab();
+  const bc = (dayData.responses||{}).byChaser || {};
+  const rows = (dayData.chasers||[]).map(c => {
+    const rs = bc[c.name] || {approvals:0, denials:0};
+    return buildRowFromTotals(c.name, {
+      cases:c.totalCases, positive:c.totalPositive, approvals:rs.approvals, denials:rs.denials,
+      shiftMins:c.totalShift, calls:c.totalCalls, durationMins:c.totalDurationMins, productiveTime:c.productiveTime,
+      timeMins:c.totalTimeMins, acwDuration:c.acwDuration
+    });
+  });
+
+  const prodTarget = getGoalTarget("goalProd", "", dateTab);
+  const effTarget  = getGoalTarget("goalEff",  "", dateTab);
+
+  // ── Team pulse: status-colored KPI cards, not bare numbers ──
+  const totalApprovals = rows.reduce((s,r)=>s+(r.approvals||0),0);
+  const totalDenials   = rows.reduce((s,r)=>s+(r.denials||0),0);
+  const prodVals = rows.filter(r=>!r.productivityStub).map(r=>Number(r.productivity));
+  const effVals  = rows.filter(r=>r.efficiency!=="--").map(r=>Number(r.efficiency));
+  const avgProd  = prodVals.length ? prodVals.reduce((a,b)=>a+b,0)/prodVals.length : null;
+  const avgEff   = effVals.length  ? effVals.reduce((a,b)=>a+b,0)/effVals.length   : null;
+  const prodColor = statusColorForMetric(avgProd, prodTarget);
+  const effColor  = statusColorForMetric(avgEff,  effTarget);
+
+  setEl("ovPulseCards", `
+    ${mc("Team Productivity", avgProd!==null?avgProd.toFixed(1):"--", avgProd!==null?"%":"", prodColor||"teal")}
+    ${mc("Team Efficiency",   avgEff!==null?avgEff.toFixed(1):"--",  avgEff!==null?"%":"",  effColor||"teal")}
+    ${mc("Approvals Today", totalApprovals, "", "green")}
+    ${mc("Denials Today",   totalDenials,   "", "red")}
+    ${mc("Cases Chased Today", dayData.teamTotals?.totalCases||0, "", "")}
+  `);
+
+  // ── Team ranking: who's ahead, who needs attention, at a glance ──
+  document.getElementById("ovRankSub").textContent = prodTarget ? `Target: ${prodTarget}%` : "";
+  const ranked = [...rows].sort((a,b) => {
+    const av = a.productivityStub ? -1 : Number(a.productivity);
+    const bv = b.productivityStub ? -1 : Number(b.productivity);
+    return bv - av;
+  });
+  setEl("ovTeamRanking", ranked.map(r => {
+    if (r.productivityStub) {
+      return `<div class="ov-rank-row">
+        <span class="ov-rank-name">${r.name}</span>
+        <div class="ov-rank-bar-bg"></div>
+        <span class="ov-rank-val" style="color:var(--text-3);font-size:11px">No Utlatel</span>
+      </div>`;
+    }
+    const pct = Number(r.productivity);
+    const status = statusColorForMetric(pct, prodTarget);
+    const color = status ? `var(--${status})` : "var(--teal-text)";
+    return `<div class="ov-rank-row">
+      <span class="ov-rank-name">${r.name}</span>
+      <div class="ov-rank-bar-bg"><div class="ov-rank-bar-fill" data-target-width="${Math.min(pct,100)}" style="width:0%;background:${color}"></div></div>
+      <span class="ov-rank-val" style="color:${color}">${pct.toFixed(1)}%</span>
+    </div>`;
+  }).join("") || `<div class="state-block" style="color:var(--text-3)">No chaser data for today yet.</div>`);
+  animateRankBars();
+
+  // ── Campaign snapshot: this week's approval rate per campaign ──
+  const camps = aggWeekCampaigns(weekData.weekDays || []);
+  setEl("ovCampaignSnapshot", CAMPAIGNS.map(camp => {
+    const d = camps[camp.key] || {approved:0,denied:0,total:0};
+    const tot = (d.approved||0) + (d.denied||0);
+    const pct = tot ? (d.approved/tot*100) : null;
+    return `<div class="ov-camp-card">
+      <div class="ov-camp-name" style="color:${camp.color}">${camp.label}</div>
+      <div class="ov-camp-pct" style="color:${camp.color}">${pct===null?"--":pct.toFixed(0)+"%"}</div>
+      <div class="ov-camp-sub">${d.approved||0} approved / ${d.denied||0} denied</div>
+    </div>`;
+  }).join(""));
+}
+
+function animateRankBars() {
+  const bars = document.querySelectorAll("#ovTeamRanking .ov-rank-bar-fill[data-target-width]");
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    bars.forEach(el => { el.style.width = el.getAttribute("data-target-width") + "%"; });
+  }));
+}
 
 // ── PULSE BAR ─────────────────────────────────────────────────
 function renderPulseBar() {
@@ -1767,6 +1968,10 @@ function renderLeaderboard() {
   });
   const mxC=Math.max(...rows.map(r=>r.cases),1);
   const thC=col=>col===lbSort.col?"sort-"+lbSort.dir:"";
+  // Representative date for target lookup (per-chaser/dated overrides are
+  // rare enough that "today" is a fine stand-in across the whole table,
+  // same simplification the Overview tab uses).
+  const targets = { productivity: getGoalTarget("goalProd","",pickerToTab()), efficiency: getGoalTarget("goalEff","",pickerToTab()) };
   setEl("leaderboardEl",`<table class="lb-table"><thead><tr>
     <th>#</th><th>Chaser Name</th>
     ${LB_COLS.map(c=>`<th class="${thC(c.key)}" onclick="setSortCol('${c.key}')" title="${c.tip}">${c.label}</th>`).join("")}
@@ -1774,8 +1979,18 @@ function renderLeaderboard() {
     ${rows.map((r,i)=>`<tr>
       <td><span class="rank-badge ${i===0?"r1":i===1?"r2":i===2?"r3":""}">${i+1}</span></td>
       <td><span class="chaser-name">${r.name}</span></td>
-      ${LB_COLS.map(c=>renderLbCell(c,r,mxC)).join("")}
+      ${LB_COLS.map(c=>renderLbCell(c,r,mxC,targets)).join("")}
     </tr>`).join("")}</tbody></table>`);
+}
+
+// Status-colored pill for a metric vs its target ("green"=on track,
+// "amber"=at risk, "red"=off track) -- reused everywhere Productivity/
+// Efficiency render as more than a bare number, so "on track" always looks
+// the same across the whole app (Overview, Leaderboard, History).
+function statusPill(value, target, unit) {
+  if (value === "--" || value === null || value === undefined || value === "") return "--";
+  const status = statusColorForMetric(value, target);
+  return `<span class="pill ${status?"pill-"+status:"pill-teal"}">${value}${unit||""}</span>`;
 }
 
 // Renders one <td> for a Leaderboard row, per the column definition in
@@ -1783,7 +1998,7 @@ function renderLeaderboard() {
 // "Upload Utlatel" stub when there's no call-duration data yet, everything
 // else is just the raw value (formatted via c.format if the column defines
 // one, e.g. "Total Duration" showing "3h 20m" instead of a bare number).
-function renderLbCell(c, r, mxC) {
+function renderLbCell(c, r, mxC, targets) {
   const v = r[c.key];
   if (c.key === "cases") {
     return `<td><div>${v}</div><div class="mini-bar-bg"><div class="mini-bar-fill" style="width:${(v/mxC*100).toFixed(0)}%;background:var(--teal-text)"></div></div></td>`;
@@ -1791,9 +2006,9 @@ function renderLbCell(c, r, mxC) {
   if (c.key === "approvals") return `<td><span class="pill pill-green">${v}</span></td>`;
   if (c.key === "denials")   return `<td><span class="pill pill-red">${v}</span></td>`;
   if (c.key === "productivity") {
-    return `<td>${r.productivityStub?`<span class="pill pill-stub">Upload Utlatel</span>`:`<span class="pill pill-teal">${v}%</span>`}</td>`;
+    return `<td>${r.productivityStub?`<span class="pill pill-stub">Upload Utlatel</span>`:statusPill(v, targets?.productivity, "%")}</td>`;
   }
-  if (c.key === "efficiency") return `<td>${v==="--"?"--":v}</td>`;
+  if (c.key === "efficiency") return `<td>${statusPill(v, targets?.efficiency, "")}</td>`;
   return `<td>${c.format ? c.format(v) : (v ?? "--")}</td>`;
 }
 
@@ -2067,9 +2282,32 @@ let darkMode = true;
 function toggleTheme() {
   darkMode = !darkMode;
   document.body.classList.toggle("light", !darkMode);
-  const btn = document.getElementById("themeBtn");
-  btn.innerHTML = darkMode ? "&#9790; Dark" : "&#9788; Light";
+  document.getElementById("themeMenuIcon").innerHTML  = darkMode ? "&#9790;" : "&#9788;";
+  document.getElementById("themeMenuLabel").textContent = darkMode ? "Switch to Light Mode" : "Switch to Dark Mode";
+  closeHeaderMenu();
 }
+
+// Header overflow menu (theme toggle, CSV/PDF export) -- keeps the header
+// itself down to just the actions used every day (date, Sync, Pull
+// Weekly); everything used occasionally lives one click away here instead
+// of competing for space in the persistent toolbar.
+function toggleHeaderMenu() {
+  const panel = document.getElementById("headerMenuPanel");
+  const opening = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden", !opening);
+  document.getElementById("headerMenuBtn").setAttribute("aria-expanded", String(opening));
+}
+function closeHeaderMenu() {
+  document.getElementById("headerMenuPanel").classList.add("hidden");
+  document.getElementById("headerMenuBtn").setAttribute("aria-expanded", "false");
+}
+document.addEventListener("click", (e) => {
+  const menu = document.getElementById("headerMenu");
+  if (menu && !menu.contains(e.target)) closeHeaderMenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeHeaderMenu();
+});
 
 // ══════════════════════════════════════════════════════════════
 // REFRESH (today + week)
@@ -2287,7 +2525,7 @@ function spinner(){return `<div class="state-block"><div class="spinner"></div>L
 function updateRangeVal(s,v){document.getElementById(v).textContent=document.getElementById(s).value;}
 
 // ── MOCK DATA ─────────────────────────────────────────────────
-function mockCampaignData(){return{ort:{approved:6,denied:2,total:10},cgm:{approved:5,denied:1,total:8},lymphc:{approved:4,denied:2,total:7},lymphw:{approved:4,denied:1,total:6}};}
+function mockCampaignData(){return{ort:{approved:6,denied:2,total:10},cgm:{approved:5,denied:1,total:8},lymphc:{approved:4,denied:2,total:7},lymphw:{approved:4,denied:1,total:6},ppoOrt:{approved:3,denied:1,total:4},ppoLy:{approved:3,denied:2,total:5},uti:{approved:2,denied:1,total:3}};}
 
 // ══════════════════════════════════════════════════════════════
 // HISTORY / ARCHIVE
@@ -2569,6 +2807,7 @@ function renderHistLeaderboard(byChaserAgg) {
   }));
   applyTeamPct(rows);
   rows.sort((a,b) => b.cases - a.cases);
+  const effTarget = getGoalTarget("goalEff","",pickerToTab());
 
   return `<div class="chart-wrap">
     <div class="chart-title">Chaser Totals for Period</div>
@@ -2584,7 +2823,7 @@ function renderHistLeaderboard(byChaserAgg) {
         <td><span class="pill pill-green">${r.approvals}</span></td>
         <td><span class="pill pill-red">${r.denials}</span></td>
         <td>${r.approvalPct==="--"?"--":`<span class="pill pill-teal">${r.approvalPct}%</span>`}</td>
-        <td>${r.efficiency}</td>
+        <td>${statusPill(r.efficiency, effTarget, "%")}</td>
         <td>${r.calls}</td>
         <td>${r.callHours==="--"?"--":r.callHours+"h"}</td>
         <td>${r.avgProd==="--"?"--":r.avgProd+"m"}</td>
@@ -2990,18 +3229,14 @@ let goals = {
   efficiency:   1.5,  // ratio target (cases/positive, lower = better)
 };
 
+// Same on-track/at-risk/off-track thresholds as statusColorForMetric()
+// (defined up near renderOverview) -- kept as one source of truth so
+// "met" here and "green" there always agree.
 function getGoalStatus(metric, actual, chaserName, dateTab) {
   if (actual === "--" || actual === "" || isNaN(actual)) return "flat";
   const target = getGoalTarget(metric === "efficiency" ? "goalEff" : "goalProd", chaserName, dateTab);
-  if (metric === "efficiency") {
-    // Higher is better — positive / cases * 100, target is a %
-    if (actual >= target)               return "met";
-    if (actual >= target * 0.85)        return "close";
-    return "miss";
-  }
-  if (actual >= target)                 return "met";
-  if (actual >= target * 0.85)          return "close";
-  return "miss";
+  const color  = statusColorForMetric(actual, target);
+  return color === "green" ? "met" : color === "amber" ? "close" : "miss";
 }
 
 function goalBar(metric, actual, label, chaserName, dateTab) {
@@ -3233,25 +3468,22 @@ function filterByChaserDateRange(r, fromIso, toIso) {
 }
 
 function renderChaserCampaigns(rows) {
-  // Approximate from archive campaign cols
-  const campaigns = [
-    { key:"ORT",    app:"ORT_Approved",    den:"ORT_Denied"    },
-    { key:"CGM",    app:"CGM_Approved",    den:"CGM_Denied"    },
-    { key:"LymphC", app:"LymphC_Approved", den:"LymphC_Denied" },
-    { key:"LymphW", app:"LymphW_Approved", den:"LymphW_Denied" },
-  ];
-  const colors = ["var(--teal-text)","var(--purple)","var(--blue)","var(--amber)"];
-  return campaigns.map((c,i) => {
-    const app   = rows.reduce((s,r)=>s+(Number(r[c.app])||0),0);
-    const den   = rows.reduce((s,r)=>s+(Number(r[c.den])||0),0);
+  // Approximate from archive campaign cols -- reuses the shared CAMPAIGNS/
+  // CAMPAIGN_ARCHIVE_COLS (top of file) instead of its own independently
+  // hardcoded campaign list, so a new campaign added there shows up here
+  // automatically.
+  return CAMPAIGNS.map(c => {
+    const cols  = CAMPAIGN_ARCHIVE_COLS[c.key];
+    const app   = rows.reduce((s,r)=>s+(Number(r[cols.app])||0),0);
+    const den   = rows.reduce((s,r)=>s+(Number(r[cols.den])||0),0);
     const total = app+den;
     const pct   = total ? (app/total*100).toFixed(1) : "--";
     return `<div class="campaign-card">
-      <div class="campaign-name" style="color:${colors[i]}">${c.key}</div>
+      <div class="campaign-name" style="color:${c.color}">${c.label}</div>
       <div class="campaign-stats">
         <div class="cstat"><div class="cstat-val" style="color:var(--green)">${app}</div><div class="cstat-lbl">Approved</div></div>
         <div class="cstat"><div class="cstat-val" style="color:var(--red)">${den}</div><div class="cstat-lbl">Denied</div></div>
-        <div class="cstat"><div class="cstat-val" style="color:${colors[i]}">${pct}${pct!=="--"?"%":""}</div><div class="cstat-lbl">Rate</div></div>
+        <div class="cstat"><div class="cstat-val" style="color:${c.color}">${pct}${pct!=="--"?"%":""}</div><div class="cstat-lbl">Rate</div></div>
       </div></div>`;
   }).join("");
 }
@@ -3410,11 +3642,17 @@ async function runComparison() {
     rowsA.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
     rowsB.filter(r=>r.Chaser===name).reduce((s,r)=>s+(Number(r[field])||0),0),
   ];
+  // Same invert-for-denials rule as the Period A/B panel above -- without
+  // it, more denials showed as a green "up" change, the exact opposite of
+  // what the color should communicate.
+  const invertGoodChaser = cmpChaserMetric === "denials";
   const chaserRows = getAllChasers().map(name => {
     const [cA, cB] = chaserValueFn(name);
-    const diff= cB-cA;
-    const cls = diff>0?"change-up":diff<0?"change-down":"change-flat";
-    const arrow=diff>0?"↑":diff<0?"↓":"→";
+    const diff = cB - cA;
+    const up   = diff > 0;
+    const good = invertGoodChaser ? !up : up;
+    const cls  = diff === 0 ? "change-flat" : (good ? "change-up" : "change-down");
+    const arrow= diff === 0 ? "→" : (up ? "↑" : "↓");
     return `<tr>
       <td><span class="chaser-name" style="color:${CHASER_COLORS[name]||"var(--text)"}">${name}</span></td>
       <td>${cA}</td><td>${cB}</td>

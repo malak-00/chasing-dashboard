@@ -1,5 +1,16 @@
 # DME Desk Chasing Dashboard + Lead History — Handoff Notes
 
+> **⚠ STALE — see `CHANGELOG.md` for the current, maintained history.**
+> This document was written when Lead History (`LeadHistory.gs`), the
+> Overview tab, and the Conflicts tab were still part of the app. All
+> three were removed in PR #23 (2026-07-21) — Lead History wasn't needed,
+> campaign data now comes from a weekly manual pull against a backfill
+> spreadsheet instead. **Part 2 below (Lead History) no longer applies to
+> anything in this repo.** Part 1 also predates the sync-architecture
+> rewrite (PR #23) and the campaign-response pipeline rewrite (PR #26) —
+> treat it as historical background, not current behavior. Kept here for
+> archaeology only; do not treat anything below as current state.
+
 This document captures the architecture, decisions, and open items from the
 conversation that built this system, so a fresh Claude Code session (or a
 future you) doesn't have to rediscover any of it.
