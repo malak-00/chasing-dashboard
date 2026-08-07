@@ -319,6 +319,25 @@ function applyMonthTabFormatting(sheet) {
   const prodCol = ARCHIVE_HEADERS.indexOf("Productivity") + 1;
   sheet.getRange(2, effCol,  998, 1).setNumberFormat('0.0"%"');
   sheet.getRange(2, prodCol, 998, 1).setNumberFormat('0.0"%"');
+
+  // Flag any row where Denials outnumber Approvals -- a light red tint that
+  // draws the eye straight to a bad day/chaser while scanning the raw
+  // sheet, on top of the day borders separating one day's block from the
+  // next. Purely visual (a conditional format rule, not a sort/filter) so
+  // it can never disturb the manually-built week-header/day-border
+  // structure the way a sortable Filter could.
+  const approvalsCol = ARCHIVE_HEADERS.indexOf("Approvals") + 1;
+  const denialsCol   = ARCHIVE_HEADERS.indexOf("Denials") + 1;
+  const dataRange     = sheet.getRange(2, 1, 998, ARCHIVE_HEADERS.length);
+  const denialsHigherRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied("=AND($B2<>\"\",$" + columnLetter(denialsCol) + "2>$" + columnLetter(approvalsCol) + "2)")
+    .setBackground("#FADBD8")  // light red tint -- the sheet itself has Sheets' normal white/grey-banded background, not the dashboard's dark theme
+    .setRanges([dataRange])
+    .build();
+  const existingRules = sheet.getConditionalFormatRules().filter(r =>
+    !r.getRanges().some(rg => rg.getA1Notation() === dataRange.getA1Notation())
+  );
+  sheet.setConditionalFormatRules(existingRules.concat([denialsHigherRule]));
 }
 
 // One-time utility: applies applyMonthTabFormatting() to every EXISTING
@@ -770,6 +789,17 @@ function getArchiveData() {
 
 
 
+// Converts a 1-based column number to its spreadsheet letter (1->A, 27->AA, ...).
+function columnLetter(n) {
+  let letter = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    letter = String.fromCharCode(65 + rem) + letter;
+    n = Math.floor((n - 1) / 26);
+  }
+  return letter;
+}
+
 // Force the given column names to Plain Text formatting on the whole column
 // so Google Sheets never silently auto-converts a written date string (e.g.
 // "6/20/2026") into a real Date value with a guessed year. Every getOrCreate*Tab
@@ -779,12 +809,7 @@ function forcePlainTextColumns(sheet, headers, fieldNames) {
   fieldNames.forEach(function(field) {
     const idx = headers.indexOf(field);
     if (idx === -1) return;
-    let letter = "", n = idx + 1;
-    while (n > 0) {
-      const rem = (n - 1) % 26;
-      letter = String.fromCharCode(65 + rem) + letter;
-      n = Math.floor((n - 1) / 26);
-    }
+    const letter = columnLetter(idx + 1);
     sheet.getRange(letter + ":" + letter).setNumberFormat("@");
   });
 }
@@ -1671,6 +1696,26 @@ function migrateExistingSheets() {
   let totalWritten = 0;
   let totalSkipped = 0;
 
+  // Bottom border under the last row of each date, same visual treatment as
+  // archiveDayData()'s daily write -- without this, a full historical
+  // rebuild via this function left every day's rows looking identical to
+  // the next, with nothing but the Date column itself to tell them apart.
+  // Tracks the most recently WRITTEN row (sheet + row number); a day
+  // boundary is detected when the next row's date differs from the last
+  // one written. Only accounts for rows this run actually writes -- a
+  // partial re-run that skips some already-existing rows for a date and
+  // only appends a few new ones after them may not land the border on that
+  // date's true last row, but a normal full rebuild (the common case this
+  // exists for) never hits that since there's nothing to skip.
+  let lastWrittenSheet = null, lastWrittenRow = -1, lastWrittenDate = null;
+  function borderLastRowOfPreviousDate() {
+    if (lastWrittenSheet && lastWrittenRow > 0) {
+      lastWrittenSheet.getRange(lastWrittenRow, 1, 1, ARCHIVE_HEADERS.length).setBorder(
+        null, null, true, null, null, null, "#00C2A8", SpreadsheetApp.BorderStyle.SOLID_MEDIUM
+      );
+    }
+  }
+
   for (const row of allRows) {
     const key = row.date + "|" + row.chaser;
     if (existing.has(key)) { totalSkipped++; continue; }
@@ -1692,6 +1737,10 @@ function migrateExistingSheets() {
       existing.add(weekKey);
     }
 
+    if (row.date !== lastWrittenDate) {
+      borderLastRowOfPreviousDate();
+    }
+
     rowSheet.appendRow([
       row.date, row.chaser,
       row.cases, row.positive, row.approvals, row.denials, row.timeMins,   // no faxes col
@@ -1702,9 +1751,14 @@ function migrateExistingSheets() {
       // these in going forward).
     ].concat(new Array(CAMPAIGN_KEYS.length * 2).fill(0)));
 
+    lastWrittenSheet = rowSheet;
+    lastWrittenRow   = rowSheet.getLastRow();
+    lastWrittenDate  = row.date;
+
     existing.add(key);
     totalWritten++;
   }
+  borderLastRowOfPreviousDate(); // border the very last date's last row too
 
   Logger.log("=== MIGRATION COMPLETE ===");
   Logger.log("Written: " + totalWritten + " rows");
@@ -1873,7 +1927,14 @@ function applyDayBordersToArchive() {
     let lastRowForDate = -1;
 
     for (let r = 1; r < data.length; r++) {
-      const dateVal   = String(data[r][0]).trim();
+      // normalizeDateCellToTab() collapses both a Date object (which Sheets
+      // may have silently auto-coerced this cell into) and a plain "M/D" or
+      // "M/D/YYYY" string down to the same "M/D" form -- comparing raw
+      // String(cellValue) instead would mis-group rows of the same day
+      // whenever some of that day's rows ended up typed differently from
+      // others (a real, previously-seen failure mode elsewhere in this
+      // file; see buildExistingRowMap()/deleteArchiveRowsForDate()).
+      const dateVal   = normalizeDateCellToTab(data[r][0]);
       const chaserVal = String(data[r][1]).trim();
 
       // Skip blank, WEEK header, and Total rows
