@@ -320,6 +320,14 @@ function applyMonthTabFormatting(sheet) {
   sheet.getRange(2, effCol,  998, 1).setNumberFormat('0.0"%"');
   sheet.getRange(2, prodCol, 998, 1).setNumberFormat('0.0"%"');
 
+  // TotalDurationMins is a straight sum of per-day call-duration minutes,
+  // and the underlying values can be fractional (Utlatel's own "H,M"
+  // duration text parses to e.g. 27.13 mins) -- whole-number format so it
+  // reads as a clean minute count instead of an ugly decimal, matching the
+  // dashboard's own formatWholeMinutes() display for the same field.
+  const durCol = ARCHIVE_HEADERS.indexOf("TotalDurationMins") + 1;
+  sheet.getRange(2, durCol, 998, 1).setNumberFormat('0');
+
   // Flag any row where Denials outnumber Approvals -- a light red tint that
   // draws the eye straight to a bad day/chaser while scanning the raw
   // sheet, on top of the day borders separating one day's block from the

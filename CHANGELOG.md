@@ -12,6 +12,19 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Whole-number Total Duration (twelfth batch)
+`durationMins` is a sum of per-day call-duration minutes, and the
+underlying values can be fractional (Utlatel's own "H,M" duration text
+parses to e.g. 27.13 mins), so an unrounded sum read as an ugly decimal.
+`LB_COLS`' "Total Duration (Min)" leaderboard column had no format
+function at all (showed the raw summed value) -- added a new
+`formatWholeMinutes()` and wired it in. The Controls tab's Utlatel Archive
+Summary table used `.toFixed(1)` explicitly; switched to `Math.round()`.
+`applyMonthTabFormatting()` (Code.gs) now also sets a whole-number `'0'`
+format on the archive sheet's `TotalDurationMins` column, matching the
+dashboard's display. Run `reformatArchiveTabs()` once to apply the new
+column format to existing month tabs.
+
 ### Fixed Productivity/Efficiency over 100% showing as e.g. "1.8%" in the archive (eleventh batch)
 Follow-up to the previous batch's percent-scale fix, reported immediately
 after: that fix guessed "a real percent-formatted cell's value is always

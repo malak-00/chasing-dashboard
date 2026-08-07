@@ -1021,8 +1021,7 @@ const METRIC_FIELDS = [
   { key:"timeMins",  label:"Time (mins)"    },
 ];
 
-// Format minutes as "Xh Ym" for the "Total duration" display column --
-// "Total duration (Min)" shows the same underlying durationMins raw.
+// Format minutes as "Xh Ym" for the "Total duration" display column.
 function formatDuration(mins) {
   mins = Number(mins) || 0;
   if (!mins) return "--";
@@ -1030,11 +1029,22 @@ function formatDuration(mins) {
   return h ? `${h}h ${m}m` : `${m}m`;
 }
 
+// Whole-minute rounding for the "Total duration (Min)" raw-minutes column --
+// durationMins is a SUM across every archived day (see aggregateChaser()/
+// renderHistLeaderboard()), and the underlying per-day values can be
+// fractional (Utlatel's own "H,M" duration text parses to e.g. 27.13 mins),
+// so an unrounded sum reads as an ugly decimal even though nobody cares
+// about fractions of a minute here.
+function formatWholeMinutes(mins) {
+  const n = Number(mins) || 0;
+  return n ? String(Math.round(n)) : "--";
+}
+
 const LB_COLS = [
   { key:"shiftMins",      label:"Total Shift",         tip:"Total shift minutes" },
   { key:"calls",          label:"Total Calls",         tip:"Total calls (Utlatel)" },
   { key:"durationMins",   label:"Total Duration",      tip:"Total call duration (Utlatel)", format: formatDuration },
-  { key:"durationMins",   label:"Total Duration (Min)",tip:"Total call duration in minutes (Utlatel)" },
+  { key:"durationMins",   label:"Total Duration (Min)",tip:"Total call duration in minutes (Utlatel)", format: formatWholeMinutes },
   { key:"acwDuration",    label:"ACW Duration",        tip:"After-call work time (ACW multiplier x Calls)" },
   { key:"productiveTime", label:"Productive Time",     tip:"Call duration + ACW duration" },
   { key:"cases",          label:"Total Chased Cases",  tip:"Total chased cases" },
@@ -4397,7 +4407,7 @@ function renderUtlatelSummary() {
     ${Object.entries(chaserData).map(([name,r]) => `<tr>
       <td><span class="chaser-name" style="color:${CHASER_COLORS[name]||"var(--text)"}">${name}</span></td>
       <td style="color:var(--text-2)">${r.Date}</td>
-      <td><span class="pill pill-teal">${(Number(r.TotalDurationMins)||0).toFixed(1)} min</span></td>
+      <td><span class="pill pill-teal">${Math.round(Number(r.TotalDurationMins)||0)} min</span></td>
       <td>${Number(r.TotalCalls)||0}</td>
     </tr>`).join("")}
   </tbody></table>`;
