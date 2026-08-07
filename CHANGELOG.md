@@ -12,6 +12,39 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Unified the scattered date pickers into one reusable pattern (sixteenth batch)
+Requested as the final cleanup for this PR: date-range inputs had been
+built independently in each tab (Leaderboard, History, Chasers, Custom
+Chart Builder), each with its own copy-pasted "Today / Yesterday / Last 7
+Days / This Week / Last Week / This Month" preset logic where it existed
+at all, and inconsistent styling elsewhere.
+- **Campaigns tab "Week Of" picker was a disguised day picker**: it used
+  `type="date"` and manually derived the containing week from whichever
+  single day got picked -- easy to pick the wrong day and land on an
+  unexpected week. Changed `campWeekPicker` to a real `type="week"` input
+  (browser-native week-of-year selector). Added `isoWeekStringToMonday()`
+  in dashboard.html (reverse of the existing `getISOWeekString()`) to
+  convert the picker's native `"YYYY-Www"` value back to that week's
+  Monday; `loadCampaignWeek()` now uses this instead of manually parsing
+  a `"YYYY-MM-DD"` value and computing Monday via day-of-week arithmetic.
+  Verified the round trip (including year-boundary weeks) and that the
+  picker renders and initializes correctly (defaults to the current ISO
+  week) via Playwright.
+- **New shared quick-range preset system**: added
+  `applyDateRangePreset(fromId, toId, preset, onApply)` -- one function
+  supporting the same 6 presets used ad hoc before, plus a consistent
+  `.quick-range-row` / `.quick-range-btn` pill-button style. Wired into
+  the 4 tabs that have a From/To range picker: Leaderboard, History,
+  Chasers, and Custom Chart Builder (the last of these had no quick
+  presets at all before). Compare's own 2-period preset shortcuts
+  (`setComparePreset()`) were left as-is since they serve a different
+  comparison-specific purpose and already work well; standalone
+  single-date pickers elsewhere were left untouched since they already
+  share the common `.date-input`/`.ctrl-input` styling and don't need
+  range presets. Verified via Playwright across all 4 locations: each
+  renders exactly one preset row, and clicking a preset correctly sets
+  both the From and To fields.
+
 ### Fixed misleading "No Shift Set" label (fifteenth batch)
 Reported immediately after the previous batch's NaN% fix: setting a
 chaser's shift to 0 (both directly in the archive and via the Controls

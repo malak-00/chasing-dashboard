@@ -174,6 +174,12 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
 .view-btn{font-size:11px;padding:5px 12px;border-radius:6px;background:var(--card);border:1px solid var(--border);color:var(--text-3);cursor:pointer;font-family:var(--font);font-weight:500;transition:all .15s}
 .view-btn:hover{color:var(--text-2)}
 .view-btn.active{background:var(--teal);color:var(--btn-text);border-color:var(--teal);font-weight:600}
+/* Reusable quick-range preset buttons -- one shared look for every custom
+   date-range picker in the app instead of each tab hand-rolling its own.
+   See applyDateRangePreset() in JS. */
+.quick-range-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.quick-range-btn{font-size:10.5px;padding:4px 11px;border-radius:14px;background:var(--card);border:1px solid var(--border);color:var(--text-3);cursor:pointer;font-family:var(--font);font-weight:600;transition:all .15s;white-space:nowrap}
+.quick-range-btn:hover{color:var(--text);border-color:var(--teal-dim);background:var(--card-hover)}
 .chevron{transition:transform .2s;display:inline-block}
 .chevron.open{transform:rotate(180deg)}
 .hidden{display:none!important}
@@ -385,7 +391,7 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
       <button class="btn" style="padding:5px 12px;font-size:11px" onclick="loadCampaignDay()">Load Day</button>
       <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
       <label>Week of</label>
-      <input type="date" class="date-input" id="campWeekPicker">
+      <input type="week" class="date-input" id="campWeekPicker">
       <button class="btn" style="padding:5px 12px;font-size:11px" onclick="loadCampaignWeek()">Load Week</button>
       <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px" onclick="refreshCampaigns()">&#8635; Refresh</button>
     </div>
@@ -467,6 +473,14 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
       <input type="date" class="date-input" id="lbTo">
       <button class="btn" onclick="applyLbCustomRange()">Apply</button>
       <span style="font-size:11px;color:var(--text-3)" id="lbRangeLabel"></span>
+      <div class="quick-range-row">
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('lbFrom','lbTo','today',applyLbCustomRange)">Today</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('lbFrom','lbTo','yesterday',applyLbCustomRange)">Yesterday</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('lbFrom','lbTo','last7',applyLbCustomRange)">Last 7 Days</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('lbFrom','lbTo','thisWeek',applyLbCustomRange)">This Week</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('lbFrom','lbTo','lastWeek',applyLbCustomRange)">Last Week</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('lbFrom','lbTo','thisMonth',applyLbCustomRange)">This Month</button>
+      </div>
     </div>
     <div class="leaderboard" id="leaderboardEl"><div class="state-block"><div class="spinner"></div>Loading...</div></div>
   </div>
@@ -534,6 +548,14 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
       <label>To</label>
       <input type="date" class="date-input" id="histTo">
       <button class="btn" onclick="applyCustomRange()">Apply</button>
+      <div class="quick-range-row">
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('histFrom','histTo','today',applyCustomRange)">Today</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('histFrom','histTo','yesterday',applyCustomRange)">Yesterday</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('histFrom','histTo','last7',applyCustomRange)">Last 7 Days</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('histFrom','histTo','thisWeek',applyCustomRange)">This Week</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('histFrom','histTo','lastWeek',applyCustomRange)">Last Week</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('histFrom','histTo','thisMonth',applyCustomRange)">This Month</button>
+      </div>
     </div>
 
     <div id="histContent">
@@ -628,6 +650,15 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
           </div>
         </div>
 
+        <div class="quick-range-row" style="margin-bottom:14px">
+          <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('cbFrom','cbTo','today',previewChartBuilder)">Today</button>
+          <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('cbFrom','cbTo','yesterday',previewChartBuilder)">Yesterday</button>
+          <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('cbFrom','cbTo','last7',previewChartBuilder)">Last 7 Days</button>
+          <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('cbFrom','cbTo','thisWeek',previewChartBuilder)">This Week</button>
+          <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('cbFrom','cbTo','lastWeek',previewChartBuilder)">Last Week</button>
+          <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('cbFrom','cbTo','thisMonth',previewChartBuilder)">This Month</button>
+        </div>
+
       </div>
     </div>
 
@@ -656,6 +687,14 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
       <label>To</label>
       <input type="date" class="date-input" id="chaserTo">
       <button class="btn" style="padding:5px 12px;font-size:11px" onclick="setChaserRangeMode(true)">Load Range</button>
+      <div class="quick-range-row">
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('chaserFrom','chaserTo','today',()=>setChaserRangeMode(true))">Today</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('chaserFrom','chaserTo','yesterday',()=>setChaserRangeMode(true))">Yesterday</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('chaserFrom','chaserTo','last7',()=>setChaserRangeMode(true))">Last 7 Days</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('chaserFrom','chaserTo','thisWeek',()=>setChaserRangeMode(true))">This Week</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('chaserFrom','chaserTo','lastWeek',()=>setChaserRangeMode(true))">Last Week</button>
+        <button type="button" class="quick-range-btn" onclick="applyDateRangePreset('chaserFrom','chaserTo','thisMonth',()=>setChaserRangeMode(true))">This Month</button>
+      </div>
     </div>
     <div id="chaserPageContent">
       <div class="state-block" style="color:var(--text-3)">
@@ -1086,13 +1125,80 @@ function getISOWeekString(date) {
   return `${d.getFullYear()}-W${String(weekNum).padStart(2,"0")}`;
 }
 
+// Reverse of getISOWeekString() -- converts an ISO week string ("YYYY-Www",
+// the value format of <input type="week">) back into that week's Monday.
+// Mirrors resolveWeekParamToAnchorDate() in Code.gs (which resolves to the
+// Sunday instead, for the trailing-14-day window used there); this needs
+// the Monday since every Mon-Fri week view in this app (Leaderboard,
+// Campaigns) is anchored on it. Returns null for anything blank/malformed.
+function isoWeekStringToMonday(weekStr) {
+  const m = String(weekStr || "").match(/^(\d{4})-W(\d{2})$/);
+  if (!m) return null;
+  const year = parseInt(m[1], 10), week = parseInt(m[2], 10);
+  const jan4 = new Date(year, 0, 4);
+  const jan4Day = jan4.getDay() || 7; // Sunday=0 -> 7
+  const week1Mon = new Date(jan4);
+  week1Mon.setDate(jan4.getDate() - jan4Day + 1);
+  const monday = new Date(week1Mon);
+  monday.setDate(week1Mon.getDate() + (week - 1) * 7);
+  return monday;
+}
+
+// Sets a From/To date-input pair to a standard preset range and calls the
+// tab's own apply/load function -- the ONE shared implementation behind
+// every "quick range" button row in the app (see quick-range-btn markup),
+// instead of each tab independently re-deriving the same date math (this
+// mirrors what setComparePreset() already did just for Compare's two
+// presets, generalized to every custom-range picker and every common
+// preset instead of one tab's one-off).
+function applyDateRangePreset(fromId, toId, preset, onApply) {
+  const now = new Date();
+  let from, to;
+  switch (preset) {
+    case "today":
+      from = new Date(now); to = new Date(now);
+      break;
+    case "yesterday":
+      from = new Date(now); from.setDate(now.getDate() - 1);
+      to = new Date(from);
+      break;
+    case "last7":
+      to = new Date(now);
+      from = new Date(now); from.setDate(now.getDate() - 6);
+      break;
+    case "thisWeek": {
+      const day = now.getDay();
+      from = new Date(now); from.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      to = new Date(from); to.setDate(from.getDate() + 6);
+      break;
+    }
+    case "lastWeek": {
+      const day = now.getDay();
+      const thisMon = new Date(now); thisMon.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+      from = new Date(thisMon); from.setDate(thisMon.getDate() - 7);
+      to = new Date(thisMon); to.setDate(thisMon.getDate() - 1);
+      break;
+    }
+    case "thisMonth":
+      from = new Date(now.getFullYear(), now.getMonth(), 1);
+      to   = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      break;
+    default:
+      return;
+  }
+  const fmt = d => d.toISOString().slice(0, 10);
+  document.getElementById(fromId).value = fmt(from);
+  document.getElementById(toId).value   = fmt(to);
+  if (typeof onApply === "function") onApply();
+}
+
 window.addEventListener("DOMContentLoaded", () => {
   const today = new Date().toISOString().slice(0,10);
   document.getElementById("datePicker").value    = today;
   updateSyncLabel();
   document.getElementById("weekPicker").value    = getISOWeekString(new Date());
   document.getElementById("campDayPicker").value  = today;
-  document.getElementById("campWeekPicker").value = today;
+  document.getElementById("campWeekPicker").value = getISOWeekString(new Date());
   document.getElementById("campMonthPicker").value = today.slice(0,7); // "YYYY-MM"
   document.getElementById("chaserDate").value = today;
   document.getElementById("ctrlUtlatelUploadDate").value = today;
@@ -1743,13 +1849,11 @@ async function loadCampaignDay() {
 }
 
 async function loadCampaignWeek() {
-  const val = document.getElementById("campWeekPicker").value;
+  const val = document.getElementById("campWeekPicker").value; // "YYYY-Www"
   if (!val) return;
-  const [y,m,d] = val.split("-");
-  const dateTab = `${parseInt(m)}/${parseInt(d)}`;
-  const ref = new Date(parseInt(y), parseInt(m)-1, parseInt(d));
-  const day = ref.getDay();
-  const mon = new Date(ref); mon.setDate(ref.getDate() + (day===0?-6:1-day));
+  const mon = isoWeekStringToMonday(val);
+  if (!mon) return;
+  const dateTab = `${mon.getMonth()+1}/${mon.getDate()}`;
   const fri = new Date(mon); fri.setDate(mon.getDate()+4);
   const fmtD = d2 => `${d2.getMonth()+1}/${d2.getDate()}`;
   document.getElementById("campWeekLabel").textContent = `${fmtD(mon)} – ${fmtD(fri)}`;
