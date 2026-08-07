@@ -12,11 +12,11 @@
 // Settings tab, no code change or redeploy needed. Do not add new
 // chasers here -- add them from the dashboard instead.
 const CHASER_SHEETS = {
-  Alex:  "1byPJ-RjIQzA4IcwuMieDXHpVb3EyR5Q8kJBnAs-npCU",
-  Hope:  "1LGKRvxveag0hdiVSuiPNWgbd_o6RDLDlYuWDMFNrlb0",
-  Rose:  "1pk4UmN6sH4qZVnLo3L1UphMaIOwUlGydDkHwOS9smzY",
-  Frank: "1-CuYnkkj8w9KO5RSjt6tyQ4l9xo4Pv5zZT_Gg1sfddA",
-  Nova:  "1_KrQtNWg3L-QMv1CedqT_qfNPZ215Bv6Z31nWqbg0D0"
+  "Alex Woods":     "1byPJ-RjIQzA4IcwuMieDXHpVb3EyR5Q8kJBnAs-npCU",
+  "Hope Smith":     "1LGKRvxveag0hdiVSuiPNWgbd_o6RDLDlYuWDMFNrlb0",
+  "Rose Simon":     "1pk4UmN6sH4qZVnLo3L1UphMaIOwUlGydDkHwOS9smzY",
+  "Frank Clarkson": "1-CuYnkkj8w9KO5RSjt6tyQ4l9xo4Pv5zZT_Gg1sfddA",
+  "Nova Grace":     "1_KrQtNWg3L-QMv1CedqT_qfNPZ215Bv6Z31nWqbg0D0"
 };
 
 // ============================================================
@@ -398,6 +398,80 @@ function addNewCampaignColumnsToExistingTabs() {
   Logger.log("=== DONE === Tabs updated: " + updated + " | Already current: " + alreadyCurrent);
 }
 
+// ============================================================
+// ONE-TIME: Rename chasers from short display names to full names
+// throughout the whole app -- run once after CHASER_SHEETS/CHASER_NAME_MAP
+// were switched to use full names ("Alex Woods" instead of "Alex") as the
+// canonical form. Renames:
+//   - the "Chasers" roster tab's Name column
+//   - every archive month tab's Chaser column
+// Both are exact-match renames against CHASER_RENAME_MAP below, so a row
+// already renamed (or a name that was never one of the old short forms) is
+// left untouched -- safe to re-run.
+// ============================================================
+const CHASER_RENAME_MAP = {
+  "Alex":     "Alex Woods",
+  "Hope":     "Hope Smith",
+  "Rose":     "Rose Simon",
+  "Frank":    "Frank Clarkson",
+  "Nova":     "Nova Grace",
+  "Nora":     "Nora Atkins",
+  "Jamie":    "Jamie Williams",
+  "Rick":     "Rick Nelson",
+  "Caroline": "Caroline Richards",
+};
+
+function renameChasersToFullNames() {
+  const archiveSS = SpreadsheetApp.openById(ARCHIVE_SHEET_ID);
+
+  // ── Roster ("Chasers" tab): rename the Name column ──
+  const chasersSheet = getOrCreateChasersTab();
+  const chasersData  = chasersSheet.getDataRange().getValues();
+  let rosterRenamed = 0;
+  for (let r = 1; r < chasersData.length; r++) {
+    const name    = String(chasersData[r][0]).trim();
+    const newName = CHASER_RENAME_MAP[name];
+    if (newName && newName !== name) {
+      chasersData[r][0] = newName;
+      rosterRenamed++;
+    }
+  }
+  if (rosterRenamed) {
+    chasersSheet.getRange(1, 1, chasersData.length, chasersData[0].length).setValues(chasersData);
+  }
+  Logger.log("Roster ('Chasers' tab): renamed " + rosterRenamed + " row(s).");
+
+  // ── Every archive month tab's Chaser column (column B) -- one batched
+  // read + write per tab, not one API call per row, since a tab can have
+  // hundreds of rows.
+  const monthPattern = /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}$/i;
+  let totalRowsRenamed = 0;
+  for (const sheet of archiveSS.getSheets()) {
+    if (!monthPattern.test(sheet.getName().trim())) continue;
+
+    const data = sheet.getDataRange().getValues();
+    let tabRenamed = 0;
+    for (let r = 1; r < data.length; r++) {
+      const chaserVal = String(data[r][1]).trim();
+      const newName   = CHASER_RENAME_MAP[chaserVal];
+      if (newName && newName !== chaserVal) {
+        data[r][1] = newName;
+        tabRenamed++;
+      }
+    }
+    if (tabRenamed) {
+      sheet.getRange(1, 1, data.length, data[0].length).setValues(data);
+      Logger.log(sheet.getName() + ": renamed " + tabRenamed + " row(s).");
+    }
+    totalRowsRenamed += tabRenamed;
+  }
+
+  invalidateCache("chasers_config");
+  invalidateCache("archive_all");
+
+  Logger.log("=== DONE === Roster rows renamed: " + rosterRenamed + " | Archive rows renamed: " + totalRowsRenamed);
+}
+
 // Maps "date|chaser" -> { rowNum, values } for a specific month tab, so
 // archiveDayData() can update an existing row in place (fresh Cases/
 // Positive/etc. from a re-sync) instead of either skipping it (leaving
@@ -421,9 +495,18 @@ function buildExistingRowMap(sheet) {
 function buildUtlatelLookup(dateTab) {
   const utlatelForDate = getUtlatelData().filter(r => r.Date === dateTab);
   return function utlatelTotalsForChaser(chaserName) {
+    // Match on the chaser's FIRST NAME only, not their full canonical
+    // display name -- the Utlatel report's own "Agent" column is raw
+    // call-system text (may carry extensions/department tags around the
+    // name, and may only ever have used a first name to begin with), so a
+    // substring match against a full "Alex Woods" would silently stop
+    // matching an Agent value that's just "Alex" (shorter than what it's
+    // being searched for). The first name is virtually always enough to
+    // disambiguate within one team's roster.
+    const firstName = chaserName.split(" ")[0];
     let mins = 0, calls = 0;
     utlatelForDate.forEach(r => {
-      if (String(r.Agent || "").toLowerCase().includes(chaserName.toLowerCase())) {
+      if (String(r.Agent || "").toLowerCase().includes(firstName.toLowerCase())) {
         mins  += Number(r.DurationMins) || 0;
         calls += Number(r.Calls)        || 0;
       }
@@ -705,21 +788,24 @@ function checkTriggers() {
 // ============================================================
 // ============================================================
 // CHASER NAME NORMALIZATION
-// Maps full names from historical sheets to display names
-// Add entries here if new name variants appear
+// Maps every name variant a source sheet might use down to ONE canonical
+// full display name -- add entries here if new name variants appear.
+// Canonical names are full names throughout the whole app (roster, archive,
+// dashboard) since PR #26's batch 9 rename; see renameChasersToFullNames()
+// for the one-time migration that renamed already-written data to match.
 // ============================================================
 const CHASER_NAME_MAP = {
-  "alex woods":       "Alex",
-  "hope smith":       "Hope",
-  "rose simon":       "Rose",
-  "frank clarkson":   "Frank",
-  "nova grace":       "Nova",
+  "alex woods":       "Alex Woods",
+  "hope smith":       "Hope Smith",
+  "rose simon":       "Rose Simon",
+  "frank clarkson":   "Frank Clarkson",
+  "nova grace":       "Nova Grace",
   "tom":              "Tom Walker",
   // Former chasers — kept as-is for historical data
-  "nora atkins":      "Nora",
-  "jamie williams":   "Jamie",
-  "rick nelson":      "Rick",
-  "caroline richards":"Caroline",
+  "nora atkins":      "Nora Atkins",
+  "jamie williams":   "Jamie Williams",
+  "rick nelson":      "Rick Nelson",
+  "caroline richards":"Caroline Richards",
 };
 
 // Keys above are written without periods -- match against them the same way:
@@ -1554,7 +1640,7 @@ function testAllChasers() {
 }
 
 // Lists every tab in one chaser's tracker spreadsheet, looked up by name
-// from the current active roster (e.g. debugChaser("Alex")) -- handy when
+// from the current active roster (e.g. debugChaser("Alex Woods")) -- handy when
 // findChaserTrackerSheet() can't find today's tab and you need to see what
 // the tracker sheet actually named it.
 function debugChaser(name) {
@@ -1832,7 +1918,7 @@ function collectRowsFromWeekTab(tab) {
     if (!rawChaser || rawChaser.toUpperCase() === "CHASER NAME" || rawChaser.toUpperCase().startsWith("TOTAL")) continue;
 
     // Normalize here (not just at read time) so the archive itself shows
-    // clean canonical names ("Alex", "Tom Walker") instead of whatever raw
+    // clean canonical names ("Alex Woods", "Tom Walker") instead of whatever raw
     // text a tracker tab happened to have ("ALEX WOODS", "Tom", etc.).
     const chaser = normalizeChaserName(rawChaser);
 

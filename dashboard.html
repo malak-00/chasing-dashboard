@@ -97,7 +97,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:1
 .ov-rank-row{display:flex;align-items:center;gap:12px;padding:9px 10px;margin:0 -10px;border-radius:8px;border-bottom:1px solid var(--border);transition:background .15s ease}
 .ov-rank-row:last-child{border-bottom:none}
 .ov-rank-row:hover{background:var(--card)}
-.ov-rank-name{width:90px;flex-shrink:0;font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ov-rank-name{width:130px;flex-shrink:0;font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ov-rank-bar-bg{flex:1;height:8px;background:var(--card);border-radius:4px;overflow:hidden}
 .ov-rank-bar-fill{height:100%;border-radius:4px;transition:width .4s ease}
 .ov-rank-val{width:64px;flex-shrink:0;text-align:right;font-size:13px;font-weight:650;font-variant-numeric:tabular-nums}
@@ -619,11 +619,6 @@ select[multiple] option:checked { background:var(--teal-dim); color:var(--teal-t
           <div class="ctrl-group">
             <label>Chasers (leave blank = all)</label>
             <select class="ctrl-select" id="cbChasers" multiple size="5" onchange="previewChartBuilder()" style="height:auto">
-              <option value="Alex">Alex</option>
-              <option value="Hope">Hope</option>
-              <option value="Rose">Rose</option>
-              <option value="Frank">Frank</option>
-              <option value="Nova">Nova</option>
             </select>
           </div>
           <div class="ctrl-group">
@@ -977,7 +972,7 @@ const API_BASE = "https://script.google.com/macros/s/AKfycbzl9wrN5Ys-fz6H61G07c7
 // Fallback roster used until the real one loads from the backend (and if
 // the "chasers" request ever fails) -- see loadData() and chasterRoster
 // below, which is the editable Settings-tab source of truth going forward.
-let CHASERS  = ["Alex","Hope","Rose","Frank","Nova"];
+let CHASERS  = ["Alex Woods","Hope Smith","Rose Simon","Frank Clarkson","Nova Grace"];
 let chasterRoster = []; // [{ name, sheetId, active }, ...] -- full detail for the Settings UI
 
 const CAMPAIGNS = [
@@ -2166,6 +2161,19 @@ function parseDuration(str){
   return (h?parseFloat(h[1]):0)*60+(m?parseFloat(m[1]):0);
 }
 
+// Auto-detect which chaser a raw Utlatel "Agent" text refers to, by
+// checking whether the agent text contains a chaser's FIRST name as a
+// substring -- not their full CHASERS entry, which is now a full name
+// ("Alex Woods"). Utlatel's raw Agent column is uploaded call-system text
+// that may only ever have used a first name, or may carry extra text
+// (extensions, department tags) around the name either way, so matching on
+// just the first name keeps auto-detection working against both older
+// short-name-only data and any future full-name text.
+function autoMapAgentToChaser(agent) {
+  const lower = agent.toLowerCase();
+  return CHASERS.find(c => lower.includes(c.split(" ")[0].toLowerCase())) || "";
+}
+
 function buildAgentMapUI(agents){
   document.getElementById("ctrlAgentMapSection").classList.remove("hidden");
   const grid = document.getElementById("ctrlAgentMapGrid");
@@ -2176,7 +2184,7 @@ function buildAgentMapUI(agents){
   // build here would be a stored XSS hole, not just a one-time render risk.
   grid.innerHTML = "";
   agents.forEach(agent=>{
-    const auto=CHASERS.find(c=>agent.toLowerCase().includes(c.toLowerCase()))||"";
+    const auto=autoMapAgentToChaser(agent);
     if(auto)agentMap[agent]=auto;
 
     const row = document.createElement("div");
@@ -2362,7 +2370,7 @@ function applyUtlatelPersist() {
     if (!utlatelData[agent]) {
       utlatelData[agent] = { totalDurationMins:0, totalCalls:0, byDate:{} };
       // Auto-map agent name to chaser
-      const mapped = CHASERS.find(c => agent.toLowerCase().includes(c.toLowerCase()));
+      const mapped = autoMapAgentToChaser(agent);
       if (mapped) agentMap[agent] = mapped;
     }
     utlatelData[agent].totalDurationMins += dur;
@@ -2537,33 +2545,17 @@ let histView       = "month";
 let histRange      = { from: null, to: null };
 
 const CHASER_COLORS = {
-  Nova:"#8E44AD",     // purple
-  Nora:"#F5821F",     // orange
-  Caroline:"#E53935", // red
-  Frank:"#22C55E",    // green
-  Hope:"#EC4899",     // pink
-  Rose:"#FF1493",     // hot pink
-  Alex:"#3B82F6",     // blue
-  Jamie:"#740A03",    // white
-  Rick:"#FACC15",     // yellow
+  "Nova Grace":       "#8E44AD",     // purple
+  "Nora Atkins":      "#F5821F",     // orange
+  "Caroline Richards":"#E53935", // red
+  "Frank Clarkson":   "#22C55E",    // green
+  "Hope Smith":       "#EC4899",    // pink
+  "Rose Simon":       "#FF1493",    // hot pink
+  "Alex Woods":       "#3B82F6",    // blue
+  "Jamie Williams":   "#740A03",    // white
+  "Rick Nelson":      "#FACC15",    // yellow
+  "Tom Walker":       "#06B6D4",    // cyan
 };
-
-// Full name → display name mapping (mirrors Apps Script CHASER_NAME_MAP)
-const CHASER_NAME_MAP = {
-  "alex woods":       "Alex",
-  "hope smith":       "Hope",
-  "rose simon":       "Rose",
-  "frank clarkson":   "Frank",
-  "nova grace":       "Nova",
-  "nora atkins":      "Nora",
-  "jamie williams":   "Jamie",
-  "rick nelson":      "Rick",
-  "caroline richards":"Caroline",
-};
-
-function normalizeName(name) {
-  return CHASER_NAME_MAP[String(name).trim().toLowerCase()] || String(name).trim();
-}
 
 // All unique chasers found in archive data
 function getAllChasers() {
@@ -4346,7 +4338,7 @@ async function refreshChasterRoster() {
 // children.length), so a chaser added while already on the Controls tab
 // needs to be appended here directly instead of waiting for a re-visit.
 function refreshChaserDropdowns() {
-  ["ctrlShiftChaser","ctrlGoalChaser"].forEach(id => {
+  ["ctrlShiftChaser","ctrlGoalChaser","cbChasers"].forEach(id => {
     const sel = document.getElementById(id);
     if (!sel) return;
     const existing = new Set([...sel.options].map(o=>o.value));
