@@ -12,6 +12,32 @@ Each entry: what changed, why, and what it touches. PR numbers refer to
 
 ## PR #26 — Campaign pipeline rewrite, presentable archive sheet, executive UI overhaul (2026-08-06 – 2026-08-07)
 
+### Fixed Productivity/Efficiency over 100% showing as e.g. "1.8%" in the archive (eleventh batch)
+Follow-up to the previous batch's percent-scale fix, reported immediately
+after: that fix guessed "a real percent-formatted cell's value is always
+`<=1`" to tell it apart from a plain number already on the 0-100 scale --
+which breaks the moment the true percentage exceeds 100%. A percent-
+formatted cell showing "180%" has an underlying value of `1.8`, which is
+`>1`, so the old logic treated it as "already correct" and left it as
+`1.8` -- written into the archive and displayed as "1.8%" via its percent
+number format. Value magnitude alone can never reliably disambiguate this
+(`1.8` could mean "180%, percent-formatted" or "literally 1.8, a plain
+number" -- both are valid raw `getValues()` outputs).
+
+Switched to checking the cell's ACTUAL number format via
+`getNumberFormats()` instead of guessing from magnitude: if the format
+contains a literal "%", the value is a fraction and gets multiplied by
+100 regardless of how large it is; otherwise it's taken as-is. This is
+unambiguous in every case. `collectRowsFromWeekTab()` now reads
+`getNumberFormats()` alongside `getValues()` (same shape/position) and
+threads the relevant cell's format through to `parsePercentField()` for
+both Efficiency and Productivity.
+
+Verified with 8 unit cases (including the exact reported 180%-showing-as-
+1.8% scenario) and a full `migrateExistingSheets()` integration test
+confirming a 180%-percent-formatted source cell writes `180` (not `1.8`)
+into the real archive row.
+
 ### Fixed Productivity/Efficiency % scale bug + stopped capping the Overview ranking bar at 100% (tenth batch)
 Two data-display bugs reported directly:
 - **Productivity/Efficiency showing e.g. "0.4%" instead of "38.4%"**:
